@@ -1,4 +1,8 @@
-![gh-mirror](logo.svg)
+<p align="center">
+  <a href="https://github.com/yufeng8/gh-mirror">
+    <img src="social-preview.png" alt="gh-mirror cover" width="100%">
+  </a>
+</p>
 
 # gh-mirror
 
