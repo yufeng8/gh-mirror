@@ -1,30 +1,42 @@
-# github-mirror — GitHub 资源镜像加速服务（带 Token 鉴权与管理后台）
+![github-mirror](logo.svg)
 
-> 自托管 GitHub 镜像加速 · GitHub raw / release / archive 下载加速 · 反向代理 + Token 鉴权 + Web 管理后台
+# github-mirror
+
+> 自托管的 GitHub 资源镜像加速服务 · Token 鉴权 · Web 管理后台 · 完全私有化部署
 > Self-hosted GitHub mirror / raw / release acceleration proxy with token auth and admin dashboard
 
 [![Release](https://img.shields.io/github/v/release/zzidcn/github-mirror)](https://github.com/zzidcn/github-mirror/releases)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fzzidcn%2Fgithub-mirror-blue?logo=docker&logoColor=white)](https://github.com/zzidcn/github-mirror/pkgs/container/github-mirror)
 [![docker workflow](https://github.com/zzidcn/github-mirror/actions/workflows/docker.yml/badge.svg)](https://github.com/zzidcn/github-mirror/actions/workflows/docker.yml)
 [![build](https://github.com/zzidcn/github-mirror/actions/workflows/build.yml/badge.svg)](https://github.com/zzidcn/github-mirror/actions/workflows/build.yml)
+[![License](https://img.shields.io/github/license/zzidcn/github-mirror)](./LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/zzidcn/github-mirror?style=social)](https://github.com/zzidcn/github-mirror/stargazers)
 
-本项目是一个 **GitHub 资源镜像加速服务**的开源实现（文档示例部署域名为 `mirror.example.com`，请替换为你自己的域名）。
-在域名后拼接 **`/g/<token>/` + 完整 GitHub 地址** 即可加速下载，浏览器与命令行（curl/wget）通用。
-后端用 Go 标准库实现的流式反向代理，自带磁盘缓存与 `Range` 断点续传，并内置 Web 管理后台与 Token 鉴权。
+**github-mirror** 是一个开源的、可完全私有化部署的 **GitHub 资源镜像加速服务**。在域名后拼接 `/g/<token>/` + 完整 GitHub 地址即可加速下载，浏览器与命令行（curl/wget）通用；后端为 Go 标准库实现的流式反向代理，自带磁盘缓存与 `Range` 断点续传，并内置 Web 管理后台与 Token 鉴权。
 
-> 适用前提：服务器需能顺畅访问 GitHub。
-> 若服务器在国内且直连 GitHub 很慢，纯自建代理无意义；此时只能依赖 jsDelivr 等上游（功能受限）。
+> 文档示例部署域名为 `mirror.example.com`，请替换为你自己的域名。
 
-## 核心特性（Features）
+> ⚠️ **合规与免责声明（请先读）**：本项目仅用于加速你**有权访问**的 GitHub 资源。严禁用于盗用他人私有仓库、规避付费、绕过访问限制或任何违反 GitHub 服务条款及所在地法律法规的行为。使用者须自行承担因不当使用产生的全部责任；本项目不缓存或记录请求内容，亦不对加速资源的版权与合规性负责。详见文末 [合规与免责声明](#合规与免责声明)。
 
+## 为什么需要它（解决的实际痛点）
+
+- **拉取慢 / 超时**：国内或受限网络访问 GitHub 常常很慢、频繁超时、下载中断。把服务部署在能顺畅访问 GitHub 的节点，对内提供高速回源与本地缓存。
+- **CI/CD 不稳定**：构建机拉依赖、下载 Release 经常被 GitHub 限流或超时打断。用本服务做统一加速入口，构建更稳。
+- **jsDelivr 有局限**：`cdn.jsdelivr.net/gh/...` 仅加速公开仓库源码、单文件约 20MB，且不支持 Releases / archive / API。本项目覆盖全场景。
+- **怕被滥用**：公共代理不可控。本项目所有请求必须携带后台下发的 Token，无效即 404，访问可控、可审计。
+- **不想依赖第三方**：希望流量与令牌完全自持、不经过任何公开代理。一键部署到自己的服务器即可。
+
+## 核心特性
+
+- **完全私有化部署**：原生 / Docker 一键部署到你的服务器，数据自持，不经过任何第三方。
+- **Token 鉴权**：后台签发 Token，所有代理请求必须携带有效 Token，无效返回 404，避免被当作开放代理滥用。
 - **全场景加速**：覆盖仓库文件（blob/raw）、Raw 文件、Releases 二进制、仓库打包（archive）、以及短链（`gh/...`）。
-- **Token 鉴权**：所有代理请求必须携带后台下发的有效 Token，无效请求一律返回 404，避免被当作开放代理滥用。
-- **Web 管理后台**：可视化查看 / 新增 / 删除 Token，并直接给出该实例的代理示例地址。
 - **流式反向代理 + 磁盘缓存 + Range 断点续传**：基于 Go 标准库实现，性能与原生部署基本持平。
+- **Web 管理后台**：可视化查看 / 新增 / 删除 Token，并直接给出该实例的代理示例地址。
 - **一键部署**：原生（`native`）/ Docker 两种模式，`deploy.sh` 与 `install.sh` 开箱即用。
 - **多架构 Docker 镜像**：自动构建并发布到 GitHub Container Registry（amd64 / arm64），且 **CI 自动设为 Public**，匿名 `docker pull` 即用。
 
-## 目录（Table of Contents）
+## 目录
 
 - [访问规则](#访问规则核心变更)
 - [管理后台](#管理后台)
@@ -37,6 +49,9 @@
 - [缓存清理](#缓存清理)
 - [环境变量](#环境变量)
 - [安全说明](#安全说明)
+- [合规与免责声明](#合规与免责声明)
+- [许可证](#许可证)
+- [⭐ Star & Fork 指引](#-star--fork-指引)
 
 ## 访问规则（核心变更）
 
@@ -279,3 +294,34 @@ MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='xxx' \
 - 代理请求必须携带后台下发的 token，无效 token 返回 404；**Token 列表等同于访问凭证，请妥善保管 `tokens.json` 与 `ADMIN_SECRET`**。
 - 管理后台登录使用恒定时间比较，Session Cookie 经 HMAC 签名且 HttpOnly + SameSite=Strict。
 - 如需进一步加固，可在 nginx 层对 `/admin` 增加访问限制或 Basic Auth，并定期更换管理员密码。
+
+## 合规与免责声明
+
+- 本项目是**中立的技术工具**，仅用于加速你**有权访问**的 GitHub 资源。
+- **严禁**用于以下行为，使用者自行承担全部法律责任：
+  - 盗用、抓取你不拥有或不被授权访问的私有仓库 / 私有资源；
+  - 规避付费、绕过厂商访问限制或付费墙；
+  - 任何违反 GitHub [服务条款](https://docs.github.com/site-policy/github-acceptable-use-policies) 及你所在地法律法规的行为；
+  - 将本服务作为开放代理对外提供、用于攻击或滥用。
+- 本项目**不缓存、不记录**请求的具体内容；加速资源的版权与合规性由使用者负责。
+- 若你所在网络/地区访问 GitHub 受限，请优先确认本地法规允许的前提下使用。
+
+## 许可证
+
+本项目以 **MIT License** 开源。详见 [LICENSE](./LICENSE)。
+
+你可以自由使用、修改、分发本软件，包括商业用途；请保留版权声明与许可声明。软件按「原样」提供，不提供担保。
+
+## ⭐ Star & Fork 指引
+
+如果这个项目帮你省下了时间、或解决了实际的下载痛点，欢迎在 GitHub 上支持一下：
+
+- ⭐ **点个 Star**：<https://github.com/zzidcn/github-mirror> —— 让更多人能通过搜索发现它，也是对作者持续维护的动力。
+- 🍴 **Fork 一份**：<https://github.com/zzidcn/github-mirror/fork> —— 想加功能、改界面、适配内网，全都可以从 Fork 开始。
+- 🐛 **提 Issue / PR**：发现问题或好点子，欢迎到 <https://github.com/zzidcn/github-mirror/issues> 交流。
+
+> 小提示：在部署好的首页（`/`）底部也放了「Star on GitHub」按钮，方便随时回来点星。
+
+---
+
+© 2026 github-mirror · MIT License
