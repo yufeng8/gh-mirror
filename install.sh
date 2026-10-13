@@ -3,19 +3,19 @@
 # github-mirror 一键安装脚本（从 GitHub Release / 源码 拉取，支持原生与 Docker）
 #
 # 用法（公开仓库，远程服务器上一行执行）:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/github-mirror/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
 #
 # 私有仓库：需带 GITHUB_TOKEN（具备 repo 读 + read:packages 权限的 PAT）：
 #   GITHUB_TOKEN=ghp_xxx bash -c "$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
-#     https://raw.githubusercontent.com/zzidcn/github-mirror/main/install.sh)"
+#     https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)"
 #
 # 非交互 / 一行搞定（原生模式）:
 #   DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
-#     bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/github-mirror/main/install.sh)
+#     bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
 #
 # Docker 模式（默认从 GHCR 拉取现成镜像；加 DOCKER_BUILD=1 可改为从 GitHub 源码现场构建）:
 #   MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
-#     bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/github-mirror/main/install.sh)
+#     bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
 #   指定镜像标签:       MODE=docker VERSION=v1.0.0 ...
 #   改用源码现场构建镜像: MODE=docker DOCKER_BUILD=1 ...
 #
@@ -32,7 +32,7 @@
 #
 set -euo pipefail
 
-REPO="zzidcn/github-mirror"
+REPO="zzidcn/gh-mirror"
 APP_USER="ghmirror"
 APP_DIR="/opt/github-mirror"
 CACHE_DIR="/var/cache/github-mirror"

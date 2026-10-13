@@ -26,7 +26,7 @@
 
 ## 🔗 相关链接
 
-- 源码：https://github.com/zzidcn/github-mirror
+- 源码：https://github.com/zzidcn/gh-mirror
 - 部署文档：见仓库 `README.md` 与 `deploy.sh`
 
 ---

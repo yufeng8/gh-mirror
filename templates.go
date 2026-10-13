@@ -3,10 +3,10 @@ package main
 import "fmt"
 
 // repoURL 是本项目在 GitHub 上的地址，用于首页 Stars / Fork 引导与页脚。
-const repoURL = "https://github.com/zzidcn/github-mirror"
+const repoURL = "https://github.com/zzidcn/gh-mirror"
 
 // logoSVG 是项目 Logo（内联 SVG，便于首页零额外请求渲染，契合私有化部署）。
-const logoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="github-mirror logo">
+const logoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="gh-mirror logo">
   <defs>
     <linearGradient id="gm" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#22c55e"/>
@@ -123,14 +123,14 @@ func page(title, desc, body string) string {
 // homeHTML 生成首页；host 取请求的实际域名，避免把示例域名写死。
 func homeHTML(host string) string {
 	body := fmt.Sprintf(homeTmpl, host, host)
-	return page("github-mirror · GitHub 资源镜像加速", "自托管的 GitHub 资源镜像加速服务，支持 Token 鉴权与管理后台，完全私有化部署，一键原生/Docker 部署。", body)
+	return page("gh-mirror · GitHub 资源镜像加速", "自托管的 GitHub 资源镜像加速服务，支持 Token 鉴权与管理后台，完全私有化部署，一键原生/Docker 部署。", body)
 }
 
 const homeTmpl = `
 <header class="site">
   ` + logoSVG + `
   <div>
-    <h1>github-mirror</h1>
+    <h1>gh-mirror</h1>
     <p class="tagline">自托管的 GitHub 资源镜像加速服务 · Token 鉴权 · 管理后台 · 完全私有化部署</p>
   </div>
   <button id="themeToggle" class="btn outline" type="button" onclick="toggleTheme()" aria-label="切换深色 / 浅色模式" style="margin-left:auto">🌙 深色</button>
@@ -184,18 +184,18 @@ const homeTmpl = `
 
 <div class="footer">
   <p>管理后台默认路径 <code>/admin</code>（可用 <code>ADMIN_PATH</code> 自定义）。本服务仅回源 GitHub 相关域名，不会被当作开放代理。</p>
-  <p class="muted">© 2026 github-mirror · <a href="` + repoURL + `/blob/main/LICENSE">MIT License</a></p>
+  <p class="muted">© 2026 gh-mirror · <a href="` + repoURL + `/blob/main/LICENSE">MIT License</a></p>
 </div>
 `
 
-var notFoundHTML = page("404 - github-mirror", "页面未找到", `
+var notFoundHTML = page("404 - gh-mirror", "页面未找到", `
 <div class="card">
   <h1>404 未找到</h1>
   <p>请求的资源不存在，或 token 无效。</p>
   <p class="muted"><a href="/">返回首页</a></p>
 </div>`)
 
-var loginHTML = page("管理员登录 - github-mirror", "管理员登录", `
+var loginHTML = page("管理员登录 - gh-mirror", "管理员登录", `
 <div class="card" style="max-width:360px">
   <h1>管理员登录</h1>
   <form method="post" action="%s" class="row" style="flex-direction:column;align-items:stretch">
@@ -207,7 +207,7 @@ var loginHTML = page("管理员登录 - github-mirror", "管理员登录", `
   <p class="muted"><a href="/">返回首页</a></p>
 </div>`)
 
-var dashboardHTML = page("管理后台 - github-mirror", "管理后台", `
+var dashboardHTML = page("管理后台 - gh-mirror", "管理后台", `
 <div class="card">
   <h1>管理后台</h1>
   <p class="muted">代理示例（将“你的域名”替换为实际域名）：</p>
