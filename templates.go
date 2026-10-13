@@ -23,7 +23,7 @@ const logoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" rol
 </svg>`
 
 // pageStyle 复刻 shadcn 设计系统：中性色板 + CSS 变量主题、圆角卡片、
-// focus-visible 可访问焦点态、移动优先的响应式断点。全部内联、不依赖任何外部 CDN。
+// focus-visible 可访问焦点态、移动优先的响应式断点、深色模式。全部内联、不依赖任何外部 CDN。
 const pageStyle = `
 <style>
   :root{
@@ -32,12 +32,17 @@ const pageStyle = `
     --primary:#16a34a; --primary-foreground:#ffffff; --ring:#16a34a;
     --danger:#dc2626; --danger-foreground:#ffffff; --radius:.75rem;
   }
+  html.dark{
+    --background:#0a0a0a; --foreground:#ededed; --card:#18181b;
+    --muted:#27272a; --muted-foreground:#a1a1aa; --border:#3f3f46;
+    --primary:#22c55e; --primary-foreground:#052e16; --ring:#22c55e;
+  }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
   body{
     margin:0; color:var(--foreground); background:var(--background); line-height:1.7;
     font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
-    -webkit-font-smoothing:antialiased;
+    -webkit-font-smoothing:antialiased; transition:background .2s ease,color .2s ease;
   }
   .container{max-width:960px;margin:0 auto;padding:32px 20px 56px}
   header.site{display:flex;align-items:center;gap:14px;margin-bottom:6px}
@@ -65,6 +70,9 @@ const pageStyle = `
   .alert{border:1px solid var(--border);border-left:4px solid var(--primary);background:var(--muted);border-radius:var(--radius);padding:14px 16px;font-size:.92rem}
   .alert.warn{border-left-color:#d97706;background:#fffbeb}
   .alert.danger{border-left-color:var(--danger);background:#fef2f2}
+  html.dark pre{background:#000}
+  html.dark .alert.warn{background:#3a2f12}
+  html.dark .alert.danger{background:#3a1414}
   table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.9rem;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
   th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
   thead th{background:var(--muted);font-weight:600}
@@ -88,7 +96,8 @@ const pageStyle = `
   }
 </style>`
 
-// page 组装完整 HTML 文档，含 SEO 元信息（description / Open Graph / theme-color）与语义化骨架。
+// page 组装完整 HTML 文档，含 SEO 元信息（description / Open Graph / theme-color）、
+// 防闪烁的深色模式初始化脚本，以及语义化骨架。
 func page(title, desc, body string) string {
 	return `<!doctype html>
 <html lang="zh-CN">
@@ -101,10 +110,12 @@ func page(title, desc, body string) string {
 <meta property="og:description" content="` + desc + `">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#16a34a">
+<script>try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>
 ` + pageStyle + `
 </head>
 <body>
 <main class="container">` + body + `</main>
+<script>function toggleTheme(){var d=document.documentElement.classList.toggle('dark');try{localStorage.setItem('theme',d?'dark':'light')}catch(e){}var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';}(function(){var d=document.documentElement.classList.contains('dark');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';})();</script>
 </body>
 </html>`
 }
@@ -122,6 +133,7 @@ const homeTmpl = `
     <h1>github-mirror</h1>
     <p class="tagline">自托管的 GitHub 资源镜像加速服务 · Token 鉴权 · 管理后台 · 完全私有化部署</p>
   </div>
+  <button id="themeToggle" class="btn outline" type="button" onclick="toggleTheme()" aria-label="切换深色 / 浅色模式" style="margin-left:auto">🌙 深色</button>
 </header>
 
 <div class="alert">
