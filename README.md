@@ -16,6 +16,18 @@
 
 > 文档示例部署域名为 `mirror.example.com`，请替换为你自己的域名。
 
+## English
+
+**gh-mirror** is a lightweight, fully self-hostable GitHub resource mirror / acceleration proxy. Prepend `/g/<token>/` to your domain in front of any full GitHub URL to speed up downloads for both browsers and CLIs (`curl` / `wget`). The backend is a streaming reverse proxy built with the Go standard library, featuring on-disk caching with `Range` resume support, a built-in web admin dashboard, and per-token access control.
+
+### Highlights
+- **Token auth** — every proxied URL carries its own token; unauthorized requests return 404.
+- **Usage stats** — per-token hit counts, traffic, and last-seen, persisted to `tokens.json`.
+- **Admin UI** — manage tokens and view stats from a clean web dashboard.
+- **Smart cache** — caches `GET`s to reduce upstream load; serializes concurrent fetches to avoid the thundering herd.
+- **Multi-protocol rewrite** — `raw.githubusercontent.com` / `github.com` / `releases` / `archive` all routed through gh-mirror.
+- **One-click deploy** — ships `deploy.sh`, `Dockerfile`, a systemd unit, and an nginx reverse-proxy config.
+
 > ⚠️ **合规与免责声明（请先读）**：本项目仅用于加速你**有权访问**的 GitHub 资源。严禁用于盗用他人私有仓库、规避付费、绕过访问限制或任何违反 GitHub 服务条款及所在地法律法规的行为。使用者须自行承担因不当使用产生的全部责任；本项目不缓存或记录请求内容，亦不对加速资源的版权与合规性负责。详见文末 [合规与免责声明](#合规与免责声明)。
 
 ## 为什么需要它（解决的实际痛点）

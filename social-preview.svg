@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#58a6ff"/>
+      <stop offset="1" stop-color="#3fb950"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <circle cx="1080" cy="120" r="160" fill="#58a6ff" opacity="0.08"/>
+  <circle cx="1190" cy="540" r="230" fill="#3fb950" opacity="0.07"/>
+
+  <g transform="translate(96,150)">
+    <rect width="84" height="84" rx="18" fill="url(#accent)"/>
+    <text x="42" y="58" font-size="46" font-weight="700" fill="#0d1117" text-anchor="middle">gh</text>
+  </g>
+  <text x="200" y="212" font-size="72" font-weight="800" fill="#f0f6fc">gh-mirror</text>
+  <text x="98" y="292" font-size="30" fill="#8b949e">Self-hosted GitHub mirror &amp; acceleration proxy</text>
+  <text x="98" y="334" font-size="30" fill="#8b949e">Token auth · Web admin dashboard · One-click deploy</text>
+
+  <g font-size="22" fill="#c9d1d9">
+    <rect x="98" y="404" width="226" height="52" rx="26" fill="#21262d" stroke="#30363d"/>
+    <text x="211" y="437" text-anchor="middle">Go · stdlib proxy</text>
+    <rect x="342" y="404" width="190" height="52" rx="26" fill="#21262d" stroke="#30363d"/>
+    <text x="437" y="437" text-anchor="middle">Disk cache</text>
+    <rect x="552" y="404" width="206" height="52" rx="26" fill="#21262d" stroke="#30363d"/>
+    <text x="655" y="437" text-anchor="middle">Range resume</text>
+    <rect x="778" y="404" width="216" height="52" rx="26" fill="#21262d" stroke="#30363d"/>
+    <text x="886" y="437" text-anchor="middle">Docker ready</text>
+  </g>
+
+  <text x="98" y="548" font-size="24" fill="#6e7681">github.com/yufeng8/gh-mirror</text>
+</svg>
