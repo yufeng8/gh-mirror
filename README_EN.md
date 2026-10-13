@@ -4,7 +4,10 @@
   </a>
 </p>
 
-# gh-mirror
+<h1 align="center">
+  <img src="logo.svg" width="40" alt="logo">
+  gh-mirror
+</h1>
 
 > Self-hosted GitHub resource mirror / acceleration proxy · Token auth · Web admin dashboard · Fully private deployment
 

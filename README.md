@@ -4,7 +4,10 @@
   </a>
 </p>
 
-# gh-mirror
+<h1 align="center">
+  <img src="logo.svg" width="40" alt="logo">
+  gh-mirror
+</h1>
 
 > 自托管的 GitHub 资源镜像加速服务 · Token 鉴权 · Web 管理后台 · 完全私有化部署
 > Self-hosted GitHub mirror / raw / release acceleration proxy with token auth and admin dashboard
