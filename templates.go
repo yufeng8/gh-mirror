@@ -1,9 +1,6 @@
 package main
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 // repoURL 是本项目在 GitHub 上的地址，用于首页 Stars / Fork 引导与页脚。
 const repoURL = "https://github.com/yufeng8/gh-mirror"
