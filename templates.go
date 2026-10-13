@@ -3,7 +3,7 @@ package main
 import "fmt"
 
 // repoURL 是本项目在 GitHub 上的地址，用于首页 Stars / Fork 引导与页脚。
-const repoURL = "https://github.com/zzidcn/gh-mirror"
+const repoURL = "https://github.com/yufeng8/gh-mirror"
 
 // logoSVG 是项目 Logo（内联 SVG，便于首页零额外请求渲染，契合私有化部署）。
 const logoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="gh-mirror logo">

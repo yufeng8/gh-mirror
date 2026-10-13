@@ -5,12 +5,12 @@
 > 自托管的 GitHub 资源镜像加速服务 · Token 鉴权 · Web 管理后台 · 完全私有化部署
 > Self-hosted GitHub mirror / raw / release acceleration proxy with token auth and admin dashboard
 
-[![Release](https://img.shields.io/github/v/release/zzidcn/gh-mirror)](https://github.com/zzidcn/gh-mirror/releases)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fzzidcn%2Fgh-mirror-blue?logo=docker&logoColor=white)](https://github.com/zzidcn/gh-mirror/pkgs/container/gh-mirror)
-[![docker workflow](https://github.com/zzidcn/gh-mirror/actions/workflows/docker.yml/badge.svg)](https://github.com/zzidcn/gh-mirror/actions/workflows/docker.yml)
-[![build](https://github.com/zzidcn/gh-mirror/actions/workflows/build.yml/badge.svg)](https://github.com/zzidcn/gh-mirror/actions/workflows/build.yml)
-[![License](https://img.shields.io/github/license/zzidcn/gh-mirror)](./LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/zzidcn/gh-mirror?style=social)](https://github.com/zzidcn/gh-mirror/stargazers)
+[![Release](https://img.shields.io/github/v/release/yufeng8/gh-mirror)](https://github.com/yufeng8/gh-mirror/releases)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fyufeng8%2Fgh-mirror-blue?logo=docker&logoColor=white)](https://github.com/yufeng8/gh-mirror/pkgs/container/gh-mirror)
+[![docker workflow](https://github.com/yufeng8/gh-mirror/actions/workflows/docker.yml/badge.svg)](https://github.com/yufeng8/gh-mirror/actions/workflows/docker.yml)
+[![build](https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml/badge.svg)](https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml)
+[![License](https://img.shields.io/github/license/yufeng8/gh-mirror)](./LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/yufeng8/gh-mirror?style=social)](https://github.com/yufeng8/gh-mirror/stargazers)
 
 **gh-mirror** 是一个开源的、可完全私有化部署的 **GitHub 资源镜像加速服务**。在域名后拼接 `/g/<token>/` + 完整 GitHub 地址即可加速下载，浏览器与命令行（curl/wget）通用；后端为 Go 标准库实现的流式反向代理，自带磁盘缓存与 `Range` 断点续传，并内置 Web 管理后台与 Token 鉴权。
 
@@ -128,11 +128,11 @@ sudo bash deploy.sh
 
 ```bash
 # 交互式（会询问域名 / 邮箱 / 密码）
-bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)
 
 # 非交互 / 一行搞定
 DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
-  bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
+  bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)
 ```
 
 可选环境变量：
@@ -143,19 +143,19 @@ DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
 | `VERSION` | 原生模式指定版本标签（如 `v1.0.0`），默认取最新；Docker 模式指定镜像标签（默认 `latest`），`DOCKER_BUILD=1` 时则为源码分支/标签（默认 `main`） |
 | `DOCKER_BUILD` | 仅 Docker 模式：设为 `1` 时从 GitHub 源码现场构建镜像（而非拉取 GHCR 现成镜像） |
 | `GITHUB_TOKEN` | **私有仓库必填**：具备 `repo`(读) + `read:packages` 权限的 PAT，用于拉取脚本/Release、登录 GHCR 拉取私有镜像 |
-| `GHCR_USER` | GHCR 登录用户名（默认 `zzidcn`），填与 `GITHUB_TOKEN` 对应账号一致即可 |
+| `GHCR_USER` | GHCR 登录用户名（默认 `yufeng8`），填与 `GITHUB_TOKEN` 对应账号一致即可 |
 | `GH_PROXY` | 下载加速前缀（如 `https://ghproxy.com/`），国内服务器可用 |
 | `SKIP_NGINX=1` | 只装服务、不配置 nginx/TLS（自行反代时） |
 | `ADMIN_USER` / `ADMIN_PATH` | 自定义后台账号 / 路径 |
 
 脚本流程（原生模式）：检测架构 → 下载 `gh-mirror-linux-<arch>` → 建用户/目录 → 写 `/etc/gh-mirror.env` → 注册 systemd 服务 →（默认）装 nginx + 申请证书 + 放通防火墙 → 配置缓存定时清理 → 自检。
 
-> **私有仓库 / 私有 Fork 场景**：官方仓库 `zzidcn/gh-mirror` 本身是**公开**的，上面的 `curl ... | bash` 一行安装即可直接使用，无需任何 Token。
+> **私有仓库 / 私有 Fork 场景**：官方仓库 `yufeng8/gh-mirror` 本身是**公开**的，上面的 `curl ... | bash` 一行安装即可直接使用，无需任何 Token。
 > 若你将本项目 **fork 到私有仓库**后部署，则 `raw.githubusercontent.com` 与 Release 都需要鉴权，请改用以下带令牌的方式（令牌会留在服务器上，请确保 PAT 仅授予必要权限）：
 >
 > ```bash
 > GITHUB_TOKEN=ghp_xxx bash -c "$(curl -fsSL -H \"Authorization: Bearer $GITHUB_TOKEN\" \
->   https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)"
+>   https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)"
 > ```
 >
 > 该命令用令牌拉取脚本并以相同令牌运行；脚本内部会：带 `Authorization` 头查询/下载 Release（原生模式）、用 `docker login ghcr.io` 登录拉取私有镜像（Docker 模式）。
@@ -172,13 +172,13 @@ DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
 
 ```bash
 MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
-  bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
+  bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)
 ```
 
 ### 卸载
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/uninstall.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/uninstall.sh)
 # 连数据(token/缓存/用户)一起删: 加 --purge；跳过确认: 加 -y
 ```
 
@@ -187,21 +187,21 @@ bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/uninst
 仓库已配置 GitHub Actions（`.github/workflows/docker.yml`）：推送 `main` 自动打 `latest`，打 `v*` 标签（如 `v1.0.0`）自动打同名标签，并推送**多架构镜像（amd64/arm64）**到 GitHub Container Registry：
 
 ```
-ghcr.io/zzidcn/gh-mirror:latest
-ghcr.io/zzidcn/gh-mirror:v1.0.0
+ghcr.io/yufeng8/gh-mirror:latest
+ghcr.io/yufeng8/gh-mirror:v1.0.0
 ```
 
 镜像在每次构建后会被 **CI 自动设为 Public**（见 `docker.yml` 末尾的「Set package visibility to public」步骤），因此匿名服务器可直接拉取，无需登录：
 
 ```bash
-docker pull ghcr.io/zzidcn/gh-mirror:latest
+docker pull ghcr.io/yufeng8/gh-mirror:latest
 ```
 
 `install.sh` 的 `MODE=docker` **默认直接拉取该公开镜像**，无需在服务器上编译源码：
 
 ```bash
 MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='xxx' \
-  bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
+  bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)
 # 指定版本: MODE=docker VERSION=v1.0.0 ...
 # 改用源码现场构建(兜底): MODE=docker DOCKER_BUILD=1 ...
 ```
@@ -316,9 +316,9 @@ MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='xxx' \
 
 如果这个项目帮你省下了时间、或解决了实际的下载痛点，欢迎在 GitHub 上支持一下：
 
-- ⭐ **点个 Star**：<https://github.com/zzidcn/gh-mirror> —— 让更多人能通过搜索发现它，也是对作者持续维护的动力。
-- 🍴 **Fork 一份**：<https://github.com/zzidcn/gh-mirror/fork> —— 想加功能、改界面、适配内网，全都可以从 Fork 开始。
-- 🐛 **提 Issue / PR**：发现问题或好点子，欢迎到 <https://github.com/zzidcn/gh-mirror/issues> 交流。
+- ⭐ **点个 Star**：<https://github.com/yufeng8/gh-mirror> —— 让更多人能通过搜索发现它，也是对作者持续维护的动力。
+- 🍴 **Fork 一份**：<https://github.com/yufeng8/gh-mirror/fork> —— 想加功能、改界面、适配内网，全都可以从 Fork 开始。
+- 🐛 **提 Issue / PR**：发现问题或好点子，欢迎到 <https://github.com/yufeng8/gh-mirror/issues> 交流。
 
 > 小提示：在部署好的首页（`/`）底部也放了「Star on GitHub」按钮，方便随时回来点星。
 

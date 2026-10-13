@@ -3,19 +3,19 @@
 # gh-mirror 一键安装脚本（从 GitHub Release / 源码 拉取，支持原生与 Docker）
 #
 # 用法（公开仓库，远程服务器上一行执行）:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)
 #
 # 私有仓库：需带 GITHUB_TOKEN（具备 repo 读 + read:packages 权限的 PAT）：
 #   GITHUB_TOKEN=ghp_xxx bash -c "$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
-#     https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)"
+#     https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)"
 #
 # 非交互 / 一行搞定（原生模式）:
 #   DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
-#     bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
+#     bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)
 #
 # Docker 模式（默认从 GHCR 拉取现成镜像；加 DOCKER_BUILD=1 可改为从 GitHub 源码现场构建）:
 #   MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
-#     bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
+#     bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)
 #   指定镜像标签:       MODE=docker VERSION=v1.0.0 ...
 #   改用源码现场构建镜像: MODE=docker DOCKER_BUILD=1 ...
 #
@@ -25,14 +25,14 @@
 #                Docker 模式: 指定镜像标签(默认 latest)；若 DOCKER_BUILD=1 则为源码引用(分支/标签，默认 main)
 #   DOCKER_BUILD 仅 Docker 模式: 设为 1 时从 GitHub 源码构建镜像（而非拉取 GHCR 现成镜像）
 #   GITHUB_TOKEN 私有仓库必填: 具备 repo(读) + read:packages 权限的 PAT，用于拉取脚本/Release/登录 GHCR
-#   GHCR_USER    GHCR 登录用户名（默认 zzidcn），填与 GITHUB_TOKEN 对应账号一致即可
+#   GHCR_USER    GHCR 登录用户名（默认 yufeng8），填与 GITHUB_TOKEN 对应账号一致即可
 #   GH_PROXY     下载加速前缀，例如 https://ghproxy.com/（原生二进制下载用，国内服务器可用）
 #   SKIP_NGINX=1 跳过 nginx + TLS 配置，只安装服务（自行反代时）
 #   ADMIN_USER / ADMIN_PATH  如需自定义后台账号/路径
 #
 set -euo pipefail
 
-REPO="zzidcn/gh-mirror"
+REPO="yufeng8/gh-mirror"
 APP_USER="ghmirror"
 APP_DIR="/opt/gh-mirror"
 CACHE_DIR="/var/cache/gh-mirror"
@@ -58,7 +58,7 @@ case "${MODE}" in
 esac
 DOCKER_BUILD="${DOCKER_BUILD:-0}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
-GHCR_USER="${GHCR_USER:-zzidcn}"
+GHCR_USER="${GHCR_USER:-yufeng8}"
 
 # GitHub 鉴权封装：有 GITHUB_TOKEN 时自动带 Authorization 头
 gh_curl() {
