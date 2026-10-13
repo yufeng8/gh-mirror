@@ -1,0 +1,7 @@
+/cache/
+/github-mirror
+*.tmp
+*.meta
+tokens.json
+*.exe
+*.env
