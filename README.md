@@ -1,17 +1,42 @@
 # github-mirror — GitHub 资源镜像加速服务（带 Token 鉴权与管理后台）
 
+> 自托管 GitHub 镜像加速 · GitHub raw / release / archive 下载加速 · 反向代理 + Token 鉴权 + Web 管理后台
+> Self-hosted GitHub mirror / raw / release acceleration proxy with token auth and admin dashboard
+
 [![Release](https://img.shields.io/github/v/release/zzidcn/github-mirror)](https://github.com/zzidcn/github-mirror/releases)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fzzidcn%2Fgithub-mirror-blue?logo=docker&logoColor=white)](https://github.com/zzidcn/github-mirror/pkgs/container/github-mirror)
 [![docker workflow](https://github.com/zzidcn/github-mirror/actions/workflows/docker.yml/badge.svg)](https://github.com/zzidcn/github-mirror/actions/workflows/docker.yml)
 [![build](https://github.com/zzidcn/github-mirror/actions/workflows/build.yml/badge.svg)](https://github.com/zzidcn/github-mirror/actions/workflows/build.yml)
 
-> 本项目是一个 GitHub 资源镜像加速服务的开源实现（文档示例部署域名为 `mirror.example.com`，请替换为你自己的域名）。
-
+本项目是一个 **GitHub 资源镜像加速服务**的开源实现（文档示例部署域名为 `mirror.example.com`，请替换为你自己的域名）。
 在域名后拼接 **`/g/<token>/` + 完整 GitHub 地址** 即可加速下载，浏览器与命令行（curl/wget）通用。
 后端用 Go 标准库实现的流式反向代理，自带磁盘缓存与 `Range` 断点续传，并内置 Web 管理后台与 Token 鉴权。
 
 > 适用前提：服务器需能顺畅访问 GitHub。
 > 若服务器在国内且直连 GitHub 很慢，纯自建代理无意义；此时只能依赖 jsDelivr 等上游（功能受限）。
+
+## 核心特性（Features）
+
+- **全场景加速**：覆盖仓库文件（blob/raw）、Raw 文件、Releases 二进制、仓库打包（archive）、以及短链（`gh/...`）。
+- **Token 鉴权**：所有代理请求必须携带后台下发的有效 Token，无效请求一律返回 404，避免被当作开放代理滥用。
+- **Web 管理后台**：可视化查看 / 新增 / 删除 Token，并直接给出该实例的代理示例地址。
+- **流式反向代理 + 磁盘缓存 + Range 断点续传**：基于 Go 标准库实现，性能与原生部署基本持平。
+- **一键部署**：原生（`native`）/ Docker 两种模式，`deploy.sh` 与 `install.sh` 开箱即用。
+- **多架构 Docker 镜像**：自动构建并发布到 GitHub Container Registry（amd64 / arm64），且 **CI 自动设为 Public**，匿名 `docker pull` 即用。
+
+## 目录（Table of Contents）
+
+- [访问规则](#访问规则核心变更)
+- [管理后台](#管理后台)
+- [关于 jsDelivr `gh`](#关于-jsdelivr-gh)
+- [本地构建](#本地构建)
+- [一键部署（Ubuntu 24.04）](#一键部署ubuntu-2404)
+- [一键安装（从 GitHub Release）](#一键安装从-github-release无需源码)
+- [Docker 镜像（GHCR 自动构建）](#docker-镜像ghcr-自动构建)
+- [手动部署](#手动部署ubuntu-2404)
+- [缓存清理](#缓存清理)
+- [环境变量](#环境变量)
+- [安全说明](#安全说明)
 
 ## 访问规则（核心变更）
 
@@ -110,10 +135,11 @@ DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
 
 脚本流程（原生模式）：检测架构 → 下载 `github-mirror-linux-<arch>` → 建用户/目录 → 写 `/etc/github-mirror.env` → 注册 systemd 服务 →（默认）装 nginx + 申请证书 + 放通防火墙 → 配置缓存定时清理 → 自检。
 
-> **私有仓库**：公开仓库可直接用上面的 `curl ... | bash` 一行安装；若仓库为私有，`raw.githubusercontent.com` 与 Release 都需要鉴权，请改用以下带令牌的方式（令牌会留在服务器上，请确保 PAT 仅授予必要权限）：
+> **私有仓库 / 私有 Fork 场景**：官方仓库 `zzidcn/github-mirror` 本身是**公开**的，上面的 `curl ... | bash` 一行安装即可直接使用，无需任何 Token。
+> 若你将本项目 **fork 到私有仓库**后部署，则 `raw.githubusercontent.com` 与 Release 都需要鉴权，请改用以下带令牌的方式（令牌会留在服务器上，请确保 PAT 仅授予必要权限）：
 >
 > ```bash
-> GITHUB_TOKEN=ghp_xxx bash -c "$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+> GITHUB_TOKEN=ghp_xxx bash -c "$(curl -fsSL -H \"Authorization: Bearer $GITHUB_TOKEN\" \
 >   https://raw.githubusercontent.com/zzidcn/github-mirror/main/install.sh)"
 > ```
 >
@@ -150,7 +176,13 @@ ghcr.io/zzidcn/github-mirror:latest
 ghcr.io/zzidcn/github-mirror:v1.0.0
 ```
 
-`install.sh` 的 `MODE=docker` **默认直接拉取该镜像**，无需在服务器上编译源码：
+镜像在每次构建后会被 **CI 自动设为 Public**（见 `docker.yml` 末尾的「Set package visibility to public」步骤），因此匿名服务器可直接拉取，无需登录：
+
+```bash
+docker pull ghcr.io/zzidcn/github-mirror:latest
+```
+
+`install.sh` 的 `MODE=docker` **默认直接拉取该公开镜像**，无需在服务器上编译源码：
 
 ```bash
 MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='xxx' \
@@ -159,9 +191,7 @@ MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='xxx' \
 # 改用源码现场构建(兜底): MODE=docker DOCKER_BUILD=1 ...
 ```
 
-> 注意：GHCR 镜像默认随仓库**私有**，匿名服务器 `docker pull` 会 401。需把该 Package 设为 **Public**：
-> 仓库页面 → Packages → 对应包 → Package settings → Change visibility → Public；
-> 或用 CLI：`gh api --method PATCH "user/packages/container/github-mirror/visibility" -f visibility=public`。
+> 备注：若你 **fork 到私有仓库**自行构建，CI 默认不会公开 Package；此时需到 Packages 设置手动改为 Public，或用 `gh api --method PATCH "user/packages/container/<你的包名>/visibility" -f visibility=public`（需 `write:packages` 权限的 PAT）。
 
 ## 手动部署（Ubuntu 24.04）
 
