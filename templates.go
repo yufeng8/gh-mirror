@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // repoURL 是本项目在 GitHub 上的地址，用于首页 Stars / Fork 引导与页脚。
 const repoURL = "https://github.com/yufeng8/gh-mirror"
@@ -122,7 +125,7 @@ func page(title, desc, body string) string {
 
 // homeHTML 生成首页；host 取请求的实际域名，避免把示例域名写死。
 func homeHTML(host string) string {
-	body := fmt.Sprintf(homeTmpl, host, host)
+	body := strings.ReplaceAll(homeTmpl, "{{HOST}}", host)
 	return page("gh-mirror · GitHub 资源镜像加速", "自托管的 GitHub 资源镜像加速服务，支持 Token 鉴权与管理后台，完全私有化部署，一键原生/Docker 部署。", body)
 }
 
@@ -166,9 +169,9 @@ const homeTmpl = `
   <h2>🚀 使用方式</h2>
   <div class="card">
     <p>在域名后拼接 <code>/g/&lt;token&gt;/</code> 再加上<strong>完整 GitHub 地址</strong>：</p>
-    <p><code>%s/g/&lt;token&gt;/https://github.com/owner/repo/blob/main/path/file.txt</code></p>
+    <p><code>{{HOST}}/g/&lt;token&gt;/https://github.com/owner/repo/blob/main/path/file.txt</code></p>
     <p class="muted">Raw 文件、Releases、archive、短链 gh/ 同理替换后面的 GitHub 地址即可。</p>
-    <pre>curl -L -o app.zip "%s/g/&lt;token&gt;/https://github.com/owner/repo/releases/download/v1.0/app.zip"</pre>
+    <pre>curl -L -o app.zip "{{HOST}}/g/&lt;token&gt;/https://github.com/owner/repo/releases/download/v1.0/app.zip"</pre>
   </div>
 </section>
 
