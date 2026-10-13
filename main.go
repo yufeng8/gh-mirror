@@ -63,7 +63,7 @@ func main() {
 		cookieSecure: cookieSecure,
 	}
 
-	log.Printf("github-mirror 启动 listen=%s adminPath=%s tokens=%d ttl=%dm useJsdelivr=%v",
+	log.Printf("gh-mirror 启动 listen=%s adminPath=%s tokens=%d ttl=%dm useJsdelivr=%v",
 		listen, adminPath, len(store.All()), ttlMin, useJsdelivr)
 	// 定时将内存中的 token 统计落盘，避免每次请求都写文件
 	go func() {
