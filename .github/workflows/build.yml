@@ -1,4 +1,4 @@
-# GitHub Actions：自动交叉编译 github-mirror，并在打 tag 时发布 Release
+# GitHub Actions：自动交叉编译 gh-mirror，并在打 tag 时发布 Release
 name: build
 
 on:
@@ -37,14 +37,14 @@ jobs:
         run: |
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
-          OUT="github-mirror-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}"
+          OUT="gh-mirror-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}"
           go build -o "$OUT" .
           echo "OUT=$OUT" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: github-mirror-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: gh-mirror-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.OUT }}
 
   release:

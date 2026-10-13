@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# github-mirror 一键安装脚本（从 GitHub Release / 源码 拉取，支持原生与 Docker）
+# gh-mirror 一键安装脚本（从 GitHub Release / 源码 拉取，支持原生与 Docker）
 #
 # 用法（公开仓库，远程服务器上一行执行）:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/gh-mirror/main/install.sh)
@@ -34,12 +34,12 @@ set -euo pipefail
 
 REPO="zzidcn/gh-mirror"
 APP_USER="ghmirror"
-APP_DIR="/opt/github-mirror"
-CACHE_DIR="/var/cache/github-mirror"
-TOKENS_DIR="/var/lib/github-mirror"
-SERVICE_NAME="github-mirror"
-ENV_FILE="/etc/github-mirror.env"
-STATE_FILE="/etc/github-mirror.state"
+APP_DIR="/opt/gh-mirror"
+CACHE_DIR="/var/cache/gh-mirror"
+TOKENS_DIR="/var/lib/gh-mirror"
+SERVICE_NAME="gh-mirror"
+ENV_FILE="/etc/gh-mirror.env"
+STATE_FILE="/etc/gh-mirror.state"
 
 # ---------- 参数 ----------
 DOMAIN="${DOMAIN:-}"
@@ -128,7 +128,7 @@ ADMIN_PASS="${ADMIN_PASS:-admin}"
 ADMIN_SECRET="$(openssl rand -hex 32)"
 
 # 记录部署状态，供 uninstall.sh 使用
-mkdir -p /etc/github-mirror
+mkdir -p /etc/gh-mirror
 printf 'MODE=%s\nDOMAIN=%s\n' "${MODE}" "${DOMAIN}" > "${STATE_FILE}"
 
 # ---------- 原生模式安装 ----------
@@ -146,17 +146,17 @@ install_native() {
   fi
   echo "==> 安装版本: ${VERSION}  (架构 linux/${GOARCH})"
 
-  ASSET="github-mirror-linux-${GOARCH}"
+  ASSET="gh-mirror-linux-${GOARCH}"
   URL="${GH_PROXY}https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
   echo "==> 下载 ${URL}"
-  gh_curl -fSL "${URL}" -o "${APP_DIR}/github-mirror"
-  chmod +x "${APP_DIR}/github-mirror"
-  echo "    二进制已就绪: ${APP_DIR}/github-mirror"
+  gh_curl -fSL "${URL}" -o "${APP_DIR}/gh-mirror"
+  chmod +x "${APP_DIR}/gh-mirror"
+  echo "    二进制已就绪: ${APP_DIR}/gh-mirror"
 
   id -u "${APP_USER}" >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin "${APP_USER}"
   mkdir -p "${APP_DIR}" "${CACHE_DIR}" "${TOKENS_DIR}"
 
-  mkdir -p /etc/github-mirror
+  mkdir -p /etc/gh-mirror
   cat > "${ENV_FILE}" <<EOF
 ADMIN_USER=${ADMIN_USER}
 ADMIN_PASS=${ADMIN_PASS}
@@ -184,7 +184,7 @@ User=${APP_USER}
 Group=${APP_USER}
 WorkingDirectory=${APP_DIR}
 EnvironmentFile=${ENV_FILE}
-ExecStart=${APP_DIR}/github-mirror
+ExecStart=${APP_DIR}/gh-mirror
 Restart=on-failure
 RestartSec=3
 
@@ -266,14 +266,14 @@ install_docker() {
     -e ADMIN_PATH="${ADMIN_PATH}" \
     -e ADMIN_SECRET="${ADMIN_SECRET}" \
     -e COOKIE_SECURE="true" \
-    -e TOKENS_FILE=/var/lib/github-mirror/tokens.json \
+    -e TOKENS_FILE=/var/lib/gh-mirror/tokens.json \
     -e LISTEN=127.0.0.1:8080 \
-    -e CACHE_DIR=/var/cache/github-mirror \
+    -e CACHE_DIR=/var/cache/gh-mirror \
     -e CACHE_TTL_MINUTES=1440 \
     -e MAX_CACHE_MB=200 \
     -e UPSTREAM_TIMEOUT=60 \
-    -v "${SERVICE_NAME}-cache:/var/cache/github-mirror" \
-    -v "${SERVICE_NAME}-data:/var/lib/github-mirror" \
+    -v "${SERVICE_NAME}-cache:/var/cache/gh-mirror" \
+    -v "${SERVICE_NAME}-data:/var/lib/gh-mirror" \
     "${IMAGE_REF}"
 
   sleep 2
@@ -288,18 +288,18 @@ install_docker() {
 # ---------- 缓存定时清理 ----------
 setup_cron() {
   if [[ "${MODE}" == "docker" ]]; then
-    cat > /etc/cron.d/github-mirror <<EOF
+    cat > /etc/cron.d/gh-mirror <<EOF
 # GitHub 镜像缓存清理 (Docker 命名卷 ${SERVICE_NAME}-cache)
 10 4 * * * root docker run --rm -v ${SERVICE_NAME}-cache:/cache busybox:latest find /cache -type f -mtime +7 -delete
 EOF
   else
-    cat > /etc/cron.d/github-mirror <<EOF
+    cat > /etc/cron.d/gh-mirror <<EOF
 # GitHub 镜像缓存清理（保留 7 天，临时文件 1 天）
 10 4 * * * root find ${CACHE_DIR} -type f -mtime +7 -delete
 10 4 * * * root find ${CACHE_DIR} -type f -name '*.tmp' -mtime +1 -delete
 EOF
   fi
-  chmod 0644 /etc/cron.d/github-mirror
+  chmod 0644 /etc/cron.d/gh-mirror
   systemctl enable --now cron 2>/dev/null || service cron start 2>/dev/null || true
 }
 

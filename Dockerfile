@@ -5,9 +5,9 @@ ARG GOARCH=
 WORKDIR /src
 COPY go.mod ./
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux ${GOARCH:+GOARCH=$GOARCH} go build -o /out/github-mirror .
+RUN CGO_ENABLED=0 GOOS=linux ${GOARCH:+GOARCH=$GOARCH} go build -o /out/gh-mirror .
 
 FROM gcr.io/distroless/static-debian12
-COPY --from=build /out/github-mirror /github-mirror
+COPY --from=build /out/gh-mirror /gh-mirror
 EXPOSE 8080
-ENTRYPOINT ["/github-mirror"]
+ENTRYPOINT ["/gh-mirror"]

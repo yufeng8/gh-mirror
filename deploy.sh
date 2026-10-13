@@ -9,10 +9,10 @@ set -euo pipefail
 # ---------- 可配置项 ----------
 DEFAULT_DOMAIN="mirror.example.com"
 APP_USER="ghmirror"
-APP_DIR="/opt/github-mirror"
-CACHE_DIR="/var/cache/github-mirror"
-TOKENS_DIR="/var/lib/github-mirror"
-SERVICE_NAME="github-mirror"
+APP_DIR="/opt/gh-mirror"
+CACHE_DIR="/var/cache/gh-mirror"
+TOKENS_DIR="/var/lib/gh-mirror"
+SERVICE_NAME="gh-mirror"
 GO_VERSION="1.22.5"
 
 # ---------- 交互读取参数 ----------
@@ -42,8 +42,8 @@ COOKIE_SECURE="true"
 TOKENS_FILE="${TOKENS_DIR}/tokens.json"
 
 # 写入环境文件（systemd 加载 / 调试参考）
-mkdir -p /etc/github-mirror
-cat > /etc/github-mirror.env <<EOF
+mkdir -p /etc/gh-mirror
+cat > /etc/gh-mirror.env <<EOF
 ADMIN_USER=${ADMIN_USER}
 ADMIN_PASS=${ADMIN_PASS}
 ADMIN_PATH=${ADMIN_PATH}
@@ -56,8 +56,8 @@ CACHE_TTL_MINUTES=1440
 MAX_CACHE_MB=200
 UPSTREAM_TIMEOUT=60
 EOF
-chmod 0600 /etc/github-mirror.env
-echo "==> 管理员账号: ${ADMIN_USER}  密码: ${ADMIN_PASS}  (已写入 /etc/github-mirror.env)"
+chmod 0600 /etc/gh-mirror.env
+echo "==> 管理员账号: ${ADMIN_USER}  密码: ${ADMIN_PASS}  (已写入 /etc/gh-mirror.env)"
 
 echo "==> 部署参数: 域名=${DOMAIN}  方式=${MODE}"
 
@@ -105,18 +105,18 @@ if [[ "${MODE}" == "native" ]]; then
   echo "==> [native] 编译"
   cd "${SCRIPT_DIR}"
   export GOOS=linux GOARCH="${GOARCH}" CGO_ENABLED=0
-  go build -o github-mirror .
+  go build -o gh-mirror .
 
   echo "==> [native] 创建用户与目录"
   id -u "${APP_USER}" >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin "${APP_USER}"
   mkdir -p "${APP_DIR}" "${CACHE_DIR}" "${TOKENS_DIR}"
-  cp -f github-mirror "${APP_DIR}/github-mirror"
-  chmod +x "${APP_DIR}/github-mirror"
+  cp -f gh-mirror "${APP_DIR}/gh-mirror"
+  chmod +x "${APP_DIR}/gh-mirror"
   chown -R "${APP_USER}:${APP_USER}" "${CACHE_DIR}" "${TOKENS_DIR}"
   chown -R root:root "${APP_DIR}"
 
   echo "==> [native] 安装 systemd 服务"
-  cp -f github-mirror.service "/etc/systemd/system/${SERVICE_NAME}.service"
+  cp -f gh-mirror.service "/etc/systemd/system/${SERVICE_NAME}.service"
   systemctl daemon-reload
   systemctl enable --now "${SERVICE_NAME}"
   sleep 1
@@ -148,14 +148,14 @@ elif [[ "${MODE}" == "docker" ]]; then
     -e ADMIN_PATH="${ADMIN_PATH}" \
     -e ADMIN_SECRET="${ADMIN_SECRET}" \
     -e COOKIE_SECURE="${COOKIE_SECURE}" \
-    -e TOKENS_FILE=/var/lib/github-mirror/tokens.json \
+    -e TOKENS_FILE=/var/lib/gh-mirror/tokens.json \
     -e LISTEN=127.0.0.1:8080 \
-    -e CACHE_DIR=/var/cache/github-mirror \
+    -e CACHE_DIR=/var/cache/gh-mirror \
     -e CACHE_TTL_MINUTES=1440 \
     -e MAX_CACHE_MB=200 \
     -e UPSTREAM_TIMEOUT=60 \
-    -v "${SERVICE_NAME}-cache:/var/cache/github-mirror" \
-    -v "${SERVICE_NAME}-data:/var/lib/github-mirror" \
+    -v "${SERVICE_NAME}-cache:/var/cache/gh-mirror" \
+    -v "${SERVICE_NAME}-data:/var/lib/gh-mirror" \
     "${SERVICE_NAME}"
 
   sleep 2
@@ -168,7 +168,7 @@ fi
 
 # ---------- 配置缓存自动清理 (两种模式均写入 /etc/cron.d，每天 04:10 清理 7 天前的缓存) ----------
 echo "==> 配置缓存定时清理"
-CRON_FILE="/etc/cron.d/github-mirror"
+CRON_FILE="/etc/cron.d/gh-mirror"
 if [[ "${MODE}" == "docker" ]]; then
   cat > "${CRON_FILE}" <<EOF
 # GitHub 镜像缓存清理 (Docker 命名卷 ${SERVICE_NAME}-cache)
@@ -186,7 +186,7 @@ systemctl enable --now cron 2>/dev/null || service cron start 2>/dev/null || tru
 
 # ---------- 安装 nginx 配置 (两种模式共用，均反代 127.0.0.1:8080) ----------
 echo "==> 配置 nginx"
-cp -f nginx/github-mirror.conf "/etc/nginx/sites-available/${DOMAIN}.conf"
+cp -f nginx/gh-mirror.conf "/etc/nginx/sites-available/${DOMAIN}.conf"
 sed -i "s/server_name _;/server_name ${DOMAIN};/" "/etc/nginx/sites-available/${DOMAIN}.conf"
 ln -sf "/etc/nginx/sites-available/${DOMAIN}.conf" "/etc/nginx/sites-enabled/${DOMAIN}.conf"
 rm -f /etc/nginx/sites-enabled/default
