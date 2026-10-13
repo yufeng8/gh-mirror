@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: ❓ 提问 / 讨论
+    url: https://github.com/yufeng8/gh-mirror/discussions
+    about: 有使用疑问、部署踩坑或功能交流，请优先去 Discussions
+  - name: 📖 部署文档
+    url: https://github.com/yufeng8/gh-mirror#gh-mirror
+    about: 查看 README 获取部署、配置与使用说明

@@ -5,8 +5,12 @@
 > 自托管的 GitHub 资源镜像加速服务 · Token 鉴权 · Web 管理后台 · 完全私有化部署
 > Self-hosted GitHub mirror / raw / release acceleration proxy with token auth and admin dashboard
 
+<p align="center">
+  <a href="README_EN.md">English</a> | <strong>中文</strong>
+</p>
+
 [![Release](https://img.shields.io/github/v/release/yufeng8/gh-mirror)](https://github.com/yufeng8/gh-mirror/releases)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fyufeng8%2Fgh-mirror-blue?logo=docker&logoColor=white)](https://github.com/yufeng8/gh-mirror/pkgs/container/gh-mirror)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker&logoColor=white)](https://github.com/yufeng8/gh-mirror/pkgs/container/gh-mirror)
 [![docker workflow](https://github.com/yufeng8/gh-mirror/actions/workflows/docker.yml/badge.svg)](https://github.com/yufeng8/gh-mirror/actions/workflows/docker.yml)
 [![build](https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml/badge.svg)](https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml)
 [![License](https://img.shields.io/github/license/yufeng8/gh-mirror)](./LICENSE)
