@@ -1,4 +1,4 @@
-![github-mirror](logo.svg)
+![gh-mirror](logo.svg)
 
 # gh-mirror
 
@@ -12,7 +12,7 @@
 [![License](https://img.shields.io/github/license/zzidcn/gh-mirror)](./LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/zzidcn/gh-mirror?style=social)](https://github.com/zzidcn/gh-mirror/stargazers)
 
-**github-mirror** 是一个开源的、可完全私有化部署的 **GitHub 资源镜像加速服务**。在域名后拼接 `/g/<token>/` + 完整 GitHub 地址即可加速下载，浏览器与命令行（curl/wget）通用；后端为 Go 标准库实现的流式反向代理，自带磁盘缓存与 `Range` 断点续传，并内置 Web 管理后台与 Token 鉴权。
+**gh-mirror** 是一个开源的、可完全私有化部署的 **GitHub 资源镜像加速服务**。在域名后拼接 `/g/<token>/` + 完整 GitHub 地址即可加速下载，浏览器与命令行（curl/wget）通用；后端为 Go 标准库实现的流式反向代理，自带磁盘缓存与 `Range` 断点续传，并内置 Web 管理后台与 Token 鉴权。
 
 > 文档示例部署域名为 `mirror.example.com`，请替换为你自己的域名。
 
@@ -81,7 +81,7 @@ curl -L -o app.zip "https://mirror.example.com/g/<token>/https://github.com/owne
 ## 管理后台
 
 - 默认路径 `/admin`（可用环境变量 `ADMIN_PATH` 自定义）。
-- 默认账号 / 密码：`admin` / `admin`（部署时可设置，密钥与凭据写入 `/etc/github-mirror.env`）。
+- 默认账号 / 密码：`admin` / `admin`（部署时可设置，密钥与凭据写入 `/etc/gh-mirror.env`）。
 - 登录后凭**签名 Session Cookie**（HMAC 校验 + 7 天过期）保持会话。
 - 后台能力：
   - 查看 / 新增 / 删除 Token（新增时可留空 token 自动生成随机值，并填写备注）。
@@ -101,7 +101,7 @@ curl -L -o app.zip "https://mirror.example.com/g/<token>/https://github.com/owne
 # 在 Windows 上交叉编译到 Linux（目标架构如 arm64 / amd64）
 set GOOS=linux
 set GOARCH=arm64
-go build -o github-mirror .
+go build -o gh-mirror .
 ```
 
 ## 一键部署（Ubuntu 24.04）
@@ -148,7 +148,7 @@ DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
 | `SKIP_NGINX=1` | 只装服务、不配置 nginx/TLS（自行反代时） |
 | `ADMIN_USER` / `ADMIN_PATH` | 自定义后台账号 / 路径 |
 
-脚本流程（原生模式）：检测架构 → 下载 `github-mirror-linux-<arch>` → 建用户/目录 → 写 `/etc/github-mirror.env` → 注册 systemd 服务 →（默认）装 nginx + 申请证书 + 放通防火墙 → 配置缓存定时清理 → 自检。
+脚本流程（原生模式）：检测架构 → 下载 `gh-mirror-linux-<arch>` → 建用户/目录 → 写 `/etc/gh-mirror.env` → 注册 systemd 服务 →（默认）装 nginx + 申请证书 + 放通防火墙 → 配置缓存定时清理 → 自检。
 
 > **私有仓库 / 私有 Fork 场景**：官方仓库 `zzidcn/gh-mirror` 本身是**公开**的，上面的 `curl ... | bash` 一行安装即可直接使用，无需任何 Token。
 > 若你将本项目 **fork 到私有仓库**后部署，则 `raw.githubusercontent.com` 与 Release 都需要鉴权，请改用以下带令牌的方式（令牌会留在服务器上，请确保 PAT 仅授予必要权限）：
@@ -215,42 +215,42 @@ MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='xxx' \
 2. **准备目录与用户**：
    ```bash
    sudo useradd -r -s /usr/sbin/nologin ghmirror
-   sudo mkdir -p /opt/github-mirror /var/cache/github-mirror /var/lib/github-mirror
-   sudo chown -R ghmirror:ghmirror /var/cache/github-mirror /var/lib/github-mirror
+   sudo mkdir -p /opt/gh-mirror /var/cache/gh-mirror /var/lib/gh-mirror
+   sudo chown -R ghmirror:ghmirror /var/cache/gh-mirror /var/lib/gh-mirror
    ```
 
-3. **上传二进制**：把 `github-mirror` 传到 `/opt/github-mirror/github-mirror` 并 `chmod +x`，属主 `ghmirror`。
+3. **上传二进制**：把 `gh-mirror` 传到 `/opt/gh-mirror/gh-mirror` 并 `chmod +x`，属主 `ghmirror`。
 
-4. **写入配置**（`/etc/github-mirror.env`，权限 600）：
+4. **写入配置**（`/etc/gh-mirror.env`，权限 600）：
    ```bash
-   sudo tee /etc/github-mirror.env >/dev/null <<'EOF'
+   sudo tee /etc/gh-mirror.env >/dev/null <<'EOF'
    ADMIN_USER=admin
    ADMIN_PASS=admin
    ADMIN_PATH=/admin
    ADMIN_SECRET=$(openssl rand -hex 32)
    COOKIE_SECURE=true
-   TOKENS_FILE=/var/lib/github-mirror/tokens.json
+   TOKENS_FILE=/var/lib/gh-mirror/tokens.json
    LISTEN=127.0.0.1:8080
-   CACHE_DIR=/var/cache/github-mirror
+   CACHE_DIR=/var/cache/gh-mirror
    CACHE_TTL_MINUTES=1440
    MAX_CACHE_MB=200
    UPSTREAM_TIMEOUT=60
    EOF
-   sudo chmod 600 /etc/github-mirror.env
+   sudo chmod 600 /etc/gh-mirror.env
    ```
 
 5. **注册服务**：
    ```bash
-   sudo cp github-mirror.service /etc/systemd/system/
+   sudo cp gh-mirror.service /etc/systemd/system/
    sudo systemctl daemon-reload
-   sudo systemctl enable --now github-mirror
-   sudo systemctl status github-mirror
+   sudo systemctl enable --now gh-mirror
+   sudo systemctl status gh-mirror
    ```
 
 6. **nginx**：
    ```bash
-   sudo cp nginx/github-mirror.conf /etc/nginx/sites-available/
-   sudo ln -s /etc/nginx/sites-available/github-mirror.conf /etc/nginx/sites-enabled/
+   sudo cp nginx/gh-mirror.conf /etc/nginx/sites-available/
+   sudo ln -s /etc/nginx/sites-available/gh-mirror.conf /etc/nginx/sites-enabled/
    sudo nginx -t && sudo systemctl reload nginx
    ```
 
@@ -266,10 +266,10 @@ MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='xxx' \
 
 缓存按 TTL（默认 1 天）过期，但文件不会自动删除。`deploy.sh` 会在部署时**自动配置**定时清理：
 
-- 原生模式：写入 `/etc/cron.d/github-mirror`，每天 04:10 删除 `${CACHE_DIR}` 中 7 天前的缓存文件，以及 1 天前的 `.tmp` 残留。
-- 容器模式：同样写入 `/etc/cron.d/github-mirror`，每天 04:10 启动一次性 `busybox` 容器挂载命名卷 `github-mirror-cache` 清理 7 天前的缓存。
+- 原生模式：写入 `/etc/cron.d/gh-mirror`，每天 04:10 删除 `${CACHE_DIR}` 中 7 天前的缓存文件，以及 1 天前的 `.tmp` 残留。
+- 容器模式：同样写入 `/etc/cron.d/gh-mirror`，每天 04:10 启动一次性 `busybox` 容器挂载命名卷 `gh-mirror-cache` 清理 7 天前的缓存。
 
-如需手动调整，直接编辑 `/etc/cron.d/github-mirror` 即可。
+如需手动调整，直接编辑 `/etc/cron.d/gh-mirror` 即可。
 
 ## 环境变量
 

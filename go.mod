@@ -1,3 +1,3 @@
-module github-mirror
+module gh-mirror
 
 go 1.22

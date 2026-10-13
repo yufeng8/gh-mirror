@@ -8,12 +8,12 @@
 - **用量统计**：按 Token 记录访问次数、流量与最近使用时间，持久化到 `tokens.json`
 - **管理后台**：Web 界面增删 Token、查看统计，卡片式精致 UI
 - **智能缓存**：GET 请求带缓存减少回源；并发回源串行化避免惊群
-- **多协议重写**：`raw.githubusercontent.com` / `github.com` / releases / archive 统一经 `github-mirror` 重写
+- **多协议重写**：`raw.githubusercontent.com` / `github.com` / releases / archive 统一经 `gh-mirror` 重写
 - **一键部署**：提供 `deploy.sh`、`Dockerfile`、`systemd` 服务文件与 `nginx` 反代配置
 
 ## 🚀 快速开始
 
-1. 下载对应平台的二进制（`github-mirror-<os>-<arch>`）并放到服务器
+1. 下载对应平台的二进制（`gh-mirror-<os>-<arch>`）并放到服务器
 2. 准备 `tokens.json`（或用管理后台添加），并设置环境变量：
    - `ADMIN_PASS`：后台登录密码
    - `LISTEN`：监听地址（默认 `:8080`）

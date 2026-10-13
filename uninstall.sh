@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# github-mirror 卸载脚本
+# gh-mirror 卸载脚本
 # 用法(本机 root 运行):  bash uninstall.sh
 #   --purge   同时删除数据（tokens.json / 缓存 / 系统用户）
 #   -y/--yes  跳过确认提示
@@ -8,12 +8,12 @@
 set -euo pipefail
 
 APP_USER="ghmirror"
-APP_DIR="/opt/github-mirror"
-CACHE_DIR="/var/cache/github-mirror"
-TOKENS_DIR="/var/lib/github-mirror"
-SERVICE_NAME="github-mirror"
-ENV_FILE="/etc/github-mirror.env"
-STATE_FILE="/etc/github-mirror.state"
+APP_DIR="/opt/gh-mirror"
+CACHE_DIR="/var/cache/gh-mirror"
+TOKENS_DIR="/var/lib/gh-mirror"
+SERVICE_NAME="gh-mirror"
+ENV_FILE="/etc/gh-mirror.env"
+STATE_FILE="/etc/gh-mirror.state"
 
 PURGE=0
 ASSUME_YES=0
@@ -34,7 +34,7 @@ if [[ -f "${STATE_FILE}" ]]; then
 fi
 MODE="${MODE:-native}"
 
-echo "将卸载 github-mirror (模式: ${MODE}${DOMAIN:+, 域名: ${DOMAIN}}${PURGE:+, 含数据删除})"
+echo "将卸载 gh-mirror (模式: ${MODE}${DOMAIN:+, 域名: ${DOMAIN}}${PURGE:+, 含数据删除})"
 if [[ "${ASSUME_YES}" != "1" ]]; then
   read -r -p "确认卸载? [y/N] " ans
   case "$ans" in
@@ -75,7 +75,7 @@ fi
 
 # 4) 定时清理
 echo "==> 移除定时清理"
-rm -f /etc/cron.d/github-mirror
+rm -f /etc/cron.d/gh-mirror
 
 # 5) 程序目录与配置
 echo "==> 移除程序目录与配置"
