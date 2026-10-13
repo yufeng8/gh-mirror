@@ -3,8 +3,8 @@
 # - 推送 main 分支：打上 latest 标签
 # - 打 v* 标签（如 v1.0.0）：打上同名标签，install.sh 的 Docker 模式可直接 docker pull
 #
-# 注意：镜像默认随仓库私有；若要让匿名服务器 `docker pull`，
-#       需把该 Package 设为 Public（见 README「Docker 镜像」一节）。
+# 镜像在推送后会被自动设为 Public（见末尾「Set package visibility to public」步骤），
+# 以便匿名服务器 `docker pull ghcr.io/<owner>/<repo>:latest` 可用。
 name: docker
 
 on:
@@ -55,3 +55,21 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Set package visibility to public
+        # 用 Action 自带的 GITHUB_TOKEN（已授权 packages: write）把 GHCR 包设为 Public，
+        # 使匿名 docker pull 可用。失败不阻断构建（continue-on-error）。
+        if: github.event_name == 'push'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PKG="${GITHUB_REPOSITORY,,}"
+          PKG="${PKG#*/}"
+          echo "Setting GHCR package '${PKG}' visibility to public..."
+          if gh api --method PATCH "user/packages/container/${PKG}/visibility" \
+               -f visibility=public; then
+            echo "OK: package ghcr.io/${GITHUB_REPOSITORY} is now public"
+          else
+            echo "WARN: 通过 GITHUB_TOKEN 设置可见性失败（少数情况下需要带 write:packages 的 PAT，或到 Packages 设置里手动改为 Public）"
+          fi
