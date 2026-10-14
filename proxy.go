@@ -84,10 +84,15 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.serveTarget(sw, r, dest)
+}
+
+// serveTarget 在缓存/并发锁之下回源或返回缓存；GitHub 与 HuggingFace 等 handler 共用。
+func (s *Server) serveTarget(w http.ResponseWriter, r *http.Request, dest *url.URL) {
 	key := cacheKey(r.Method, dest.String())
 	if r.Method == http.MethodGet {
 		if p, meta, hit := s.cache.Get(key); hit {
-			serveCached(sw, r, p, meta)
+			serveCached(w, r, p, meta)
 			return
 		}
 	}
@@ -97,11 +102,11 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	defer lk.Unlock()
 	if r.Method == http.MethodGet {
 		if p, meta, hit := s.cache.Get(key); hit {
-			serveCached(sw, r, p, meta)
+			serveCached(w, r, p, meta)
 			return
 		}
 	}
-	s.fetch(sw, r, dest, key)
+	s.fetch(w, r, dest, key)
 }
 
 // fetch 真正回源并流式返回，成功的完整 GET 响应会顺带写入缓存。
@@ -118,7 +123,7 @@ func (s *Server) fetch(w http.ResponseWriter, r *http.Request, dest *url.URL, ke
 		}
 	}
 	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", "gh-mirror/1.0 (+https://github.com/yufeng8/gh-mirror)")
+		req.Header.Set("User-Agent", "github-mirror/1.0 (+https://github.com/zzidcn/github-mirror)")
 	}
 	// 强制 identity，便于缓存原始字节（不透明压缩）
 	req.Header.Set("Accept-Encoding", "identity")
