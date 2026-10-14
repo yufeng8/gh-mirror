@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -24,6 +26,9 @@ type Server struct {
 	adminPass    string
 	secret       []byte
 	cookieSecure bool
+	limiter      *RateLimiter
+	acl          *AccessController
+	dial         func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 func main() {
@@ -50,6 +55,21 @@ func main() {
 	cache := NewCache(cfg.CacheDir, time.Duration(cfg.CacheTTLMinutes)*time.Minute, cfg.MaxCacheMB)
 	useJsdelivr = cfg.UseJsdelivr
 
+	// P4：访问控制、限流、SOCKS5 出站（默认关闭，由 config.toml 开启）
+	aclCtl := NewAccessController(cfg.ACL.IPAllow, cfg.ACL.IPBlock, cfg.ACL.RepoAllow, cfg.ACL.RepoBlock)
+	var limiter *RateLimiter
+	if cfg.RateLimit.Enabled {
+		limiter = NewRateLimiter(cfg.RateLimit.PeriodSeconds, cfg.RateLimit.Quota)
+	}
+	var dial func(ctx context.Context, network, addr string) (net.Conn, error)
+	if cfg.Upstream.Socks5 != "" {
+		dial = newSocks5Dialer(cfg.Upstream.Socks5).dialContext
+		if tr, ok := dockerClient.Transport.(*http.Transport); ok {
+			tr.DialContext = dial
+		}
+		log.Printf("SOCKS5 出站代理已启用: %s", cfg.Upstream.Socks5)
+	}
+
 	s := &Server{
 		cfg:          cfg,
 		cache:        cache,
@@ -60,6 +80,9 @@ func main() {
 		adminPass:    adminPass,
 		secret:       secret,
 		cookieSecure: cfg.Admin.CookieSecure,
+		limiter:      limiter,
+		acl:          aclCtl,
+		dial:         dial,
 	}
 
 	log.Printf("github-mirror 启动 listen=%s adminPath=%s tokens=%d ttl=%dm useJsdelivr=%v authMode=%s",
@@ -82,13 +105,24 @@ func genSecret() []byte {
 	return []byte(hex.EncodeToString(b))
 }
 
-// handle 是统一入口：首页 / 健康检查 / 管理后台 / Docker 加速 / HuggingFace 加速 / token 代理 / 其余 404。
+// handle 是统一入口：首页 / 健康检查 / 管理后台 / token 代理 / 其余 404。
 // 注意：必须用原始 RequestURI 解析路径，否则 https:// 中的双斜杠会被丢失/重定向。
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	rawURI := r.RequestURI
 	path := rawURI
 	if i := strings.IndexByte(path, '?'); i >= 0 {
 		path = path[:i]
+	}
+	// P4 入口中间件：限流 + IP 访问控制（健康检查/首页/后台豁免）
+	if !(path == "/healthz" || path == "/" || strings.HasPrefix(path, s.adminPath)) {
+		if s.limiter != nil && !s.limiter.Allow(ClientIP(r)) {
+			http.Error(w, "请求频率过快，请稍后重试", http.StatusTooManyRequests)
+			return
+		}
+		if ok, reason := s.acl.CheckIP(ClientIP(r)); !ok {
+			http.Error(w, "访问被拒绝: "+reason, http.StatusForbidden)
+			return
+		}
 	}
 	switch {
 	case path == "/healthz":
