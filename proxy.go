@@ -83,6 +83,10 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(sw, "仅支持 GitHub 相关域名: "+tu.Host, http.StatusForbidden)
 		return
 	}
+	if ok, reason := s.acl.CheckRepo(githubRepoName(tu)); !ok {
+		http.Error(sw, "仓库访问被限制: "+reason, http.StatusForbidden)
+		return
+	}
 
 	s.serveTarget(sw, r, dest)
 }
@@ -107,6 +111,15 @@ func (s *Server) serveTarget(w http.ResponseWriter, r *http.Request, dest *url.U
 		}
 	}
 	s.fetch(w, r, dest, key)
+}
+
+// githubRepoName 从 GitHub URL 提取 owner/repo（用于仓库级 ACL）。
+func githubRepoName(u *url.URL) string {
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) >= 2 {
+		return parts[0] + "/" + parts[1]
+	}
+	return ""
 }
 
 // fetch 真正回源并流式返回，成功的完整 GET 响应会顺带写入缓存。
@@ -136,6 +149,9 @@ func (s *Server) fetch(w http.ResponseWriter, r *http.Request, dest *url.URL, ke
 			}
 			return nil
 		},
+	}
+	if s.dial != nil {
+		client.Transport = transportWithDial(s.dial)
 	}
 
 	resp, err := client.Do(req)

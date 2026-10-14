@@ -19,6 +19,19 @@ func buildHFTarget(rest string) string {
 	return "https://huggingface.co/" + rest
 }
 
+// hfRepoName 提取 owner/repo；完整 URL 形式返回空（跳过仓库级 ACL）。
+func hfRepoName(rest string) string {
+	rest = strings.TrimPrefix(rest, "/")
+	if strings.HasPrefix(rest, "http://") || strings.HasPrefix(rest, "https://") {
+		return ""
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) >= 2 {
+		return parts[0] + "/" + parts[1]
+	}
+	return ""
+}
+
 // handleHF HuggingFace 模型/LFS 加速入口，由 main.handle 在 [hf].enabled=true 时按 /hf/ 前缀分发。
 // 复用与 GitHub 相同的 resolve/rewrite/serveTarget/磁盘缓存/流式管线（域名白名单见 rewrite.go）。
 // token 鉴权模式下沿用 /hf/<token>/... 形式，保持与 GitHub 一致的安全模型。
@@ -48,6 +61,10 @@ func (s *Server) handleHF(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 		rest = rest[idx:]
+	}
+	if ok, reason := s.acl.CheckRepo(hfRepoName(rest)); !ok {
+		http.Error(sw, "仓库访问被限制: "+reason, http.StatusForbidden)
+		return
 	}
 
 	target := buildHFTarget(rest)
