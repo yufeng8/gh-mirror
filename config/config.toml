@@ -1,0 +1,50 @@
+# gh-mirror 统一配置
+# 优先级：环境变量 > 本文件 > 内置默认值（环境变量用于旧版部署脚本兼容）
+
+listen = "127.0.0.1:8080"
+cache_dir = "./cache"
+cache_ttl_minutes = 1440
+max_cache_mb = 200
+upstream_timeout = 60
+use_jsdelivr = false
+tokens_file = "./tokens.json"
+
+[admin]
+path = "/admin"
+user = "admin"
+pass = "admin"
+secret = ""
+cookie_secure = true
+
+[auth]
+# token=强制令牌(默认，向后兼容)；open=开放代理(配合 [acl] 使用)
+mode = "token"
+
+[docker]
+# 是否启用 Docker 镜像加速（Registry API v2 代理），详见 P2
+enabled = false
+upstreams = ["https://registry-1.docker.io"]
+cache_ttl_minutes = 1440
+
+[hf]
+# 是否启用 HuggingFace 模型/LFS 加速，详见 P3
+enabled = false
+cache_ttl_minutes = 1440
+
+[ratelimit]
+# 智能限流：按真实客户端 IP 令牌桶，详见 P4
+enabled = false
+period_seconds = 3600
+quota = 1000
+ipv6_prefix = 64
+
+[acl]
+# 访问控制：IP/仓库 黑白名单（支持通配符），详见 P4
+ip_allow = []
+ip_block = []
+repo_allow = []
+repo_block = []
+
+[upstream]
+# 可选 SOCKS5 出站代理
+socks5 = ""

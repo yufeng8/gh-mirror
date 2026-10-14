@@ -9,10 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github-mirror/config"
 )
 
-// Server 持有缓存、回源超时与管理后台相关配置。
+// Server 持有缓存、回源超时、配置与管理后台相关状态。
 type Server struct {
+	cfg          *config.Config
 	cache        *Cache
 	timeout      time.Duration
 	store        *Store
@@ -24,47 +27,43 @@ type Server struct {
 }
 
 func main() {
-	listen := getenv("LISTEN", "127.0.0.1:8080")
-	cacheDir := getenv("CACHE_DIR", "./cache")
-	ttlMin := getenvInt("CACHE_TTL_MINUTES", 1440)
-	maxMB := getenvInt("MAX_CACHE_MB", 200)
-	timeoutSec := getenvInt("UPSTREAM_TIMEOUT", 60)
+	cfg := config.Load("config.toml")
 
-	adminPath := getenv("ADMIN_PATH", "/admin")
+	adminPath := cfg.Admin.Path
 	if !strings.HasPrefix(adminPath, "/") {
 		adminPath = "/" + adminPath
 	}
 	if adminPath == "/" {
 		adminPath = "/admin"
 	}
-	adminUser := getenv("ADMIN_USER", "admin")
-	adminPass := getenv("ADMIN_PASS", "admin")
-	secretStr := getenv("ADMIN_SECRET", "")
+	adminUser := cfg.Admin.User
+	adminPass := cfg.Admin.Pass
+	secretStr := cfg.Admin.Secret
 	var secret []byte
 	if secretStr == "" {
 		secret = genSecret()
 	} else {
 		secret = []byte(secretStr)
 	}
-	cookieSecure := getenv("COOKIE_SECURE", "true") == "true" || getenv("COOKIE_SECURE", "true") == "1"
 
-	tokensFile := getenv("TOKENS_FILE", "./tokens.json")
-	store := NewStore(tokensFile)
+	store := NewStore(cfg.TokensFile)
+	cache := NewCache(cfg.CacheDir, time.Duration(cfg.CacheTTLMinutes)*time.Minute, cfg.MaxCacheMB)
+	useJsdelivr = cfg.UseJsdelivr
 
-	cache := NewCache(cacheDir, time.Duration(ttlMin)*time.Minute, maxMB)
 	s := &Server{
+		cfg:          cfg,
 		cache:        cache,
-		timeout:      time.Duration(timeoutSec) * time.Second,
+		timeout:      time.Duration(cfg.UpstreamTimeoutSec) * time.Second,
 		store:        store,
 		adminPath:    adminPath,
 		adminUser:    adminUser,
 		adminPass:    adminPass,
 		secret:       secret,
-		cookieSecure: cookieSecure,
+		cookieSecure: cfg.Admin.CookieSecure,
 	}
 
-	log.Printf("gh-mirror 启动 listen=%s adminPath=%s tokens=%d ttl=%dm useJsdelivr=%v",
-		listen, adminPath, len(store.All()), ttlMin, useJsdelivr)
+	log.Printf("github-mirror 启动 listen=%s adminPath=%s tokens=%d ttl=%dm useJsdelivr=%v authMode=%s",
+		cfg.Listen, adminPath, len(store.All()), cfg.CacheTTLMinutes, useJsdelivr, cfg.Auth.Mode)
 	// 定时将内存中的 token 统计落盘，避免每次请求都写文件
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
@@ -73,7 +72,7 @@ func main() {
 		}
 	}()
 	// 直接以处理函数作为 Handler，避免 net/http.ServeMux 对 // 路径做规范化重定向
-	log.Fatal(http.ListenAndServe(listen, http.HandlerFunc(s.handle)))
+	log.Fatal(http.ListenAndServe(cfg.Listen, http.HandlerFunc(s.handle)))
 }
 
 // genSecret 生成随机会话签名密钥。
@@ -117,6 +116,7 @@ func (s *Server) render404(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(notFoundHTML))
 }
 
+// getenv / getenvInt 保留以兼容可能的脚本调用；新代码请统一使用 config 包。
 func getenv(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
