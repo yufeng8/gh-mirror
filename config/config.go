@@ -53,8 +53,8 @@ type HFConfig struct {
 type RateLimitConfig struct {
 	Enabled       bool
 	PeriodSeconds int
-	Quota        int
-	IPv6Prefix   int
+	Quota         int
+	IPv6Prefix    int
 }
 
 type ACLConfig struct {
@@ -136,6 +136,13 @@ func (c *Config) applyEnv() {
 	c.Admin.Secret = getenv("ADMIN_SECRET", c.Admin.Secret)
 	if os.Getenv("COOKIE_SECURE") != "" {
 		c.Admin.CookieSecure = getenvBool("COOKIE_SECURE", c.Admin.CookieSecure)
+	}
+	// 多服务开关与出站代理（便于容器/一键部署直接开启，等价于 config.toml）
+	c.Docker.Enabled = getenvBool("DOCKER_ENABLED", c.Docker.Enabled)
+	c.HF.Enabled = getenvBool("HF_ENABLED", c.HF.Enabled)
+	c.RateLimit.Enabled = getenvBool("RATELIMIT_ENABLED", c.RateLimit.Enabled)
+	if v := os.Getenv("UPSTREAM_SOCKS5"); v != "" {
+		c.Upstream.Socks5 = v
 	}
 }
 
