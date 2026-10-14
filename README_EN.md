@@ -68,6 +68,7 @@
 - [Environment variables](#environment-variables)
 - [Security notes](#security-notes)
 - [Compliance & Disclaimer](#compliance--disclaimer)
+- [Contributing](#contributing)
 - [License](#license)
 - [⭐ Star & Fork guide](#-star--fork-guide)
 
@@ -321,6 +322,10 @@ To adjust, simply edit `/etc/cron.d/gh-mirror`.
   - Using this service as an open proxy for attacks or abuse.
 - This project **does not cache or record** the actual content of requests; the copyright and compliance of accelerated resources are the responsibility of the user.
 - If your network/region restricts access to GitHub, please make sure local regulations permit such use before deploying.
+
+## Contributing
+
+Please develop new features or fixes on a `feat/` / `fix/` branch and open a PR to `main`. It merges after CI passes (+ 1 review). See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 
