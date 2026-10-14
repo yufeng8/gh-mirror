@@ -11,14 +11,17 @@ import (
 // 可进一步省服务器带宽，但仅支持公开仓库文件、单文件约 20MB 上限、且 ref 不能是 HEAD。
 var useJsdelivr = os.Getenv("USE_JSDELIVR") == "1"
 
-// allowedHosts 仅允许回源到这些 GitHub 相关域名，防止被用作开放代理（SSRF）。
+// allowedHosts 仅允许回源到这些 GitHub/HuggingFace 相关域名，防止被用作开放代理（SSRF）。
 var allowedHosts = map[string]bool{
 	"github.com":                    true,
 	"www.github.com":                true,
 	"raw.githubusercontent.com":     true,
-	"gist.githubusercontent.com":     true,
+	"gist.githubusercontent.com":    true,
 	"codeload.github.com":           true,
 	"objects.githubusercontent.com": true,
+	"huggingface.co":                true,
+	"www.huggingface.co":            true,
+	"cdn-lfs.huggingface.co":        true,
 	"api.github.com":                true,
 	"raw.github.com":                true,
 }
@@ -43,6 +46,7 @@ func fileExt(s string) string {
 //   - github.com/owner/repo/archive/<ref>.{zip,tar.gz,...} -> codeload.github.com
 //   - github.com/owner/repo/releases/download/... -> 直连 github.com（会 302 到 objects.githubusercontent.com）
 //   - 其余 GitHub 域名（raw/codeload/objects/gist/api）-> 直接透传
+//
 // 返回 nil 表示域名不在白名单内。
 func rewrite(u *url.URL) *url.URL {
 	host := strings.ToLower(u.Host)
