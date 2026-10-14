@@ -82,7 +82,7 @@ func genSecret() []byte {
 	return []byte(hex.EncodeToString(b))
 }
 
-// handle 是统一入口：首页 / 健康检查 / 管理后台 / token 代理 / 其余 404。
+// handle 是统一入口：首页 / 健康检查 / 管理后台 / Docker 加速 / token 代理 / 其余 404。
 // 注意：必须用原始 RequestURI 解析路径，否则 https:// 中的双斜杠会被丢失/重定向。
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	rawURI := r.RequestURI
@@ -98,6 +98,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.renderHome(w, r)
 	case strings.HasPrefix(path, s.adminPath):
 		s.handleAdmin(w, r)
+	case s.cfg.Docker.Enabled && (path == "/v2" || strings.HasPrefix(path, "/v2/") || path == "/token" || strings.HasPrefix(path, "/token/")):
+		s.handleDocker(w, r)
 	case strings.HasPrefix(path, tokenPrefix):
 		s.handleProxy(w, r)
 	default:
