@@ -1,0 +1,26 @@
+services:
+  github-mirror:
+    image: ghcr.io/zzidcn/github-mirror:latest
+    container_name: github-mirror
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      LISTEN: "0.0.0.0:8080"
+      CACHE_DIR: /data/cache
+      TOKENS_FILE: /data/tokens.json
+      ADMIN_USER: admin
+      ADMIN_PASS: change-me
+      # 会话签名密钥：建议固定（openssl rand -hex 32），留空则每次重启随机生成
+      ADMIN_SECRET: ${ADMIN_SECRET:-}
+      COOKIE_SECURE: "true"
+      # 多服务加速开关（也可改用 config.toml，见 README）
+      DOCKER_ENABLED: "false"
+      HF_ENABLED: "false"
+      # RATELIMIT_ENABLED: "false"
+      # UPSTREAM_SOCKS5: "socks5://127.0.0.1:1080"
+    volumes:
+      - gm-data:/data
+
+volumes:
+  gm-data:
