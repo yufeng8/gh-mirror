@@ -19,7 +19,7 @@ import (
 
 // registryMapping 描述一个上游 Registry。authURL 为完整的 token 端点（scheme 去掉）。
 type registryMapping struct {
-	domain   string // 路径域名前缀，用于 /v2/<domain>/... 多 registry 路由；Docker Hub 为空
+	domain   string // 路径域名前缀，用于 /v2/<domain>/... 多 registry 路由；Docker Hub 为 ""
 	upstream string // 上游 Registry API 主机
 	authURL  string // 完整 token 端点（如 auth.docker.io/token、quay.io/v2/auth）；空表示匿名
 	service  string // 认证 service 参数
@@ -49,6 +49,16 @@ func matchRegistry(rest string) (registryMapping, string) {
 		}
 	}
 	return dockerHub, rest
+}
+
+// dockerRepoName 从仓库路径提取镜像名（去掉 /manifests|/blobs|/tags 之后的部分）。
+func dockerRepoName(repoPath string) string {
+	for _, sep := range []string{"/manifests/", "/blobs/", "/tags/list"} {
+		if i := strings.Index(repoPath, sep); i >= 0 {
+			return repoPath[:i]
+		}
+	}
+	return ""
 }
 
 // resolveTokenHost 依据 token 请求的 service 参数选择上游认证端点。
@@ -134,6 +144,12 @@ func (s *Server) handleDocker(w http.ResponseWriter, r *http.Request) {
 func (s *Server) proxyDockerV2(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/v2/")
 	mapping, repoPath := matchRegistry(rest)
+	if name := dockerRepoName(repoPath); name != "" {
+		if ok, reason := s.acl.CheckRepo(name); !ok {
+			http.Error(w, "镜像访问被限制: "+reason, http.StatusForbidden)
+			return
+		}
+	}
 	target := "https://" + mapping.upstream + "/v2/" + repoPath
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
