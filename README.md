@@ -73,6 +73,7 @@
 - [环境变量](#环境变量)
 - [安全说明](#安全说明)
 - [合规与免责声明](#合规与免责声明)
+- [贡献指南](#贡献指南)
 - [许可证](#许可证)
 - [⭐ Star & Fork 指引](#-star--fork-指引)
 
@@ -328,6 +329,10 @@ MODE=docker DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='xxx' \
   - 将本服务作为开放代理对外提供、用于攻击或滥用。
 - 本项目**不缓存、不记录**请求的具体内容；加速资源的版权与合规性由使用者负责。
 - 若你所在网络/地区访问 GitHub 受限，请优先确认本地法规允许的前提下使用。
+
+## 贡献指南
+
+新功能 / Bug 修复请走 `feat/`、`fix/` 等功能分支，开 PR 到 `main`，CI 通过（+ 1 个 review）后合并。详见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ## 许可证
 
