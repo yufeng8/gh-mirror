@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github-mirror/config"
+	"gh-mirror/config"
 )
 
 // Server 持有缓存、回源超时、配置与管理后台相关状态。
