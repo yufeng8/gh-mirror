@@ -13,7 +13,6 @@ import (
 )
 
 // 镜像搜索 + 标签浏览：代理 Docker Hub 公共 API，并提供服务端渲染的轻量 Web 页面。
-// 说明：P5 离线打包暂缓，页面中相关入口以“开发中”占位提示。
 
 const hubAPI = "https://hub.docker.com"
 
@@ -49,7 +48,7 @@ var tagsTmpl = template.Must(template.New("tags").Parse(`<!doctype html>
 <p><a href="/search">← 返回搜索</a></p>
 <h2>{{.Repo}}</h2>
 <p class="hint">拉取：<code>docker pull {{.Repo}}:&lt;tag&gt;</code>（Docker Hub 走 registry-mirror 加速）</p>
-<p class="hint dim">离线打包功能开发中，敬请期待。</p>
+<p class="hint"><a href="/offline/{{.Repo}}">离线打包该镜像（tar，docker load 可用）</a></p>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 {{if .Results}}
 <ul class="tags">
@@ -76,6 +75,7 @@ h2{color:#fff}.tags{list-style:none;padding:0;margin:0;columns:2}
 .tags li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #232936;break-inside:avoid}
 .tname{color:#e6e8eb;font-family:ui-monospace,monospace}.tsize,.tdate{color:#6b7280;font-size:12px}
 code{background:#12151c;padding:2px 6px;border-radius:6px;color:#7dd3fc}
+a{color:#7dd3fc}
 </style>`
 
 type hubSearchResult struct {
