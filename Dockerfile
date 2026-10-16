@@ -1,6 +1,6 @@
 # 交叉编译；本地用 --build-arg GOARCH=amd64|arm64 指定（deploy.sh / install.sh 会传入）。
 # 不传时由 buildx + QEMU 按目标平台原生编译，用于 GitHub Actions 多架构构建。
-FROM golang:1.22 AS build
+FROM golang:1.24 AS build
 ARG GOARCH=
 WORKDIR /src
 COPY go.mod ./
