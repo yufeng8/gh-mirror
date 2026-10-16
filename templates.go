@@ -186,6 +186,13 @@ const pageStyle = `
   .auth .btn-block{width:100%;margin-top:12px;padding:11px 16px}
   .auth .err{min-height:1.3em;margin:8px 0 0;font-size:.86rem}
   .auth .note{margin-top:18px;font-size:.82rem}
+  .forgot{margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--muted)}
+  .forgot summary{cursor:pointer;font-weight:600;padding:10px 14px;list-style:none;color:var(--primary)}
+  .forgot summary::-webkit-details-marker{display:none}
+  .forgot[open] summary{border-bottom:1px solid var(--border)}
+  .forgot-body{padding:4px 14px 14px}
+  .forgot-title{font-weight:700;margin:10px 0 6px}
+  .small{font-size:.82rem}
   @media (max-width:900px){.grid-svc{grid-template-columns:1fr}.hero h1{font-size:2.3rem}}
   @media (max-width:860px){.auth{grid-template-columns:1fr}.auth .hero{display:none}}
   @media (max-width:820px){
@@ -389,6 +396,20 @@ var loginBody = `
         <p class="err">%s</p>
         <button type="submit" class="btn btn-block">登录</button>
       </form>
+      <details class="forgot">
+        <summary>忘记密码？</summary>
+        <div class="forgot-body">
+          <p class="forgot-title">在服务器上重置密码</p>
+          <p class="muted">gh-mirror 的登录密码是部署时设置的 <code>ADMIN_PASS</code>（环境变量 / <code>.env</code>）。忘记时可在服务器上重置：</p>
+          <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code># docker run 部署：以新密码重建容器（token / 缓存在 gm-data、gm-cache 卷，不丢）
+docker rm -f gh-mirror
+docker run -d --name gh-mirror -e ADMIN_PASS='新密码' -e ADMIN_SECRET='你的密钥' -p 127.0.0.1:8080:8080 -v gm-data:/var/lib/gh-mirror ghcr.io/yufeng8/gh-mirror:v0.1.0
+
+# docker compose 部署：改 .env 后重建
+sed -i 's#^ADMIN_PASS=.*#ADMIN_PASS=新密码#' .env &amp;&amp; docker compose up -d</code></pre></div>
+          <p class="muted small">重置仅影响登录，不影响已创建的 Token 与缓存；重置后重新登录即可。登录会话通过安全的 HttpOnly Cookie 保存。</p>
+        </div>
+      </details>
       <p class="muted note">🔒 登录会话通过安全的 HttpOnly Cookie 保存。</p>
       <p class="muted"><a href="/">返回首页</a></p>
     </div>
