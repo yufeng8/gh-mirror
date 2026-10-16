@@ -197,7 +197,7 @@ const pageStyle = `
   .navitem .ic{width:18px;text-align:center;flex:0 0 auto}
   .console .main{flex:1;min-width:0;padding:22px 26px 56px}
   .console .topbar{display:flex;align-items:center;gap:12px;margin-bottom:22px}
-  .console .topbar h1{font-size:1.28rem;margin:0;font-weight:750}
+  .console .topbar h1{font-size:1.28rem;margin:0;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .console .topbar .spacer{margin-left:auto;display:flex;gap:8px;align-items:center}
   .console .card{margin-bottom:18px}
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px}
@@ -281,6 +281,16 @@ const pageStyle = `
   .svccard-tag{display:inline-flex;align-items:center;justify-content:center;min-width:132px;height:36px;padding:0 18px;border-radius:9px;
     font-size:.84rem;font-weight:600;color:var(--muted-foreground);background:var(--card);border:1px dashed var(--border)}
   .navsep{display:block;height:1px;margin:10px 8px;background:var(--border)}
+  /* 小屏抽屉导航：遮罩 + 汉堡按钮 */
+  .nav-mask{display:none;position:fixed;inset:0;z-index:45;background:rgba(0,0,0,.45);border:0}
+  .nav-mask.show{display:block}
+  .nav-toggle{display:none;align-items:center;justify-content:center;width:40px;height:40px;padding:0;font-size:1.15rem;flex:0 0 auto}
+  @media (max-width:820px){.nav-toggle{display:inline-flex}}
+  .tsel{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .tsel label{font-size:.8rem;color:var(--muted-foreground);font-weight:600;margin:0}
+  .tsel select{padding:7px 10px;border:1px solid var(--border);border-radius:9px;background:var(--background);color:var(--foreground);font-size:.86rem;max-width:100%}
+  .tok-cell{display:flex;align-items:center;gap:8px}
+  .tok-cell code{flex:1;min-width:0}
   .svc-toggle{display:inline}
   .conv-row{display:flex;gap:8px;flex-wrap:wrap}
   .conv-row input{flex:1;min-width:200px}
@@ -305,15 +315,18 @@ const pageStyle = `
     .auth .box .brand>svg{width:52px;height:52px}
   }
   @media (max-width:820px){
-    .console{flex-direction:column}
-    .console aside{width:100%;height:auto;position:static;display:flex;gap:6px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border);padding:10px 12px}
-    .console aside .brand{display:none}
-    .console .nav{display:flex;gap:6px}
-    .navsep{display:none}
-    .navitem{white-space:nowrap}
-    .console .main{padding:18px 16px 48px}
+    /* 小屏：侧栏改为抽屉，汉堡按钮唤出、遮罩点击或选中项后收起 */
+    .console{display:block;min-height:100vh}
+    .console aside{position:fixed;left:0;top:0;bottom:0;width:252px;max-width:82vw;height:100vh;z-index:50;
+      transform:translateX(-100%);transition:transform .24s ease;box-shadow:0 0 40px rgba(0,0,0,.28)}
+    .console aside.open{transform:none}
+    .console .main{padding:16px 14px 44px}
+    .console .topbar{position:sticky;top:0;z-index:30;gap:10px;margin:0 0 16px;padding:10px 0;
+      background:var(--glass);backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
+    .console .topbar .spacer{gap:6px}
+    .console .topbar .btn{padding:6px 10px;font-size:.82rem}
   }
-  @media (max-width:600px){.container{padding:0 14px 44px}.topnav{padding:8px 12px;gap:10px}.topnav nav{display:none}.topnav .btn{padding:6px 10px;font-size:.82rem}.topnav .gh span{display:none}.topnav .gh{padding:6px 9px}.topnav .brand{gap:8px;font-size:.95rem}.topnav .brand>svg{width:26px;height:26px}.hero{gap:18px;padding:30px 0 6px}pre{font-size:.8rem}table{display:block;overflow-x:auto;white-space:nowrap}.conv-row input{min-width:100%}.fld input{width:100%}}
+  @media (max-width:600px){.container{padding:0 14px 44px}.topnav{padding:8px 12px;gap:10px}.topnav nav{display:none}.topnav .btn{padding:6px 10px;font-size:.82rem}.topnav .gh span{display:none}.topnav .gh{padding:6px 9px}.topnav .brand{gap:8px;font-size:.95rem}.topnav .brand>svg{width:26px;height:26px}.hero{gap:18px;padding:30px 0 6px}pre{font-size:.8rem}table{display:block;overflow-x:auto;white-space:nowrap}.conv-row input{min-width:100%}.fld input{width:100%}.stat .v{font-size:1.3rem}.stat .k,.stat .s{font-size:.74rem}.stat{word-break:break-word;overflow-wrap:anywhere}}
 </style>`
 
 const docOpen = `<!doctype html>
@@ -326,11 +339,15 @@ const pageScript = `<script>
 function toggleTheme(){var d=document.documentElement.classList.toggle('dark');try{localStorage.setItem('theme',d?'dark':'light')}catch(e){}var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';}
 function copyCode(btn){var t=btn.closest('.term');if(!t)return;var c=t.querySelector('code')||t.querySelector('pre');var txt=c?c.innerText:'';var done=function(){btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
 function togglePw(){var i=document.getElementById('pw');var b=document.getElementById('pwToggle');if(!i||!b)return;if(i.type==='password'){i.type='text';b.textContent='隐藏'}else{i.type='password';b.textContent='显示'}}
-function gmConvert(){var box=document.getElementById('gmconv');var inp=document.getElementById('gmconv-in');var out=document.getElementById('gmconv-out');if(!box||!inp||!out)return;var u=(inp.value||'').trim();out.removeAttribute('data-url');if(!u){out.value='';out.setAttribute('placeholder','加速链接将显示在这里');return}out.value='处理中…';var fd=new URLSearchParams();fd.set('url',u);fd.set('csrf',box.getAttribute('data-csrf')||'');fetch(box.getAttribute('data-api')||'',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString()}).then(function(r){return r.json()}).then(function(d){if(d&&d.ok&&d.url){out.value=d.url;out.setAttribute('data-url',d.url);out.setAttribute('placeholder','')}else{out.value='';out.setAttribute('placeholder',(d&&d.hint)||'无法识别该输入')}}).catch(function(){out.value='';out.setAttribute('placeholder','请求失败，请重试')})}
+function gmConvert(){var box=document.getElementById('gmconv');var inp=document.getElementById('gmconv-in');var out=document.getElementById('gmconv-out');if(!box||!inp||!out)return;var u=(inp.value||'').trim();out.removeAttribute('data-url');if(!u){out.value='';out.setAttribute('placeholder','加速链接将显示在这里');return}out.value='处理中…';var fd=new URLSearchParams();fd.set('url',u);fd.set('csrf',box.getAttribute('data-csrf')||'');var sel=document.getElementById('gmTokenSel');if(sel&&sel.value)fd.set('token',sel.value);fetch(box.getAttribute('data-api')||'',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString()}).then(function(r){return r.json()}).then(function(d){if(d&&d.ok&&d.url){out.value=d.url;out.setAttribute('data-url',d.url);out.setAttribute('placeholder','')}else{out.value='';out.setAttribute('placeholder',(d&&d.hint)||'无法识别该输入')}}).catch(function(){out.value='';out.setAttribute('placeholder','请求失败，请重试')})}
 function gmConvURL(){var o=document.getElementById('gmconv-out');return o?(o.getAttribute('data-url')||''):''}
 function gmCopyConv(){var u=gmConvURL();if(!u)return;var b=document.getElementById('gmconv-copy');if(!b)return;var done=function(){b.textContent='已复制 ✓';setTimeout(function(){b.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=u;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(done,fb)}else{fb()}}
 function gmDownloadConv(){var u=gmConvURL();if(!u)return;var a=document.createElement('a');a.href=u;a.download='';document.body.appendChild(a);a.click();a.remove()}
 function gmOpenConv(){var u=gmConvURL();if(!u)return;window.open(u,'_blank','noopener')}
+function toggleNav(force){var a=document.getElementById('gmNav');var m=document.querySelector('.nav-mask');if(!a)return;var open=(typeof force==='boolean')?force:!a.classList.contains('open');a.classList.toggle('open',open);if(m)m.classList.toggle('show',open);var b=document.querySelector('.nav-toggle');if(b)b.setAttribute('aria-expanded',open?'true':'false')}
+function gmCopyText(btn,txt){var done=function(){var o=btn.textContent;btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent=o},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
+function gmApplyToken(tk){try{localStorage.setItem('gm_tok',tk||'')}catch(e){}var s=document.querySelectorAll('.tslot');for(var i=0;i<s.length;i++){s[i].textContent=tk||'token'}var box=document.getElementById('gmconv');if(box)box.setAttribute('data-token',tk||'')}
+(function(){try{var t=localStorage.getItem('gm_tok');if(t){var sel=document.getElementById('gmTokenSel');if(sel){sel.value=t;gmApplyToken(t)}}}catch(e){}})();
 function togglePromptExpand(){var t=document.getElementById('agentPromptTerm');var b=document.querySelector('#agentPromptTerm .fold-btn');if(!t||!b)return;var folded=t.classList.toggle('folded');b.textContent=folded?'展开全部':'收起';if(!folded){t.scrollIntoView({behavior:'smooth',block:'nearest'})}}
 (function(){var d=document.documentElement.classList.contains('dark');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';})();
 </script>`
@@ -582,6 +599,7 @@ var dashboardBody = `
   %s
   <div class="main">
     <div class="topbar">
+      <button class="btn outline nav-toggle" type="button" onclick="toggleNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
       <h1>管理后台</h1>
       <div class="spacer">%s</div>
     </div>
@@ -604,12 +622,30 @@ var dashboardBody = `
       <h2>缓存管理</h2>
       %s
     </section>
-    <section class="card">
-      <h2>代理用法示例</h2>
+    <section class="card" id="usage">
+      <h2>用法示例</h2>
       %s
     </section>
     <section class="card" id="tokens">
       <h2>Token 管理</h2>
+      %s
+    </section>
+  </div>
+</div>`
+
+// tokensBody 是 Token 管理独立页面的 body 片段（/admin/tokens）。
+// 动词：aside / topbarRight / rows / addForm / foot
+var tokensBody = `
+<div class="console" id="top">
+  %s
+  <div class="main">
+    <div class="topbar">
+      <button class="btn outline nav-toggle" type="button" onclick="toggleNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+      <h1>Token 管理</h1>
+      <div class="spacer">%s</div>
+    </div>
+    <section class="card">
+      <h2>Token 列表</h2>
       <table>
         <thead><tr><th>Token</th><th>备注</th><th>角色</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
         <tbody>%s</tbody>
