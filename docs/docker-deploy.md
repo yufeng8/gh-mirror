@@ -22,6 +22,7 @@
 | 纯 HTTP（无 TLS）后台登录失败 | `COOKIE_SECURE` 可配，HTTP 部署设为 `false` |
 | 已有 `install.sh MODE=docker` 部署（host 网络） | 两者端口/容器名不同，避免同时运行；或改容器名错开 |
 | 构建需拉取 Docker Hub 基础镜像 | 出网受限时可改用预构建镜像 `ghcr.io/yufeng8/gh-mirror:latest`（见下） |
+| 域名前置 CDN（EdgeOne / Cloudflare） | 见下方「域名前置 CDN 的正确接法」：让 CDN 持证书、源站只做 80 反代，并关 CDN 缓存/URL 规范化 |
 
 ### 三种启用方式（按环境选一）
 ```bash
@@ -36,6 +37,15 @@ docker compose --profile proxy up -d --build
 docker compose -f docker-compose.yml -f docker-compose.hostcert.yml --profile proxy up -d --build
 ```
 > 所有命令都在仓库根目录执行；`--build` 首次需要，之后升级去掉了更快。
+
+### 域名前置 CDN（EdgeOne / Cloudflare）的正确接法
+若域名前面挡着 CDN（如腾讯 EdgeOne、Cloudflare），公网 TLS 在 CDN 边缘终止、再由 CDN 回源到源站。此时：
+- **让 CDN 持公网证书并终止 TLS，源站只做 80 反代 → `127.0.0.1:8080`，源站不签自己的证书**。在 CDN 后面给源站签 LE，常因回源/IPv6 失败报 **521**，别纠缠（源站 certbot 根本不会被 LE 访问到）。
+- CDN 配置：回源=源站公网 IP:80、协议 HTTP、回源 Host 固定为你的域名；**务必关闭缓存与 URL 规范化/重写**（否则会压掉 gh-mirror 的 `/g/<token>/https://` 双斜杠、缓存动态内容 → 404）；不要强制 80 跳转。
+- 源站反代段：`merge_slashes off;` + `proxy_pass http://127.0.0.1:8080$request_uri;` + `proxy_set_header X-Forwarded-Proto https;`，且**不要**再加 http→https 跳转（避免回源回环）。
+- 确需源站自己持证时，用 **DNS-01** 验证（绕开 80/回源/IPv6）。
+- 安全组：源站 80 入站对 CDN 回源/公网开放；443 可不开放。
+- 大文件/流式（`/offline/` 产 tar）经 CDN 可能被限速/超时，必要时该路径直连源站或对 CDN 关缓存直通。
 
 ## 前置
 - 一台 Linux 主机（amd64 / arm64），已装 Docker 与 docker compose。
@@ -122,6 +132,7 @@ curl -fsS https://<域名>/healthz             # B1/B2 配好证书后
 ## 已知坑（来自项目大脑 knowledge/）
 - **双斜杠**：代理路径 `/g/<token>/https://...` 的 `//` 必须保留，nginx 需 `merge_slashes off` + `proxy_pass ...$request_uri`，否则解析失败 404。
 - **端口冲突**：场景 B 的内置 nginx 会占用主机 80/443。若部署机已有其它 Web 服务，请改用场景 A（不启用 proxy profile）。
+- **域名前置 CDN（EdgeOne/Cloudflare）**：会压掉 `/g/<token>/https://` 的双斜杠、缓存动态内容致 404，并让源站 LE 报 521。按上面「域名前置 CDN 的正确接法」处理：CDN 持证书 + 源站只做 80 反代 + 关 CDN 缓存/URL 规范化。
 - **HTTP 后台登录失败**：纯 HTTP 部署若忘把 `COOKIE_SECURE=false`，浏览器不会下发 Secure cookie，表现为登录无反应/反复跳登录。
 - **GHCR 可见性**：`ghcr.io/yufeng8/gh-mirror` 包须设为 **Public**，否则匿名 `docker pull` 报 401；私有则需在 `gh-mirror` 服务加 `docker login ghcr.io`（带 `read:packages` 的令牌）。
 - **缓存持久化**：`gm-cache` / `gm-data` 为命名卷，重建容器不会丢缓存与 token。
