@@ -347,12 +347,12 @@ const homeTmpl = `
   <div>
     <h1>gh-mirror</h1>
     <p class="lede">多服务加速网关</p>
-    <p class="sub">Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。私有化部署，Token 可控，磁盘缓存 + Range 续传，<strong>并支持 MCP 接入</strong>，让 AI Agent 也能直接调用与运维。</p>
+    <p class="sub">Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。私有化部署，Token 可控，磁盘缓存 + Range 续传，<strong>并支持 MCP 接入</strong>，让 AI Agent 也能直接完成部署、调用与运维。</p>
     <div class="row" style="margin-top:10px">
       <a class="badge-link" href="#agent">🤖 MCP 接入 · AI Agent 友好</a>
     </div>
     <div class="row" style="margin-top:16px">
-      <a class="btn" href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + ` ⭐ Star on GitHub</a>
+      <a class="btn" href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + ` ⭐ Star</a>
       <a class="btn outline" href="` + repoURL + `/fork" target="_blank" rel="noopener">🍴 Fork</a>
       <a class="btn outline" href="#deploy">快速部署</a>
     </div>
@@ -404,7 +404,7 @@ const homeTmpl = `
 cp .env.example .env   # 设 ADMIN_PASS / ADMIN_SECRET
 docker compose up -d --build
 curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
-  <p class="muted" style="margin-top:12px">也可用预构建镜像 <code>ghcr.io/yufeng8/gh-mirror:v0.1.0</code> 不编译直接跑。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/docker-deploy.md" target="_blank" rel="noopener">docs/docker-deploy.md</a> 与 <a href="` + repoURL + `/blob/feat/hubproxy/docs/deploy-runbook.md" target="_blank" rel="noopener">docs/deploy-runbook.md</a>。</p>
+  <p class="muted" style="margin-top:12px">也可用预构建镜像不编译直接跑：镜像 <code>ghcr.io/yufeng8/gh-mirror</code> 搭配 <a href="` + repoURL + `/releases" target="_blank" rel="noopener">GitHub Releases</a> 里的<strong>最新正式版 tag</strong>。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/docker-deploy.md" target="_blank" rel="noopener">docs/docker-deploy.md</a> 与 <a href="` + repoURL + `/blob/feat/hubproxy/docs/deploy-runbook.md" target="_blank" rel="noopener">docs/deploy-runbook.md</a>。</p>
 </section>
 
 <section class="section" id="updates">

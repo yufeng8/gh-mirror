@@ -8,8 +8,9 @@
    git clone -b feat/hubproxy https://github.com/yufeng8/gh-mirror.git
    - docs/docker-deploy.md：通用 Docker 部署、域名前置 CDN（EdgeOne/Cloudflare）的正确接法、Docker 加速安全
    - docs/deploy-runbook.md：先探测 → 选型 → 执行 → 端到端验证的完整流程
-2. 优先使用预构建镜像，不要编译：ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy（多架构、含全部特性）。
-   不要用 :latest（跟踪 main、不含 HuggingFace）。
+2. 优先使用预构建镜像，不要编译：ghcr.io/yufeng8/gh-mirror:<最新正式版 tag>（多架构、含全部特性）。
+   **不要写死版本号**：动手前先从 GitHub Releases（https://github.com/yufeng8/gh-mirror/releases）确认当前最新正式版 tag，再拼进镜像名。
+   不要用 :latest（它跟踪 main，不含 HuggingFace 与 hubproxy 分支特性）。
 3. 数据持久化用命名卷：gm-data（token 与设置）、gm-cache（缓存）。重建容器不得丢数据。
 4. ADMIN_PASS 与 ADMIN_SECRET 现场生成强随机值并妥善记录（勿写进任何提交或日志）。
    ADMIN_PATH 默认 /admin，LISTEN 默认 0.0.0.0:8080。
