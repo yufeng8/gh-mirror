@@ -31,6 +31,9 @@ type Server struct {
 	dial         func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
+// processStart 记录进程启动时间，用于后台展示运行时长。
+var processStart = time.Now()
+
 func main() {
 	cfg := config.Load("config.toml")
 

@@ -183,9 +183,9 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// 只对 body 片段做 Sprintf（body 内无 CSS 的 %），再用 page() 包裹，避免 CSS 中的 % 被误当作格式化动词
+	// 只 Sprintf body 片段（loginBody 无 CSS 的 %），再用 pageApp() 全幅包裹（分屏登录）
 	body := fmt.Sprintf(loginBody, s.adminPath, html.EscapeString(errMsg))
-	_, _ = w.Write([]byte(page("管理员登录 - gh-mirror", "管理员登录", body)))
+	_, _ = w.Write([]byte(pageApp("登录 - gh-mirror", "gh-mirror 管理后台登录", body)))
 }
 
 func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +197,10 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	csrf := s.csrfToken(sid)
 	tokens := s.store.All()
 	var rows strings.Builder
+	var totalHits, totalBytes int64
 	for _, t := range tokens {
+		totalHits += t.Hits
+		totalBytes += t.Bytes
 		lastUsed := "—"
 		if t.LastUsed > 0 {
 			lastUsed = time.Unix(t.LastUsed, 0).Format("2006-01-02 15:04")
@@ -251,11 +254,45 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.Docker.Enabled {
 		warnHTML = `<div class="alert danger"><strong>⚠️ 安全提醒：Docker 加速/离线镜像已开启</strong>（<code>DOCKER_ENABLED=true</code>）。端点 <code>/v2</code> 与 <code>/offline</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token）。<br>· 若网关经公网/CDN 暴露，<strong>任何人都能使用你的镜像加速、拉取离线 tar</strong>，耗费上游带宽。<br>· 置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只见 CDN 回源 IP，X-Forwarded-For 可伪造）。<br><strong>降低风险（任选）：</strong>1) 不需要公网 Docker 加速就设 <code>DOCKER_ENABLED=false</code>；2) 公网反代挡掉裸路径 <code>location ^~ /v2/ { return 404; }</code>、<code>location ^~ /offline/ { return 404; }</code>，/offline 改用带秘密前缀的地址；3) registry 用「不走 CDN 的难猜子域名」直连源站 + 云安全组按来源 IP 放行；4) 在 CDN（EdgeOne）对 <code>/v2</code>、<code>/offline</code> 配速率限制与带宽封顶（CDN 看得到真实客户端 IP）。详见 <code>docs/docker-deploy.md</code>「Docker 加速安全」。</div>`
 	}
+	// 侧栏导航（仅真实存在的入口）
+	aside := `<aside><div class="brand">` + logoSVG + `<span>gh-mirror</span></div><nav class="nav">` +
+		`<a class="navitem active" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
+		`<a class="navitem" href="#tokens"><span class="ic">🔑</span>Token 管理</a>` +
+		`<a class="navitem" href="` + repoURL + `/tree/feat/hubproxy/docs" target="_blank" rel="noopener"><span class="ic">📄</span>文档</a>` +
+		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">⎋</span>退出登录</a></nav></aside>`
+	// 顶栏右侧：健康检查 CTA + 主题切换
+	topbarRight := `<a class="btn outline" href="` + base + `/healthz" target="_blank" rel="noopener">健康检查</a>` +
+		`<button id="themeToggle" class="btn outline" type="button" onclick="toggleTheme()" aria-label="切换深色 / 浅色模式">🌙 深色</button>`
+	// 服务状态徽标（GitHub 恒开；Docker/HF 按开关）
+	svcBadge := func(on bool, name, onTxt, offTxt string) string {
+		if on {
+			return `<span class="badge on">● ` + name + ` · ` + onTxt + `</span>`
+		}
+		return `<span class="badge off">○ ` + name + ` · ` + offTxt + `</span>`
+	}
+	badges := svcBadge(true, "GitHub 代理", "已开启", "未开启") +
+		svcBadge(s.cfg.Docker.Enabled, "Docker 加速", "已开启", "未开启 · 可配置") +
+		svcBadge(s.cfg.HF.Enabled, "HuggingFace", "已开启", "未开启 · 可配置")
+	// 概览统计卡（网关真实指标，不伪造主机监控）
+	stats := statCard("Token 数", fmt.Sprintf("%d", len(tokens)), "个") +
+		statCard("总命中", fmt.Sprintf("%d", totalHits), "次") +
+		statCard("总流量", formatBytes(totalBytes), "") +
+		statCard("缓存占用", formatBytes(s.cache.UsageBytes()), "上限 "+formatBytes(s.cache.MaxBytes())) +
+		statCard("运行时长", fmtDuration(time.Since(processStart)), "")
+	// 新增 Token 表单
+	addForm := `<form method="post" action="` + s.adminPath + `/add" class="row">` +
+		`<input type="hidden" name="csrf" value="` + csrf + `">` +
+		`<input name="token" placeholder="留空则自动生成">` +
+		`<input name="note" placeholder="备注（可选）">` +
+		`<button type="submit" class="btn">添加</button></form>`
+	// 页脚链接
+	footLinks := `<a href="` + s.adminPath + `/logout">退出登录</a> · <a href="/">返回首页</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a>`
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: warn, example, rows, add-action, add-form-csrf, logout-href
-	// 只对 body 片段做 Sprintf（body 内无 CSS 的 %），再用 page() 包裹，避免 CSS 中的 % 被误当作格式化动词
-	body := fmt.Sprintf(dashboardBody, warnHTML, example, rows.String(), s.adminPath, csrf, s.adminPath)
-	_, _ = w.Write([]byte(page("管理后台 - gh-mirror", "管理后台", body)))
+	// verbs: aside, topbarRight, warn, badges, stats, examples, rows, addForm, footLinks
+	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
+	body := fmt.Sprintf(dashboardBody, aside, topbarRight, warnHTML, badges, stats, example, rows.String(), addForm, footLinks)
+	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
 }
 
 // formatBytes 把字节数格式化为易读单位。
@@ -274,4 +311,31 @@ func formatBytes(n int64) string {
 		div *= unit
 	}
 	return fmt.Sprintf("%.1f PB", float64(n)/div)
+}
+
+// statCard 生成一张概览统计卡（标题 / 数值 / 可选副标题）。
+func statCard(k, v, sub string) string {
+	out := `<div class="stat"><p class="k">` + k + `</p><p class="v">` + v + `</p>`
+	if sub != "" {
+		out += `<p class="s">` + sub + `</p>`
+	}
+	return out + `</div>`
+}
+
+// fmtDuration 把时长格式化为中文可读形式（用于后台"运行时长"）。
+func fmtDuration(d time.Duration) string {
+	if d < time.Minute {
+		return "刚刚启动"
+	}
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	mins := int(d.Minutes()) % 60
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%d 天 %d 小时", days, hours)
+	case hours > 0:
+		return fmt.Sprintf("%d 小时 %d 分", hours, mins)
+	default:
+		return fmt.Sprintf("%d 分钟", mins)
+	}
 }
