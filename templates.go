@@ -195,7 +195,9 @@ var notFoundHTML = page("404 - gh-mirror", "页面未找到", `
   <p class="muted"><a href="/">返回首页</a></p>
 </div>`)
 
-var loginHTML = page("管理员登录 - gh-mirror", "管理员登录", `
+// loginBody 仅为 body 片段（不含 pageStyle 的 CSS）。经 fmt.Sprintf 填充后再交由 page() 包裹，
+// 避免整页 CSS 中的 %（如 width:100%）被 fmt 误当作格式化动词导致 action 变成 %!s(MISSING)。
+var loginBody = `
 <div class="card" style="max-width:360px">
   <h1>管理员登录</h1>
   <form method="post" action="%s" class="row" style="flex-direction:column;align-items:stretch">
@@ -205,9 +207,10 @@ var loginHTML = page("管理员登录 - gh-mirror", "管理员登录", `
   </form>
   <p class="err">%s</p>
   <p class="muted"><a href="/">返回首页</a></p>
-</div>`)
+</div>`
 
-var dashboardHTML = page("管理后台 - gh-mirror", "管理后台", `
+// dashboardBody 仅为 body 片段（不含 pageStyle 的 CSS），原因同 loginBody。
+var dashboardBody = `
 <div class="card">
   <h1>管理后台</h1>
   <p class="muted">代理示例（将“你的域名”替换为实际域名）：</p>
@@ -225,4 +228,4 @@ var dashboardHTML = page("管理后台 - gh-mirror", "管理后台", `
     <button type="submit" class="btn">添加</button>
   </form>
   <p class="foot"><a href="%s/logout">退出登录</a> · <a href="/">返回首页</a></p>
-</div>`)
+</div>`
