@@ -129,10 +129,38 @@ curl -fsS https://<域名>/healthz             # B1/B2 配好证书后
 > 提示：用了覆盖层/profile 后，`down`/`restart` 等命令要**带上与 `up` 时相同的 `-f` 和 `--profile` 参数**，
 > 否则 compose 找不到对应服务定义。
 
+## Docker 加速安全（重要，与 DOCKER_ENABLED 相关）
+Docker 镜像加速（`/v2`）与离线镜像（`/offline`）**不使用 Token 鉴权**——Docker Registry 协议（registry-mirror）无法携带我们的 `/g/<token>/`，且 docker daemon 不支持带路径前缀的 mirror。它们只受 `DOCKER_ENABLED` 开关 + 「限流 / IP ACL」中间件控制（GitHub/HuggingFace/搜索才是 token 保护）。
+
+**风险**：`DOCKER_ENABLED=true` 且网关公网可达时，**任何人都能**用你的镜像加速、通过 `/offline/<image>` 拉取任意镜像 tar，耗费你的上游带宽与配额。
+
+**为什么 CDN 下 IP ACL 靠不住**：源站只看到 CDN 回源 IP；`ClientIP` 取 `X-Forwarded-For` 首段**可被伪造**，取 `RemoteAddr` 又是 CDN＝放行所有人。所以 `[acl] ip_allow` 在 CDN 后**无法按真实客户端 IP 限制**。
+
+**降低风险（任选，按场景）：**
+1. **不需要公网 Docker 加速** → `DOCKER_ENABLED=false`（最省心；GitHub/HF/搜索仍 token 保护，可正常公网）。
+2. **开放当公共 mirror + 边缘防滥用** → registry-mirror 用公网 `https://<域名>`；在 CDN（EdgeOne 看得到真实客户端 IP）对 `/v2`、`/offline` 配**速率限制、并发/带宽封顶、IP 黑名单、地域限制**；并盯 `gm-cache` 体积与上游出网账单。
+3. **远程机器有固定公网 IP（推荐生产自用）** → 用**不走 CDN 的难猜子域名**（如 `m7f3k9mirror.<域名>`，A 记录直连源站），源站 nginx 给该域名反代到 `gh-mirror:8080`（`merge_slashes off` + `proxy_pass ...$request_uri`），云**安全组只放行那几台机器公网 IP** 访问源站 80；registry-mirror 指向该子域名。
+4. **只把 /offline 藏起来** → 公网反代用秘密前缀 + 裸路径 404（registry 因 docker 不支持路径前缀，不适用此招）：
+   ```nginx
+   location ^~ /v2/      { return 404; }
+   location ^~ /offline/ { return 404; }
+   location ^~ /<SECRET>/offline/ {
+       rewrite ^/<SECRET>/offline/(.*)$ /offline/$1 break;
+       proxy_pass http://127.0.0.1:8080;
+       proxy_set_header Host $host;
+       proxy_set_header X-Forwarded-Proto https;
+       proxy_read_timeout 600s; client_max_body_size 0;
+   }
+   ```
+   用法：`curl https://<域名>/<SECRET>/offline/library/nginx:1.25 -o nginx.tar`（`<SECRET>` 用一长串随机串）。
+
+> 秘密路径/子域名属「混淆」而非鉴权：URL 可能出现在命令历史、`daemon.json`、日志中而泄露，能挡随机扫描与大部分滥用，挡不住知道 URL 的人；请叠加 CDN 限速/带宽封顶。开启 `DOCKER_ENABLED` 后，**管理后台顶部会自动显示该安全提醒**。
+
 ## 已知坑（来自项目大脑 knowledge/）
 - **双斜杠**：代理路径 `/g/<token>/https://...` 的 `//` 必须保留，nginx 需 `merge_slashes off` + `proxy_pass ...$request_uri`，否则解析失败 404。
 - **端口冲突**：场景 B 的内置 nginx 会占用主机 80/443。若部署机已有其它 Web 服务，请改用场景 A（不启用 proxy profile）。
 - **域名前置 CDN（EdgeOne/Cloudflare）**：会压掉 `/g/<token>/https://` 的双斜杠、缓存动态内容致 404，并让源站 LE 报 521。按上面「域名前置 CDN 的正确接法」处理：CDN 持证书 + 源站只做 80 反代 + 关 CDN 缓存/URL 规范化。
+- **Docker/离线无 Token 鉴权**：`/v2`、`/offline` 不用 token，CDN 后 `ip_allow` 也挡不住真实客户端。详见「Docker 加速安全」：按需 `DOCKER_ENABLED=false` / 边缘限速带宽封顶 / 难猜子域名+安全组 / `/offline` 秘密前缀。
 - **HTTP 后台登录失败**：纯 HTTP 部署若忘把 `COOKIE_SECURE=false`，浏览器不会下发 Secure cookie，表现为登录无反应/反复跳登录。
 - **GHCR 可见性**：`ghcr.io/yufeng8/gh-mirror` 包须设为 **Public**，否则匿名 `docker pull` 报 401；私有则需在 `gh-mirror` 服务加 `docker login ghcr.io`（带 `read:packages` 的令牌）。
 - **缓存持久化**：`gm-cache` / `gm-data` 为命名卷，重建容器不会丢缓存与 token。
