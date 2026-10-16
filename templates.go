@@ -200,7 +200,7 @@ const pageStyle = `
   .console .topbar h1{font-size:1.28rem;margin:0;font-weight:750}
   .console .topbar .spacer{margin-left:auto;display:flex;gap:8px;align-items:center}
   .console .card{margin-bottom:18px}
-  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:14px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px}
   .stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
   .stat .k{color:var(--muted-foreground);font-size:.8rem;margin:0}
   .stat .v{font-size:1.55rem;font-weight:750;margin:3px 0 0;font-variant-numeric:tabular-nums;line-height:1.1}
@@ -270,12 +270,17 @@ const pageStyle = `
   .forgot-title{font-weight:700;margin:2px 0 8px}
   .small{font-size:.82rem}
   .svcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-  .svccard{background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+  .svccard{background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column}
   .svccard-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .svccard-head h3{margin:0;font-size:1.02rem;font-weight:700}
   .svccard p{color:var(--muted-foreground);font-size:.88rem;margin:10px 0 0}
   .svccard code{font-size:.8rem}
-  .svccard-foot{margin-top:14px;display:flex;justify-content:flex-end;align-items:center;gap:8px}
+  /* 底部标识统一宽高并贴卡片底部对齐（margin-top:auto），三张卡视觉一致 */
+  .svccard-foot{margin-top:auto;padding-top:14px;display:flex;justify-content:flex-end;align-items:center;gap:8px}
+  .svccard-btn{min-width:132px;height:36px;padding:0 18px;border-radius:9px}
+  .svccard-tag{display:inline-flex;align-items:center;justify-content:center;min-width:132px;height:36px;padding:0 18px;border-radius:9px;
+    font-size:.84rem;font-weight:600;color:var(--muted-foreground);background:var(--card);border:1px dashed var(--border)}
+  .navsep{display:block;height:1px;margin:10px 8px;background:var(--border)}
   .svc-toggle{display:inline}
   .conv-row{display:flex;gap:8px;flex-wrap:wrap}
   .conv-row input{flex:1;min-width:200px}
@@ -304,6 +309,7 @@ const pageStyle = `
     .console aside{width:100%;height:auto;position:static;display:flex;gap:6px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border);padding:10px 12px}
     .console aside .brand{display:none}
     .console .nav{display:flex;gap:6px}
+    .navsep{display:none}
     .navitem{white-space:nowrap}
     .console .main{padding:18px 16px 48px}
   }
@@ -576,7 +582,6 @@ var dashboardBody = `
   %s
   <div class="main">
     <div class="topbar">
-      <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
       <h1>管理后台</h1>
       <div class="spacer">%s</div>
     </div>

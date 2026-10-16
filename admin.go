@@ -282,13 +282,16 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	if s.dockerEnabled() {
 		warnHTML = `<div class="alert danger"><strong>⚠️ 安全提醒：Docker 加速/离线镜像已开启</strong>（<code>DOCKER_ENABLED=true</code>）。端点 <code>/v2</code> 与 <code>/offline</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token）。<br>· 若网关经公网/CDN 暴露，<strong>任何人都能使用你的镜像加速、拉取离线 tar</strong>，耗费上游带宽。<br>· 置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只见 CDN 回源 IP，X-Forwarded-For 可伪造）。<br><strong>降低风险（任选）：</strong>1) 不需要公网 Docker 加速就设 <code>DOCKER_ENABLED=false</code>；2) 公网反代挡掉裸路径 <code>location ^~ /v2/ { return 404; }</code>、<code>location ^~ /offline/ { return 404; }</code>，/offline 改用带秘密前缀的地址；3) registry 用「不走 CDN 的难猜子域名」直连源站 + 云安全组按来源 IP 放行；4) 在 CDN（EdgeOne）对 <code>/v2</code>、<code>/offline</code> 配速率限制与带宽封顶（CDN 看得到真实客户端 IP）。详见 <code>docs/docker-deploy.md</code>「Docker 加速安全」。</div>`
 	}
-	// 侧栏导航（仅真实存在的入口）；品牌 Logo 点击回首页
+	// 侧栏导航（仅真实存在的入口）；品牌 Logo 点击回首页（顶栏不再重复放品牌）
+	// 「文档」指向仓库 README 的「文档」小节——README 里汇总了全部部署/使用文档入口
 	aside := `<aside><a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a><nav class="nav">` +
 		`<a class="navitem active" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
 		`<a class="navitem" href="#services"><span class="ic">⚙️</span>服务管理</a>` +
 		`<a class="navitem" href="#cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<a class="navitem" href="#tokens"><span class="ic">🔑</span>Token 管理</a>` +
-		`<a class="navitem" href="` + repoURL + `/tree/feat/hubproxy/docs" target="_blank" rel="noopener"><span class="ic">📄</span>文档</a>` +
+		`<span class="navsep"></span>` +
+		`<a class="navitem" href="` + repoURL + `/#文档" target="_blank" rel="noopener"><span class="ic">📄</span>文档</a>` +
+		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">✦</span>GitHub</a>` +
 		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">⎋</span>退出登录</a></nav></aside>`
 	// 顶栏右侧：健康检查 CTA + 主题切换
 	topbarRight := `<a class="btn outline" href="` + base + `/healthz" target="_blank" rel="noopener">健康检查</a>` +
@@ -320,17 +323,18 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`<p class="muted small" style="margin-top:10px">基于当前访问地址与首个 token 生成；GitHub / HuggingFace 链接需 token，Docker 镜像名给出 <code>/offline</code> 离线 tar 地址。</p>`
 	// 服务管理三卡：GitHub 恒开；Docker / HuggingFace 即时开关（持锁内存 + settings.json 持久化）
 	svcCard := func(tag, name, desc, usage string, on bool, svc string) string {
-		state, foot := `<span class="badge on">● 已开启</span>`, `<span class="muted small">由部署参数固定，无需配置</span>`
+		// 三张卡的底部标识统一宽高，视觉一致；GitHub 恒开用「默认开启」标识代替按钮
+		state, foot := `<span class="badge on">● 已开启</span>`, `<span class="svccard-tag">默认开启</span>`
 		if svc != "" {
 			form := `<form method="post" action="` + s.adminPath + `/service" class="svc-toggle">` +
 				`<input type="hidden" name="csrf" value="` + csrf + `">` +
 				`<input type="hidden" name="name" value="` + svc + `">`
 			if on {
 				state = `<span class="badge on">● 已开启</span>`
-				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn outline">关闭</button></form>`
+				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn svccard-btn">关闭</button></form>`
 			} else {
 				state = `<span class="badge off">○ 未开启</span>`
-				foot = form + `<input type="hidden" name="on" value="1"><button type="submit" class="btn">开启</button></form>`
+				foot = form + `<input type="hidden" name="on" value="1"><button type="submit" class="btn svccard-btn">开启</button></form>`
 			}
 		}
 		return `<div class="svccard"><div class="svccard-head"><span class="tag">` + tag + `</span><h3>` + name + `</h3>` + state + `</div>` +
