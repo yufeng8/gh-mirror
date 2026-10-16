@@ -11,15 +11,23 @@
 - EdgeOne 前置是本次最大坑（见文末故障排查）：会导致源站 LE 报 521、并可能压掉 gh-mirror 的双斜杠路径。
 
 ## 镜像
-- 用：`ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy`（多架构 amd64/arm64，含 HF，**已修登录 400 bug**）。
-- 不要用 `:latest`（跟踪 main，**无 HF**）；不要用 `:v0.1.0`（带登录 bug）。
+- 用：`ghcr.io/yufeng8/gh-mirror:<TAG>`（多架构 amd64/arm64，含 HF 与 hubproxy 分支特性）。
+- **`<TAG>` 请替换为 [Releases](https://github.com/yufeng8/gh-mirror/releases) 里的最新正式版 tag**（形如 `vX.Y.Z-hubproxy`）；下文命令里出现的 `<TAG>` 都是同一个占位符，复制后先统一替换。
+  ```bash
+  # 取最新正式版 tag（只执行一次；也可直接到 Releases 页面复制 tag 名）
+  TAG=$(curl -fsS https://api.github.com/repos/yufeng8/gh-mirror/releases \
+        | grep -o '"tag_name": *"[^"]*"' | grep -v latest | head -n1 \
+        | sed 's/.*"tag_name": *"\(.*\)"/\1/')
+  echo "使用镜像 tag: $TAG"   # 后续把 <TAG> 换成 $TAG 的值
+  ```
+- 不要用 `:latest`（跟踪 main，**无 HF 与 hubproxy 特性**）。
 
 ---
 
 ## 1. 部署网关（Docker）
 ```bash
 # 拉镜像（若 401：到 GHCR Packages 设置把包改为 Public）
-docker pull ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy
+docker pull ghcr.io/yufeng8/gh-mirror:<TAG>
 
 # 生成密码与签名密钥（记好）
 ADMIN_SECRET=$(openssl rand -hex 32); ADMIN_PASS=$(openssl rand -base64 18)
@@ -34,7 +42,7 @@ docker run -d --name gh-mirror --restart unless-stopped \
   -e HF_ENABLED=true \
   -p 127.0.0.1:8080:8080 \
   -v gm-cache:/var/cache/gh-mirror -v gm-data:/var/lib/gh-mirror \
-  ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy
+  ghcr.io/yufeng8/gh-mirror:<TAG>
 
 docker logs --tail 20 gh-mirror
 curl -fsS http://127.0.0.1:8080/healthz     # 期望 ok
@@ -140,7 +148,7 @@ EOF
 cat > run.sh <<'EOF'
 #!/usr/bin/env bash
 set -e
-IMAGE="${1:-ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy}"
+IMAGE="${1:-ghcr.io/yufeng8/gh-mirror:<TAG>}"
 docker pull "$IMAGE"
 docker rm -f gh-mirror 2>/dev/null || true
 docker run -d --name gh-mirror --restart unless-stopped \
@@ -161,7 +169,7 @@ cd /opt/gh-mirror
 ```
 **回滚**（新镜像有问题，用上一个 tag 再跑一次即可）：
 ```bash
-./run.sh ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy
+./run.sh ghcr.io/yufeng8/gh-mirror:<TAG>
 ```
 > 注意：`gm.env` 只放**我们自己的变量**；不要把 `docker inspect` 导出的镜像默认变量（`PATH` 等）塞进去，否则可能破坏容器。改 `ADMIN_PASS`/`ADMIN_SECRET`/开关只需编辑 `gm.env` 再 `./run.sh`。
 > 若用 compose 部署则更简单：改 `docker-compose.yml` 的 `image:` tag，再 `docker compose ... up -d`（带上与首次相同的 `-f/--profile`）。

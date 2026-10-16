@@ -1,5 +1,8 @@
 # gh-mirror 目标机升级 Runbook → v0.1.2-hubproxy（给 AI Agent 执行）
 
+> ⚠️ **版本号说明**：本文以 `v0.1.2-hubproxy` 为**示例**写成，便于对照本次改了什么。
+> 实际升级请把文中所有 `v0.1.2-hubproxy` 替换为 [Releases](https://github.com/yufeng8/gh-mirror/releases) 里的**最新正式版 tag**（形如 `vX.Y.Z-hubproxy`）——不要沿用旧版本号，也**不要用 `:latest`**（它跟踪 main，不含 HuggingFace 与 hubproxy 分支特性）。
+
 > 目标：把已在运行的 gh-mirror 升级到 `ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy`
 > （三页 UI 现代化重构 + favicon + 登录「忘记密码」面板 + 后台统计卡/服务徽标/健康检查/运行时长 + Docker 安全强提醒 + `%!s(MISSING)` 修复）。
 > **保留数据与既有反代**，对外仅瞬断（容器重建 <1s）。
