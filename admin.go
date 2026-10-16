@@ -217,10 +217,35 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	if len(tokens) == 0 {
 		rows.WriteString(`<tr><td colspan="7" class="muted">暂无 token，请在下方添加</td></tr>`)
 	}
-	example := "（请先添加一个 token）"
-	if len(tokens) > 0 {
-		example = "https://你的域名/g/" + tokens[0].Token + "/https://github.com/owner/repo/blob/main/file.txt"
+	// 自动拼接当前访问地址：经反代时按 X-Forwarded-Proto/TLS 判定 https，否则 http；host 取请求 Host
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
 	}
+	base := scheme + "://" + html.EscapeString(r.Host)
+	tk := ""
+	if len(tokens) > 0 {
+		tk = tokens[0].Token
+	}
+	// 三个服务的代理示例：GitHub/HuggingFace 需 token；Docker 无需 token；HF/Docker 按开关显示
+	ghEx, hfEx := "请先在下方添加一个 token", "请先在下方添加一个 token"
+	if tk != "" {
+		ghEx = base + "/g/" + tk + "/https://github.com/yufeng8/gh-mirror/blob/main/README.md"
+		hfEx = base + "/hf/" + tk + "/openai-community/gpt2/resolve/main/config.json"
+	}
+	if !s.cfg.HF.Enabled {
+		hfEx = "HuggingFace 加速未开启（设 HF_ENABLED=true）"
+	}
+	dockerEx := "Docker 加速未开启（设 DOCKER_ENABLED=true）"
+	if s.cfg.Docker.Enabled {
+		dockerEx = "离线 tar：" + base + "/offline/library/nginx:1.25 ；或 registry 加速：daemon.json 加 \"registry-mirrors\": [\"" + base + "\"] 后 systemctl restart docker"
+	}
+	var ex strings.Builder
+	ex.WriteString(`<p class="muted">代理示例（已自动填入当前访问地址，复制即可用）：</p>`)
+	ex.WriteString(`<p><strong>GitHub 资源</strong>（需 token）：<br><code>` + ghEx + `</code></p>`)
+	ex.WriteString(`<p><strong>HuggingFace 权重</strong>（需 token）：<br><code>` + hfEx + `</code></p>`)
+	ex.WriteString(`<p><strong>Docker 镜像</strong>（无需 token）：<br><code>` + dockerEx + `</code></p>`)
+	example := ex.String()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: example, rows, add-action, add-form-csrf, logout-href
 	// 只对 body 片段做 Sprintf（body 内无 CSS 的 %），再用 page() 包裹，避免 CSS 中的 % 被误当作格式化动词
