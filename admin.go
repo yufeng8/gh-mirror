@@ -183,7 +183,9 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, loginHTML, s.adminPath, html.EscapeString(errMsg))
+	// 只对 body 片段做 Sprintf（body 内无 CSS 的 %），再用 page() 包裹，避免 CSS 中的 % 被误当作格式化动词
+	body := fmt.Sprintf(loginBody, s.adminPath, html.EscapeString(errMsg))
+	_, _ = w.Write([]byte(page("管理员登录 - gh-mirror", "管理员登录", body)))
 }
 
 func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +223,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: example, rows, add-action, add-form-csrf, logout-href
-	fmt.Fprintf(w, dashboardHTML, example, rows.String(), s.adminPath, csrf, s.adminPath)
+	// 只对 body 片段做 Sprintf（body 内无 CSS 的 %），再用 page() 包裹，避免 CSS 中的 % 被误当作格式化动词
+	body := fmt.Sprintf(dashboardBody, example, rows.String(), s.adminPath, csrf, s.adminPath)
+	_, _ = w.Write([]byte(page("管理后台 - gh-mirror", "管理后台", body)))
 }
 
 // formatBytes 把字节数格式化为易读单位。
