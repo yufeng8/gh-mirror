@@ -23,17 +23,17 @@
   <text x="70" y="150" font-size="17" letter-spacing="3" fill="#7dd3fc" font-weight="600">SELF-HOSTED MULTI-SERVICE ACCELERATION GATEWAY</text>
   <text x="66" y="252" font-size="98" font-weight="800" fill="url(#title)">gh-mirror</text>
   <rect x="72" y="278" width="226" height="5" rx="2.5" fill="url(#gw)"/>
-  <text x="70" y="334" font-size="28" fill="#cbd5e1">Docker images · GitHub repos · HuggingFace weights</text>
-  <text x="70" y="372" font-size="28" fill="#cbd5e1">— One gateway to accelerate them all</text>
+  <text x="70" y="334" font-size="28" fill="#cbd5e1">Docker 镜像 · GitHub 资源 · HuggingFace 权重</text>
+  <text x="70" y="372" font-size="28" fill="#cbd5e1">— 一个网关，一站加速</text>
   <g font-size="16" fill="#cbd5e1">
-    <rect x="70" y="412" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="431" r="5" fill="#22d3ee"/><text x="108" y="437">Image Mirror</text>
-    <rect x="262" y="412" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="284" cy="431" r="5" fill="#34d399"/><text x="300" y="437">Offline tar</text>
-    <rect x="454" y="412" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="476" cy="431" r="5" fill="#a78bfa"/><text x="492" y="437">Image Search</text>
-    <rect x="70" y="466" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="485" r="5" fill="#fbbf24"/><text x="108" y="491">Rate Limit · ACL</text>
-    <rect x="262" y="466" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="284" cy="485" r="5" fill="#f472b6"/><text x="300" y="491">Token Auth</text>
-    <rect x="454" y="466" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="476" cy="485" r="5" fill="#38bdf8"/><text x="492" y="491">SOCKS5 Egress</text>
+    <rect x="70" y="412" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="431" r="5" fill="#22d3ee"/><text x="108" y="437">镜像加速</text>
+    <rect x="262" y="412" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="284" cy="431" r="5" fill="#34d399"/><text x="300" y="437">离线 tar</text>
+    <rect x="454" y="412" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="476" cy="431" r="5" fill="#a78bfa"/><text x="492" y="437">镜像搜索</text>
+    <rect x="70" y="466" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="485" r="5" fill="#fbbf24"/><text x="108" y="491">限流 · ACL</text>
+    <rect x="262" y="466" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="284" cy="485" r="5" fill="#f472b6"/><text x="300" y="491">Token 鉴权</text>
+    <rect x="454" y="466" width="180" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="476" cy="485" r="5" fill="#38bdf8"/><text x="492" y="491">SOCKS5 出站</text>
   </g>
-  <text x="70" y="560" font-size="18" fill="#94a3b8">Pure Go stdlib · Zero third-party deps · Single binary · Offline build</text>
+  <text x="70" y="560" font-size="18" fill="#94a3b8">Go 标准库 · 零第三方依赖 · 单二进制 · 离线可构建</text>
 
   <g stroke="#22d3ee" stroke-opacity="0.55" stroke-width="2" fill="none">
     <path d="M 800 226 L 948 318"/><path d="M 1180 226 L 1012 318"/>
@@ -74,5 +74,5 @@
 
   <text x="980" y="436" text-anchor="middle" font-size="18" fill="#cbd5e1">gh-mirror</text>
   <g stroke="url(#cache)" stroke-width="2"><ellipse cx="980" cy="496" rx="56" ry="14" fill="#0f1d36"/><ellipse cx="980" cy="512" rx="56" ry="14" fill="#0f1d36"/><ellipse cx="980" cy="528" rx="56" ry="14" fill="#0f1d36"/></g>
-  <text x="980" y="568" text-anchor="middle" font-size="16" fill="#94a3b8">Disk Cache</text>
+  <text x="980" y="568" text-anchor="middle" font-size="16" fill="#94a3b8">磁盘缓存 Cache</text>
 </svg>
