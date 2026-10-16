@@ -119,17 +119,21 @@ const pageStyle = `
   thead th{background:var(--muted);font-weight:600}
   tbody tr:last-child td{border-bottom:0}
   .topnav{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:16px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--glass);backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
-  .topnav .brand{display:flex;align-items:center;gap:10px;font-weight:800}
+  .topnav .brand{display:flex;align-items:center;gap:10px;font-weight:800;white-space:nowrap}
   .topnav nav{display:flex;gap:18px}
   .topnav nav a{color:var(--muted-foreground);font-weight:500;font-size:.92rem}
   .topnav nav a:hover{color:var(--foreground);text-decoration:none}
   .topnav .spacer{margin-left:auto;display:flex;gap:8px;align-items:center}
   .topnav .gh{display:inline-flex;align-items:center;gap:7px;font-weight:600}
   .hero{display:flex;gap:26px;align-items:center;flex-wrap:wrap;padding:44px 0 10px}
-  .hero h1{font-size:2.9rem;line-height:1.02;margin:0;font-weight:800;letter-spacing:-.02em;color:var(--primary)}
-  @supports(-webkit-background-clip:text){.hero h1{background:linear-gradient(120deg,var(--primary),#0ea5e9);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}}
+  /* line-height 过小会让渐变 background-clip:text 裁掉 g 等字母的降部，故用 1.15 并补一点下内边距 */
+  .hero h1{font-size:2.9rem;line-height:1.15;margin:0;padding-bottom:.08em;font-weight:800;letter-spacing:-.02em;color:var(--primary)}
+  @supports(-webkit-background-clip:text){.hero h1{background:linear-gradient(120deg,var(--primary),#0284c7);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}}
+  /* 深色主题用更亮的蓝端，保证渐变末端在深底上也可读 */
+  html.dark .hero h1{background:linear-gradient(120deg,#22c55e,#0ea5e9);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
   .hero .lede{font-size:1.35rem;font-weight:750;margin:8px 0 4px}
-  .hero .sub{color:var(--muted-foreground);margin:0;max-width:60ch}
+  /* 不设 max-width：ch 按字符"0"宽计算，中文下会出现突兀断点，交给容器自然换行即可 */
+  .hero .sub{color:var(--muted-foreground);margin:0}
   .section{margin-top:52px}
   .sec-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px}
   .sec-num{font-size:2.2rem;font-weight:800;line-height:1;color:var(--primary);opacity:.85;font-variant-numeric:tabular-nums}
@@ -155,6 +159,13 @@ const pageStyle = `
   .copy-btn:hover{background:rgba(255,255,255,.09)}
   .term pre{padding:14px 16px}
   .term code{background:transparent;color:inherit;padding:0;word-break:break-all;white-space:pre-wrap}
+  /* 长提示词默认折叠为约 5 行，底部渐隐提示可展开 */
+  .term.folded pre{max-height:calc(1.65em * 5 + 28px);overflow:hidden;position:relative}
+  .term.folded pre::after{content:"";position:absolute;left:0;right:0;bottom:0;height:60px;background:linear-gradient(to bottom,rgba(11,16,32,0),#0b1020)}
+  .fold-btn{background:transparent;border:1px solid rgba(255,255,255,.2);color:#cbd5e1;padding:3px 11px;font-size:.76rem;border-radius:8px;cursor:pointer}
+  .fold-btn:hover{background:rgba(255,255,255,.09)}
+  .badge-link{display:inline-flex;align-items:center;gap:6px;padding:5px 13px;border:1px solid var(--border);border-radius:999px;background:var(--muted);color:var(--foreground);font-size:.82rem;font-weight:600}
+  .badge-link:hover{color:var(--primary);border-color:var(--primary);text-decoration:none}
   .console{display:flex;min-height:100vh}
   .console aside{width:232px;flex:0 0 auto;border-right:1px solid var(--border);padding:16px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--card)}
   .console aside .brand{display:flex;align-items:center;gap:10px;font-weight:800;padding:4px 8px 16px}
@@ -227,7 +238,7 @@ const pageStyle = `
     .navitem{white-space:nowrap}
     .console .main{padding:18px 16px 48px}
   }
-  @media (max-width:600px){.container{padding:0 14px 44px}.topnav nav{display:none}pre{font-size:.8rem}table{display:block;overflow-x:auto;white-space:nowrap}.conv-row input{min-width:100%}.fld input{width:100%}}
+  @media (max-width:600px){.container{padding:0 14px 44px}.topnav{padding:8px 12px;gap:10px}.topnav nav{display:none}.topnav .btn{padding:6px 10px;font-size:.82rem}.topnav .gh span{display:none}.topnav .gh{padding:6px 9px}.topnav .brand{gap:8px;font-size:.95rem}.topnav .brand>svg{width:26px;height:26px}.hero{gap:18px;padding:30px 0 6px}pre{font-size:.8rem}table{display:block;overflow-x:auto;white-space:nowrap}.conv-row input{min-width:100%}.fld input{width:100%}}
 </style>`
 
 const docOpen = `<!doctype html>
@@ -245,6 +256,7 @@ function gmConvURL(){var o=document.getElementById('gmconv-out');return o?(o.get
 function gmCopyConv(){var u=gmConvURL();if(!u)return;var b=document.getElementById('gmconv-copy');if(!b)return;var done=function(){b.textContent='已复制 ✓';setTimeout(function(){b.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=u;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(done,fb)}else{fb()}}
 function gmDownloadConv(){var u=gmConvURL();if(!u)return;var a=document.createElement('a');a.href=u;a.download='';document.body.appendChild(a);a.click();a.remove()}
 function gmOpenConv(){var u=gmConvURL();if(!u)return;window.open(u,'_blank','noopener')}
+function togglePromptExpand(){var t=document.getElementById('agentPromptTerm');var b=document.querySelector('#agentPromptTerm .fold-btn');if(!t||!b)return;var folded=t.classList.toggle('folded');b.textContent=folded?'展开全部':'收起';if(!folded){t.scrollIntoView({behavior:'smooth',block:'nearest'})}}
 (function(){var d=document.documentElement.classList.contains('dark');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';})();
 </script>`
 
@@ -307,12 +319,11 @@ func (s *Server) agentPrompt() string {
 }
 
 // homeHTML 生成首页（宣传/介绍页）；host 取请求实际域名，避免写死示例域名。
-// 同时把 docs/agent-prompt.md 的 <DOMAIN> 占位符替换为当前域名，转义后注入页面。
+// 提示词中的 <你的域名> 保持通用占位符（由使用者替换为实际部署域名），仅做 HTML 转义注入。
 func (s *Server) homeHTML(host string) string {
 	body := strings.ReplaceAll(homeTmpl, "{{HOST}}", host)
-	prompt := strings.ReplaceAll(s.agentPrompt(), "<DOMAIN>", host)
-	body = strings.ReplaceAll(body, "{{AGENT_PROMPT}}", html.EscapeString(prompt))
-	return page("gh-mirror · 多服务加速网关", "自托管的多服务加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。Token 鉴权、磁盘缓存、私有化部署。", body)
+	body = strings.ReplaceAll(body, "{{AGENT_PROMPT}}", html.EscapeString(s.agentPrompt()))
+	return page("gh-mirror · 多服务加速网关", "自托管的多服务加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。Token 鉴权、磁盘缓存、私有化部署，并支持 MCP 接入让 AI Agent 直接调用。", body)
 }
 
 const homeTmpl = `
@@ -327,7 +338,6 @@ const homeTmpl = `
   </nav>
   <div class="spacer">
     <a class="btn outline gh" href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + `<span>GitHub</span></a>
-    <a class="btn" href="` + repoURL + `" target="_blank" rel="noopener">⭐ Star</a>
     <button id="themeToggle" class="btn outline" type="button" onclick="toggleTheme()" aria-label="切换深色 / 浅色模式">🌙 深色</button>
   </div>
 </div>
@@ -337,9 +347,12 @@ const homeTmpl = `
   <div>
     <h1>gh-mirror</h1>
     <p class="lede">多服务加速网关</p>
-    <p class="sub">Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。私有化部署，Token 可控，磁盘缓存 + Range 续传。</p>
+    <p class="sub">Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。私有化部署，Token 可控，磁盘缓存 + Range 续传，<strong>并支持 MCP 接入</strong>，让 AI Agent 也能直接完成部署、调用与运维。</p>
+    <div class="row" style="margin-top:10px">
+      <a class="badge-link" href="#agent">🤖 MCP 接入 · AI Agent 友好</a>
+    </div>
     <div class="row" style="margin-top:16px">
-      <a class="btn" href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + ` ⭐ Star on GitHub</a>
+      <a class="btn" href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + ` ⭐ Star</a>
       <a class="btn outline" href="` + repoURL + `/fork" target="_blank" rel="noopener">🍴 Fork</a>
       <a class="btn outline" href="#deploy">快速部署</a>
     </div>
@@ -347,7 +360,7 @@ const homeTmpl = `
 </header>
 
 <div class="alert" style="margin-top:26px">
-  <strong>这是什么？</strong> 在国内或受限网络中拉取 GitHub / Docker Hub / HuggingFace 常常很慢、超时、CI 频繁失败？把 gh-mirror 部署在能顺畅访问这些服务的节点上，对内提供高速回源与本地缓存，浏览器与命令行（curl/wget/docker）通用。
+  <strong>这是什么？</strong> 在国内或受限网络中拉取 GitHub / Docker Hub / HuggingFace 常常很慢、超时、CI 频繁失败？把 gh-mirror 部署在能顺畅访问这些服务的节点上，对内提供高速回源与本地缓存，浏览器与命令行（curl/wget/docker）通用。<br><strong>它也是 AI Agent 友好型服务</strong>：内置 MCP 服务端，Agent（CodeBuddy / Cursor / Claude 等）可用标准协议直接管理 Token、开关 Docker/HF 加速、调整缓存、转换链接与搜索镜像，无需再手工拼接口。
 </div>
 
 <section class="section" id="features">
@@ -356,7 +369,8 @@ const homeTmpl = `
     <div class="feature"><span class="tag">GH</span><h3>GitHub 全场景加速</h3><p>覆盖 blob/raw、Releases、仓库打包 archive、短链 gh/，支持 Range 断点续传。</p></div>
     <div class="feature"><span class="tag">HF</span><h3>HuggingFace 权重</h3><p>加速模型 / LFS 大文件下载，config.toml 一键开启。</p></div>
     <div class="feature"><span class="tag">DK</span><h3>Docker 镜像加速</h3><p>registry-mirror 回源 Docker Hub / GHCR，另支持 /offline 产出可 docker load 的 tar。</p></div>
-    <div class="feature"><span class="tag">SRC</span><h3>镜像搜索</h3><p>/search 与 /tags 页面及 API，快速查找镜像与版本。</p></div>
+    <div class="feature"><span class="tag">SRC</span><h3>镜像搜索</h3><p>内置强大的镜像搜索：<code>/search</code>、<code>/tags</code> 页面与 API，并可通过 MCP 供 Agent 调用。</p></div>
+    <div class="feature"><span class="tag">AI</span><h3>MCP 接入 · Agent 友好</h3><p>内置 MCP 服务端，AI Agent 可直接管理 Token、服务开关、缓存与链接转换。</p></div>
     <div class="feature"><span class="tag">AUTH</span><h3>Token 鉴权</h3><p>后台签发 Token，无效请求返回 404，访问可控、可审计。</p></div>
     <div class="feature"><span class="tag">CACHE</span><h3>流式代理 + 磁盘缓存</h3><p>Go 标准库实现，零第三方依赖，单二进制，多架构镜像。</p></div>
   </div>
@@ -381,7 +395,7 @@ const homeTmpl = `
       <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">/etc/docker/daemon.json</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{ "registry-mirrors": ["{{HOST}}"] }</code></pre></div>
     </div>
   </div>
-  <p class="muted" style="margin-top:14px">镜像搜索：<code>/search?q=nginx</code> 与 <code>/tags?image=library/nginx</code>。</p>
+  <p class="muted" style="margin-top:14px">镜像搜索：内置强大的搜索能力，<code>/search?q=nginx</code> 与 <code>/tags?image=library/nginx</code> 页面及 JSON API 均可用，也能通过 MCP 交给 AI Agent 直接调用。</p>
 </section>
 
 <section class="section" id="deploy">
@@ -390,7 +404,7 @@ const homeTmpl = `
 cp .env.example .env   # 设 ADMIN_PASS / ADMIN_SECRET
 docker compose up -d --build
 curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
-  <p class="muted" style="margin-top:12px">也可用预构建镜像 <code>ghcr.io/yufeng8/gh-mirror:v0.1.0</code> 不编译直接跑。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/docker-deploy.md" target="_blank" rel="noopener">docs/docker-deploy.md</a> 与 <a href="` + repoURL + `/blob/feat/hubproxy/docs/deploy-runbook.md" target="_blank" rel="noopener">docs/deploy-runbook.md</a>。</p>
+  <p class="muted" style="margin-top:12px">也可用预构建镜像不编译直接跑：镜像 <code>ghcr.io/yufeng8/gh-mirror</code> 搭配 <a href="` + repoURL + `/releases" target="_blank" rel="noopener">GitHub Releases</a> 里的<strong>最新正式版 tag</strong>。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/docker-deploy.md" target="_blank" rel="noopener">docs/docker-deploy.md</a> 与 <a href="` + repoURL + `/blob/feat/hubproxy/docs/deploy-runbook.md" target="_blank" rel="noopener">docs/deploy-runbook.md</a>。</p>
 </section>
 
 <section class="section" id="updates">
@@ -405,8 +419,8 @@ curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
 
 <section class="section" id="agent">
   <div class="sec-head"><span class="sec-num">05</span><div><span class="sec-en">AI Agent</span><h2>一键交给 AI Agent 部署</h2></div></div>
-  <p class="muted">把下面这段提示词整体复制，交给你的 AI Agent（CodeBuddy / Cursor / Claude 等），它就能照着仓库文档在这台服务器上自动完成部署与验证：</p>
-  <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">prompt · 已自动填入当前域名</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{{AGENT_PROMPT}}</code></pre></div>
+  <p class="muted">把下面这段提示词整体复制，交给你的 AI Agent（CodeBuddy / Cursor / Claude 等），它就能照着仓库文档自动完成部署与验证。提示词中的 <code>&lt;你的域名&gt;</code> 是通用占位符，<strong>请先替换为你要部署的实际域名</strong>（或让 Agent 先向你确认）：</p>
+  <div class="term folded" id="agentPromptTerm"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">prompt · 默认折叠，展开可见全文</span><button type="button" class="fold-btn" onclick="togglePromptExpand()">展开全部</button><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{{AGENT_PROMPT}}</code></pre></div>
   <p class="muted" style="margin-top:12px">本服务同时支持 <strong>MCP 接入</strong>：AI Agent 可通过标准 MCP 协议直接管理 Token、服务开关与缓存，无需再猜接口。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。提示词内容与仓库 <code>docs/agent-prompt.md</code> 保持一致，随版本更新。</p>
 </section>
 
