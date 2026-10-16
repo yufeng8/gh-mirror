@@ -217,9 +217,15 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	if len(tokens) == 0 {
 		rows.WriteString(`<tr><td colspan="7" class="muted">暂无 token，请在下方添加</td></tr>`)
 	}
+	// 自动拼接当前访问地址：经反代时按 X-Forwarded-Proto/TLS 判定 https，否则 http；host 取请求 Host
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	base := scheme + "://" + r.Host
 	example := "（请先添加一个 token）"
 	if len(tokens) > 0 {
-		example = "https://你的域名/g/" + tokens[0].Token + "/https://github.com/owner/repo/blob/main/file.txt"
+		example = base + "/g/" + tokens[0].Token + "/https://github.com/yufeng8/gh-mirror/blob/main/README.md"
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: example, rows, add-action, add-form-csrf, logout-href
