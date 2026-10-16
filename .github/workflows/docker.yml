@@ -59,6 +59,7 @@ jobs:
       - name: Set package visibility to public
         # 用 Action 自带的 GITHUB_TOKEN（已授权 packages: write）把 GHCR 包设为 Public，
         # 使匿名 docker pull 可用。失败不阻断构建（continue-on-error）。
+        # 注意：yufeng8 是组织，包归属走 orgs/{owner}；为兼容个人账号也回退尝试 users/{owner}。
         if: github.event_name == 'push'
         continue-on-error: true
         env:
@@ -68,9 +69,10 @@ jobs:
           PKG="${GITHUB_REPOSITORY,,}"
           PKG="${PKG#*/}"
           echo "Setting GHCR package '${PKG}' visibility to public..."
-          if gh api --method PATCH "users/${OWNER}/packages/container/${PKG}/visibility" \
-               -f visibility=public; then
-            echo "OK: package ghcr.io/${GITHUB_REPOSITORY} is now public"
+          if gh api --method PATCH "orgs/${OWNER}/packages/container/${PKG}/visibility" -f visibility=public 2>/dev/null; then
+            echo "OK: package ghcr.io/${GITHUB_REPOSITORY} is now public (via orgs/${OWNER})"
+          elif gh api --method PATCH "users/${OWNER}/packages/container/${PKG}/visibility" -f visibility=public 2>/dev/null; then
+            echo "OK: package ghcr.io/${GITHUB_REPOSITORY} is now public (via users/${OWNER})"
           else
             echo "WARN: 通过 GITHUB_TOKEN 设置可见性失败（少数情况下需要带 write:packages 的 PAT，或到 Packages 设置里手动改为 Public）"
           fi
