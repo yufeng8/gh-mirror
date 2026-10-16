@@ -181,11 +181,12 @@ func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := strings.TrimSpace(r.FormValue("token"))
 	note := strings.TrimSpace(r.FormValue("note"))
+	role := strings.TrimSpace(r.FormValue("role"))
 	if tok == "" {
 		tok = GenToken()
 	}
 	if !s.store.Has(tok) {
-		s.store.Add(tok, note)
+		s.store.Add(tok, note, role)
 	}
 	http.Redirect(w, r, s.adminPath, http.StatusFound)
 }
@@ -232,20 +233,24 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		if t.LastUsed > 0 {
 			lastUsed = time.Unix(t.LastUsed, 0).Format("2006-01-02 15:04")
 		}
+		roleTxt, roleCls := "普通", "badge"
+		if normRole(t.Role) == RoleAdmin {
+			roleTxt, roleCls = "管理员", "badge on"
+		}
 		rows.WriteString(fmt.Sprintf(
-			`<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td class="num">%d</td><td class="num">%s</td><td>%s</td><td>
+			`<tr><td><code>%s</code></td><td>%s</td><td><span class="%s">%s</span></td><td>%s</td><td class="num">%d</td><td class="num">%s</td><td>%s</td><td>
 <form method="post" action="%s/del" class="del-form">
 <input type="hidden" name="csrf" value="%s">
 <input type="hidden" name="token" value="%s">
 <button type="submit" class="danger" onclick="return confirm('确定删除该 token？')">删除</button>
 </form></td></tr>`,
-			html.EscapeString(t.Token), html.EscapeString(t.Note),
+			html.EscapeString(t.Token), html.EscapeString(t.Note), roleCls, roleTxt,
 			time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"),
 			t.Hits, formatBytes(t.Bytes), lastUsed,
 			s.adminPath, csrf, html.EscapeString(t.Token)))
 	}
 	if len(tokens) == 0 {
-		rows.WriteString(`<tr><td colspan="7" class="muted">暂无 token，请在下方添加</td></tr>`)
+		rows.WriteString(`<tr><td colspan="8" class="muted">暂无 token，请在下方添加</td></tr>`)
 	}
 	// 自动拼接当前访问地址：经反代时按 X-Forwarded-Proto/TLS 判定 https，否则 http；host 取请求 Host
 	base := baseOf(r)
@@ -371,7 +376,10 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`<input type="hidden" name="csrf" value="` + csrf + `">` +
 		`<input name="token" placeholder="留空则自动生成">` +
 		`<input name="note" placeholder="备注（可选）">` +
-		`<button type="submit" class="btn">添加</button></form>`
+		`<select name="role" title="角色：管理员可用于 MCP 接入" aria-label="Token 角色">` +
+		`<option value="user">普通用户</option><option value="admin">管理员（MCP）</option></select>` +
+		`<button type="submit" class="btn">添加</button></form>` +
+		`<p class="muted small" style="margin-top:8px">角色说明：普通 token 仅用于代理访问；<strong>管理员 token</strong> 可用于 <code>MCP</code> 接入（<code>/mcp</code> 或 <code>gh-mirror mcp</code>），请勿随意外发。</p>`
 	// 页脚链接
 	footLinks := `<a href="` + s.adminPath + `/logout">退出登录</a> · <a href="/">返回首页</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a>`
 

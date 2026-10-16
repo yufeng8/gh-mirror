@@ -113,6 +113,12 @@ func main() {
 	}
 	// 运行时设置（gm-data/settings.json）优先级最高：覆盖 config.toml / 环境变量的开关与缓存参数
 	loadSettings(s, cfg)
+	// MCP stdio 子命令：gh-mirror mcp [--token <admin-token>] [--base <url>]
+	// 以 stdio 传输供本地 Agent 接入（stdout 仅协议 JSON，日志走 stderr）
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		runMCPStdio(s)
+		return
+	}
 	// 缓存自动失效：周期清理过期文件，并在超总上限时按最旧优先清理
 	go func() {
 		ticker := time.NewTicker(cacheSweepInterval)
@@ -185,6 +191,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleOffline(w, r)
 	case s.hfEnabled() && strings.HasPrefix(path, hfPrefix):
 		s.handleHF(w, r)
+	case path == "/mcp" || strings.HasPrefix(path, "/mcp/"):
+		// MCP 接入（JSON-RPC 2.0）；限流与 ACL 中间件对 /mcp 同样生效
+		s.handleMCP(w, r)
 	case strings.HasPrefix(path, tokenPrefix):
 		s.handleProxy(w, r)
 	default:

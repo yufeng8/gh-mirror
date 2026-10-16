@@ -1,0 +1,213 @@
+package main
+
+import (
+	"encoding/json"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"gh-mirror/config"
+)
+
+// newTestServer 构造一个用于 MCP 测试的 Server（临时数据目录 + 一个 admin token）。
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := &config.Config{
+		Listen:          "127.0.0.1:18099",
+		CacheDir:        filepath.Join(dir, "cache"),
+		CacheTTLMinutes: 1440,
+		MaxCacheMB:      200,
+		TokensFile:      filepath.Join(dir, "tokens.json"),
+		Admin:           config.AdminConfig{Path: "/admin"},
+		Docker:          config.DockerConfig{Enabled: false},
+		HF:              config.HFConfig{Enabled: false},
+	}
+	s := &Server{
+		cfg:     cfg,
+		cache:   NewCache(cfg.CacheDir, time.Duration(cfg.CacheTTLMinutes)*time.Minute, cfg.MaxCacheMB),
+		store:   NewStore(cfg.TokensFile),
+		timeout: 30 * time.Second,
+	}
+	s.store.Add("adm", "test", RoleAdmin)
+	s.store.Add("usr", "test", RoleUser)
+	return s
+}
+
+// mcpCall 发送一个 JSON-RPC 请求并返回全部响应。
+func mcpCall(t *testing.T, s *Server, body string) []*rpcResp {
+	t.Helper()
+	var out []*rpcResp
+	s.serveMCPRPC("http://127.0.0.1:18099", []byte(body), func(r *rpcResp) { out = append(out, r) })
+	return out
+}
+
+// mcpFirstText 取首个响应的 result.content[0].text。
+func mcpFirstText(t *testing.T, r *rpcResp) string {
+	t.Helper()
+	if r == nil || r.Error != nil {
+		t.Fatalf("响应异常: %+v", r)
+	}
+	b, _ := json.Marshal(r.Result)
+	var cr mcpCallResult
+	if err := json.Unmarshal(b, &cr); err != nil {
+		t.Fatalf("解析 result 失败: %v (%s)", err, string(b))
+	}
+	if len(cr.Content) == 0 {
+		t.Fatal("result.content 为空")
+	}
+	return cr.Content[0].Text
+}
+
+// TestMCPInitialize 验证 initialize 回显客户端协议版本与 serverInfo。
+func TestMCPInitialize(t *testing.T) {
+	s := newTestServer(t)
+	out := mcpCall(t, s, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
+	if len(out) != 1 {
+		t.Fatalf("期望 1 个响应，实际 %d", len(out))
+	}
+	b, _ := json.Marshal(out[0].Result)
+	var res struct {
+		ProtocolVersion string `json:"protocolVersion"`
+		ServerInfo      struct {
+			Name string `json:"name"`
+		} `json:"serverInfo"`
+	}
+	if err := json.Unmarshal(b, &res); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if res.ProtocolVersion != "2025-06-18" {
+		t.Fatalf("应回显客户端协议版本，实际 %q", res.ProtocolVersion)
+	}
+	if res.ServerInfo.Name != mcpServerName {
+		t.Fatalf("serverInfo.name 应为 %q，实际 %q", mcpServerName, res.ServerInfo.Name)
+	}
+}
+
+// TestMCPToolsList 验证工具清单数量，且不泄露内部 handler 字段。
+func TestMCPToolsList(t *testing.T) {
+	s := newTestServer(t)
+	out := mcpCall(t, s, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if len(out) != 1 {
+		t.Fatalf("期望 1 个响应，实际 %d", len(out))
+	}
+	b, _ := json.Marshal(out[0].Result)
+	if strings.Contains(string(b), "handler") {
+		t.Fatal("tools/list 不应泄露内部 handler 字段")
+	}
+	var res struct {
+		Tools []struct {
+			Name        string         `json:"name"`
+			Description string         `json:"description"`
+			InputSchema map[string]any `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(b, &res); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if len(res.Tools) != len(mcpRegistry) {
+		t.Fatalf("工具数应为 %d，实际 %d", len(mcpRegistry), len(res.Tools))
+	}
+	var hasConvert, hasHealth bool
+	for _, tl := range res.Tools {
+		if tl.Name == "convert_link" {
+			hasConvert = true
+		}
+		if tl.Name == "health" {
+			hasHealth = true
+		}
+	}
+	if !hasConvert || !hasHealth {
+		t.Fatal("工具清单缺少 convert_link 或 health")
+	}
+}
+
+// TestMCPCallHealth 验证 tools/call 调用 health。
+func TestMCPCallHealth(t *testing.T) {
+	s := newTestServer(t)
+	out := mcpCall(t, s, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"health","arguments":{}}}`)
+	if len(out) != 1 {
+		t.Fatalf("期望 1 个响应，实际 %d", len(out))
+	}
+	text := mcpFirstText(t, out[0])
+	if !strings.Contains(text, "ok") {
+		t.Fatalf("health 应返回 ok，实际: %s", text)
+	}
+}
+
+// TestMCPCallSetService 验证服务开关即时生效并持久化。
+func TestMCPCallSetService(t *testing.T) {
+	s := newTestServer(t)
+	if s.hfEnabled() {
+		t.Fatal("初始 hf 应为关闭")
+	}
+	out := mcpCall(t, s, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_service","arguments":{"name":"hf","enabled":true}}}`)
+	text := mcpFirstText(t, out[0])
+	if !strings.Contains(text, "已开启") {
+		t.Fatalf("应返回已开启，实际: %s", text)
+	}
+	if !s.hfEnabled() {
+		t.Fatal("hf 应立即变为开启（即时生效）")
+	}
+	// 持久化校验
+	st := s.currentSettings()
+	if !st.HF {
+		t.Fatal("settings 应记录 hf=true（已持久化）")
+	}
+}
+
+// TestMCPCallConvertLink 验证链接转换（与后台转换器同一实现）。
+func TestMCPCallConvertLink(t *testing.T) {
+	s := newTestServer(t)
+	out := mcpCall(t, s, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"convert_link","arguments":{"url":"https://github.com/o/r/releases/download/v1/a.zip"}}}`)
+	text := mcpFirstText(t, out[0])
+	if !strings.Contains(text, "/g/") || !strings.Contains(text, "github.com/o/r") {
+		t.Fatalf("转换结果异常: %s", text)
+	}
+}
+
+// TestMCPUnknownMethod 与未知工具的报错。
+func TestMCPUnknownMethod(t *testing.T) {
+	s := newTestServer(t)
+	out := mcpCall(t, s, `{"jsonrpc":"2.0","id":5,"method":"foo/bar"}`)
+	if len(out) != 1 || out[0].Error == nil || out[0].Error.Code != rpcMethodNotFound {
+		t.Fatalf("未知方法应返回 -32601，实际: %+v", out)
+	}
+	out = mcpCall(t, s, `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"nope"}}`)
+	if len(out) != 1 || out[0].Error == nil || out[0].Error.Code != rpcInvalidParams {
+		t.Fatalf("未知工具应返回 -32602，实际: %+v", out)
+	}
+}
+
+// TestMCPNotificationNoResponse 验证通知类方法不回响应（stdio 下不得产生输出）。
+func TestMCPNotificationNoResponse(t *testing.T) {
+	s := newTestServer(t)
+	out := mcpCall(t, s, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	if len(out) != 0 {
+		t.Fatalf("通知类不应产生响应，实际 %d 个", len(out))
+	}
+}
+
+// TestMCPBatch 验证 JSON-RPC 批量请求。
+func TestMCPBatch(t *testing.T) {
+	s := newTestServer(t)
+	out := mcpCall(t, s, `[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_services","arguments":{}}}]`)
+	if len(out) != 2 {
+		t.Fatalf("批量应返回 2 个响应，实际 %d", len(out))
+	}
+}
+
+// TestStoreIsAdmin 验证 admin / user 角色区分（MCP 鉴权依赖）。
+func TestStoreIsAdmin(t *testing.T) {
+	s := newTestServer(t)
+	if !s.store.IsAdmin("adm") {
+		t.Fatal("adm 应为 admin 角色")
+	}
+	if s.store.IsAdmin("usr") {
+		t.Fatal("usr 不应具备 admin 角色")
+	}
+	if s.store.IsAdmin("nope") {
+		t.Fatal("不存在的 token 不应通过 admin 校验")
+	}
+}
