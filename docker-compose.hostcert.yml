@@ -1,0 +1,12 @@
+# 场景 B2 覆盖层：内置 nginx 复用「宿主机已有 Let's Encrypt 证书」，不自行申请证书。
+# 适用：宿主机已有 certbot / KPanel 在管理该域名证书（/etc/letsencrypt/live/<DOMAIN>/）。
+# 前提：把 nginx/gh-mirror.hostcert.conf 里的 <DOMAIN> 替换为实际域名。
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.hostcert.yml --profile proxy up -d --build
+services:
+  nginx:
+    volumes:
+      # 覆盖默认反代配置为 HTTPS 版
+      - ./nginx/gh-mirror.hostcert.conf:/etc/nginx/conf.d/default.conf:ro
+      # 只读挂载宿主机证书目录（同名 target 会覆盖基础层里的 gm-certs 命名卷）
+      - /etc/letsencrypt:/etc/letsencrypt:ro
