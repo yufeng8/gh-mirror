@@ -172,7 +172,7 @@ func (s *Server) fetch(w http.ResponseWriter, r *http.Request, dest *url.URL, ke
 	canCache := r.Method == http.MethodGet &&
 		resp.StatusCode == http.StatusOK &&
 		resp.ContentLength >= 0 &&
-		resp.ContentLength <= s.cache.maxBytes
+		resp.ContentLength <= s.cache.MaxBytes()
 
 	var cf *os.File
 	if canCache {

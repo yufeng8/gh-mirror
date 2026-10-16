@@ -272,11 +272,28 @@ clientip.go    # 真实客户端 IP + IPv6 /64 归并
 ratelimit.go   # 令牌桶限流
 acl.go         # IP/仓库黑白名单
 socks5.go      # 最小 SOCKS5 拨号器
-cache.go       # 磁盘缓存
+cache.go       # 磁盘缓存（TTL / 单文件上限 / 总上限 均可运行时热改 + 自动失效）
 store.go       # Token 持久化 + 统计
 rewrite.go     # 域名白名单 + URL 改写
 admin.go/templates.go  # 管理后台
+settings.go    # 运行时设置持久化（服务开关 + 缓存参数，gm-data/settings.json）
+cache_test.go  # 缓存自动失效 / 超限清理 / 清除 的单元测试
 ```
+
+## 文档
+
+- `docs/docker-deploy.md`：通用 Docker 部署、环境适配与冲突排查表、**域名前置 CDN（EdgeOne/Cloudflare）正确接法**、**Docker 加速安全**
+- `docs/deploy-runbook.md`：目标机实测部署 Runbook（先探测 → 选型 → 执行 → 端到端验证 → 更新/回滚）
+- `docs/upgrade-runbook.md`：升级 / 回滚镜像的一键脚本
+- `docs/agent-prompt.md`：**给 AI Agent 的部署提示词**（首页「一键交给 AI Agent 部署」直接渲染此文件，随版本更新；可用 `AGENT_PROMPT_FILE` 或 `gm-data/agent-prompt.md` 覆盖）
+
+## 致谢 / Acknowledgements
+
+本项目**部分思路参考自 [sky22333/hubproxy](https://github.com/sky22333/hubproxy)（MIT License · © 2025 sky22333）**——一个同样支持 Docker 镜像加速、GitHub 加速与离线镜像的多功能加速服务。
+
+gh-mirror 受其思路启发，以 Go **独立实现**，并扩展了 Web 管理后台、Token 鉴权、磁盘缓存、镜像搜索、链接转换与 MCP 接入等能力。若你的场景更适合原项目，也推荐尝试 hubproxy。
+
+本项目与 hubproxy **无任何关联（not affiliated）**。如有对其代码的复用，均遵循其 MIT 许可并保留相应声明。
 
 ## License
 

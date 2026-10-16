@@ -1,6 +1,12 @@
 package main
 
-import "strings"
+import (
+	_ "embed" // 启用 //go:embed（docs/agent-prompt.md）
+	"html"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 // repoURL 是本项目在 GitHub 上的地址，用于首页 Stars / Fork 引导与页脚。
 const repoURL = "https://github.com/yufeng8/gh-mirror"
@@ -66,7 +72,18 @@ const pageStyle = `
     -webkit-font-smoothing:antialiased;transition:background .2s ease,color .2s ease}
   .container{max-width:1000px;margin:0 auto;padding:0 20px 64px}
   .logo{width:46px;height:46px;flex:0 0 auto;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-  .logo svg,.mark svg,.brand svg{display:block;width:100%;height:100%}
+  .mark{width:72px;height:72px;flex:0 0 auto;border-radius:18px;overflow:hidden;box-shadow:0 12px 30px rgba(22,163,74,.26)}
+  .mark>svg,.logo>svg{display:block;width:100%;height:100%}
+  /* 品牌 Logo：markup 中是裸 <svg>，必须用直接子选择器分场景显式设定宽高，
+     否则 .brand 无自身宽高时 svg 会无约束放大（曾导致三页 Logo 过大）。 */
+  .brand{text-decoration:none;color:var(--foreground)}
+  .brand:hover{text-decoration:none}
+  .brand>svg{display:block;flex:0 0 auto;width:30px;height:30px;border-radius:9px}
+  .topnav .brand>svg{width:30px;height:30px}
+  .auth .brand>svg{width:40px;height:40px;border-radius:11px}
+  .auth .box .brand>svg{width:34px;height:34px;border-radius:10px}
+  .console aside .brand>svg{width:30px;height:30px}
+  .console .topbar .brand>svg{width:32px;height:32px}
   .muted{color:var(--muted-foreground)}
   code{background:var(--muted);padding:2px 6px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86rem;word-break:break-all}
   pre{background:#0b1020;color:#e6edf3;padding:14px 16px;border-radius:var(--radius);overflow:auto;font-size:.85rem;line-height:1.55;margin:0}
@@ -103,14 +120,12 @@ const pageStyle = `
   tbody tr:last-child td{border-bottom:0}
   .topnav{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:16px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--glass);backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
   .topnav .brand{display:flex;align-items:center;gap:10px;font-weight:800}
-  .topnav .brand .logo{width:30px;height:30px;border-radius:9px}
   .topnav nav{display:flex;gap:18px}
   .topnav nav a{color:var(--muted-foreground);font-weight:500;font-size:.92rem}
   .topnav nav a:hover{color:var(--foreground);text-decoration:none}
   .topnav .spacer{margin-left:auto;display:flex;gap:8px;align-items:center}
   .topnav .gh{display:inline-flex;align-items:center;gap:7px;font-weight:600}
   .hero{display:flex;gap:26px;align-items:center;flex-wrap:wrap;padding:44px 0 10px}
-  .hero .mark{width:84px;height:84px;flex:0 0 auto;border-radius:20px;overflow:hidden;box-shadow:0 14px 34px rgba(22,163,74,.28)}
   .hero h1{font-size:2.9rem;line-height:1.02;margin:0;font-weight:800;letter-spacing:-.02em;color:var(--primary)}
   @supports(-webkit-background-clip:text){.hero h1{background:linear-gradient(120deg,var(--primary),#0ea5e9);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}}
   .hero .lede{font-size:1.35rem;font-weight:750;margin:8px 0 4px}
@@ -143,7 +158,6 @@ const pageStyle = `
   .console{display:flex;min-height:100vh}
   .console aside{width:232px;flex:0 0 auto;border-right:1px solid var(--border);padding:16px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--card)}
   .console aside .brand{display:flex;align-items:center;gap:10px;font-weight:800;padding:4px 8px 16px}
-  .console aside .brand .logo{width:30px;height:30px;border-radius:9px}
   .console .nav{display:grid;gap:4px}
   .navitem{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;color:var(--muted-foreground);font-weight:500;font-size:.92rem}
   .navitem:hover{background:var(--muted);color:var(--foreground);text-decoration:none}
@@ -151,7 +165,6 @@ const pageStyle = `
   .navitem .ic{width:18px;text-align:center;flex:0 0 auto}
   .console .main{flex:1;min-width:0;padding:22px 26px 56px}
   .console .topbar{display:flex;align-items:center;gap:12px;margin-bottom:22px}
-  .console .topbar .brand .logo{width:32px;height:32px;border-radius:9px}
   .console .topbar h1{font-size:1.28rem;margin:0;font-weight:750}
   .console .topbar .spacer{margin-left:auto;display:flex;gap:8px;align-items:center}
   .console .card{margin-bottom:18px}
@@ -174,26 +187,37 @@ const pageStyle = `
   .auth .hero .pts li::before{content:"✓";font-weight:800}
   .auth .hero-foot a{color:#fff;opacity:.9;font-weight:600}
   .auth .brand{display:flex;align-items:center;gap:12px;font-weight:800;font-size:1.18rem}
-  .auth .brand .logo{width:40px;height:40px;border-radius:11px}
   .auth .panel{display:flex;align-items:center;justify-content:center;padding:40px 24px;background:var(--background)}
   .auth .box{width:100%;max-width:388px}
   .auth .box .brand{margin-bottom:10px}
-  .auth .box .brand .logo{width:34px;height:34px}
   .auth .box h1{font-size:1.7rem;margin:6px 0 2px;font-weight:800}
   .auth label{display:block;font-size:.86rem;font-weight:600;margin:16px 0 6px}
+  .auth .box input{width:100%}
   .auth .pw{display:flex;gap:8px}
-  .auth .pw input{flex:1}
-  .auth .btn-block{width:100%;margin-top:12px;padding:11px 16px}
+  .auth .pw input{flex:1;min-width:0}
+  .auth .btn-login{display:block;width:min(220px,72%);margin:16px auto 0;padding:11px 16px}
   .auth .err{min-height:1.3em;margin:8px 0 0;font-size:.86rem}
   .auth .note{margin-top:18px;font-size:.82rem}
-  .forgot{margin-top:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--muted)}
-  .forgot summary{cursor:pointer;font-weight:600;padding:10px 14px;list-style:none;color:var(--primary)}
+  .forgot{margin-top:10px;text-align:right}
+  .forgot summary{cursor:pointer;font-weight:500;font-size:.82rem;list-style:none;color:var(--muted-foreground);display:inline-block;padding:2px 0}
+  .forgot summary:hover{color:var(--primary)}
   .forgot summary::-webkit-details-marker{display:none}
-  .forgot[open] summary{border-bottom:1px solid var(--border)}
-  .forgot-body{padding:4px 14px 14px}
+  .forgot[open]{text-align:left;border:1px solid var(--border);border-radius:var(--radius);background:var(--muted);padding:4px 14px 14px}
   .forgot-title{font-weight:700;margin:10px 0 6px}
   .small{font-size:.82rem}
-  @media (max-width:900px){.grid-svc{grid-template-columns:1fr}.hero h1{font-size:2.3rem}}
+  .svcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .svccard{background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+  .svccard-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .svccard-head h3{margin:0;font-size:1.02rem;font-weight:700}
+  .svccard p{color:var(--muted-foreground);font-size:.88rem;margin:10px 0 0}
+  .svccard code{font-size:.8rem}
+  .svccard-foot{margin-top:14px;display:flex;justify-content:flex-end;align-items:center;gap:8px}
+  .svc-toggle{display:inline}
+  .conv-row{display:flex;gap:8px;flex-wrap:wrap}
+  .conv-row input{flex:1;min-width:200px}
+  .fld{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted-foreground);font-weight:600}
+  .fld input{width:130px}
+  @media (max-width:900px){.grid-svc{grid-template-columns:1fr}.svcgrid{grid-template-columns:1fr}.hero h1{font-size:2.3rem}}
   @media (max-width:860px){.auth{grid-template-columns:1fr}.auth .hero{display:none}}
   @media (max-width:820px){
     .console{flex-direction:column}
@@ -203,7 +227,7 @@ const pageStyle = `
     .navitem{white-space:nowrap}
     .console .main{padding:18px 16px 48px}
   }
-  @media (max-width:600px){.container{padding:0 14px 44px}.topnav nav{display:none}pre{font-size:.8rem}table{display:block;overflow-x:auto;white-space:nowrap}}
+  @media (max-width:600px){.container{padding:0 14px 44px}.topnav nav{display:none}pre{font-size:.8rem}table{display:block;overflow-x:auto;white-space:nowrap}.conv-row input{min-width:100%}.fld input{width:100%}}
 </style>`
 
 const docOpen = `<!doctype html>
@@ -216,6 +240,11 @@ const pageScript = `<script>
 function toggleTheme(){var d=document.documentElement.classList.toggle('dark');try{localStorage.setItem('theme',d?'dark':'light')}catch(e){}var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';}
 function copyCode(btn){var t=btn.closest('.term');if(!t)return;var c=t.querySelector('code')||t.querySelector('pre');var txt=c?c.innerText:'';var done=function(){btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
 function togglePw(){var i=document.getElementById('pw');var b=document.getElementById('pwToggle');if(!i||!b)return;if(i.type==='password'){i.type='text';b.textContent='隐藏'}else{i.type='password';b.textContent='显示'}}
+function gmConvert(){var box=document.getElementById('gmconv');var inp=document.getElementById('gmconv-in');var out=document.getElementById('gmconv-out');if(!box||!inp||!out)return;var u=(inp.value||'').trim();out.removeAttribute('data-url');if(!u){out.value='';out.setAttribute('placeholder','加速链接将显示在这里');return}out.value='处理中…';var fd=new URLSearchParams();fd.set('url',u);fd.set('csrf',box.getAttribute('data-csrf')||'');fetch(box.getAttribute('data-api')||'',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString()}).then(function(r){return r.json()}).then(function(d){if(d&&d.ok&&d.url){out.value=d.url;out.setAttribute('data-url',d.url);out.setAttribute('placeholder','')}else{out.value='';out.setAttribute('placeholder',(d&&d.hint)||'无法识别该输入')}}).catch(function(){out.value='';out.setAttribute('placeholder','请求失败，请重试')})}
+function gmConvURL(){var o=document.getElementById('gmconv-out');return o?(o.getAttribute('data-url')||''):''}
+function gmCopyConv(){var u=gmConvURL();if(!u)return;var b=document.getElementById('gmconv-copy');if(!b)return;var done=function(){b.textContent='已复制 ✓';setTimeout(function(){b.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=u;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(done,fb)}else{fb()}}
+function gmDownloadConv(){var u=gmConvURL();if(!u)return;var a=document.createElement('a');a.href=u;a.download='';document.body.appendChild(a);a.click();a.remove()}
+function gmOpenConv(){var u=gmConvURL();if(!u)return;window.open(u,'_blank','noopener')}
 (function(){var d=document.documentElement.classList.contains('dark');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';})();
 </script>`
 
@@ -256,20 +285,45 @@ func pageApp(title, desc, body string) string {
 </html>`
 }
 
+//go:embed docs/agent-prompt.md
+var agentPromptDefault string
+
+// agentPrompt 返回首页「一键交给 AI Agent 部署」使用的提示词。
+// 优先级：AGENT_PROMPT_FILE 环境变量指定的文件 → gm-data/agent-prompt.md → 内嵌的 docs/agent-prompt.md。
+// 内嵌版本随镜像版本发布（跟随版本更新），改提示词只需改文档、不必改 Go 代码。
+func (s *Server) agentPrompt() string {
+	if p := os.Getenv("AGENT_PROMPT_FILE"); p != "" {
+		if b, err := os.ReadFile(p); err == nil && strings.TrimSpace(string(b)) != "" {
+			return string(b)
+		}
+	}
+	if s.cfg != nil {
+		p := filepath.Join(filepath.Dir(settingsPath(s.cfg)), "agent-prompt.md")
+		if b, err := os.ReadFile(p); err == nil && strings.TrimSpace(string(b)) != "" {
+			return string(b)
+		}
+	}
+	return agentPromptDefault
+}
+
 // homeHTML 生成首页（宣传/介绍页）；host 取请求实际域名，避免写死示例域名。
-func homeHTML(host string) string {
+// 同时把 docs/agent-prompt.md 的 <DOMAIN> 占位符替换为当前域名，转义后注入页面。
+func (s *Server) homeHTML(host string) string {
 	body := strings.ReplaceAll(homeTmpl, "{{HOST}}", host)
+	prompt := strings.ReplaceAll(s.agentPrompt(), "<DOMAIN>", host)
+	body = strings.ReplaceAll(body, "{{AGENT_PROMPT}}", html.EscapeString(prompt))
 	return page("gh-mirror · 多服务加速网关", "自托管的多服务加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。Token 鉴权、磁盘缓存、私有化部署。", body)
 }
 
 const homeTmpl = `
 <div class="topnav">
-  <a class="brand" href="#top">` + logoSVG + `<span>gh-mirror</span></a>
+  <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
   <nav>
     <a href="#features">特性</a>
     <a href="#usage">使用</a>
     <a href="#deploy">部署</a>
     <a href="#updates">更新</a>
+    <a href="#agent">Agent</a>
   </nav>
   <div class="spacer">
     <a class="btn outline gh" href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + `<span>GitHub</span></a>
@@ -279,7 +333,7 @@ const homeTmpl = `
 </div>
 
 <header class="hero" id="top">
-  <div class="mark">` + logoSVG + `</div>
+  <a class="mark" href="/" title="返回首页">` + logoSVG + `</a>
   <div>
     <h1>gh-mirror</h1>
     <p class="lede">多服务加速网关</p>
@@ -349,6 +403,13 @@ curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
   </div>
 </section>
 
+<section class="section" id="agent">
+  <div class="sec-head"><span class="sec-num">05</span><div><span class="sec-en">AI Agent</span><h2>一键交给 AI Agent 部署</h2></div></div>
+  <p class="muted">把下面这段提示词整体复制，交给你的 AI Agent（CodeBuddy / Cursor / Claude 等），它就能照着仓库文档在这台服务器上自动完成部署与验证：</p>
+  <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">prompt · 已自动填入当前域名</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{{AGENT_PROMPT}}</code></pre></div>
+  <p class="muted" style="margin-top:12px">本服务同时支持 <strong>MCP 接入</strong>：AI Agent 可通过标准 MCP 协议直接管理 Token、服务开关与缓存，无需再猜接口。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。提示词内容与仓库 <code>docs/agent-prompt.md</code> 保持一致，随版本更新。</p>
+</section>
+
 <div class="footer">
   <details><summary>合规与免责声明</summary><p>本项目仅用于加速你有权访问的资源。严禁用于盗用他人私有仓库、规避付费、绕过访问限制或任何违反服务条款及所在地法律法规的行为。使用者须自行承担因不当使用产生的全部责任；本项目不缓存或记录请求内容，亦不对加速资源的版权与合规性负责。</p></details>
   <p class="muted">© 2026 gh-mirror · <a href="` + repoURL + `/blob/feat/hubproxy/LICENSE" target="_blank" rel="noopener">MIT License</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a></p>
@@ -369,7 +430,7 @@ var loginBody = `
 <div class="auth">
   <div class="hero">
     <div>
-      <div class="brand">` + logoSVG + `<span>gh-mirror</span></div>
+      <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
       <h2>多服务加速网关</h2>
       <p>Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。</p>
       <ul class="pts">
@@ -382,7 +443,7 @@ var loginBody = `
   </div>
   <div class="panel">
     <div class="box">
-      <div class="brand">` + logoSVG + `<span>gh-mirror</span></div>
+      <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
       <h1>欢迎回来</h1>
       <p class="muted">登录 gh-mirror 管理后台</p>
       <form method="post" action="%s">
@@ -394,7 +455,7 @@ var loginBody = `
           <button type="button" id="pwToggle" class="btn outline" onclick="togglePw()">显示</button>
         </div>
         <p class="err">%s</p>
-        <button type="submit" class="btn btn-block">登录</button>
+        <button type="submit" class="btn btn-login">登录</button>
       </form>
       <details class="forgot">
         <summary>忘记密码？</summary>
@@ -417,14 +478,15 @@ sed -i 's#^ADMIN_PASS=.*#ADMIN_PASS=新密码#' .env &amp;&amp; docker compose u
 </div>`
 
 // dashboardBody 为后台 Console 的 body 片段（不含 pageStyle 的 CSS）。经
-// fmt.Sprintf 按下列顺序填充 9 个 %s：aside / topbarRight / warn / badges /
-// stats / examples / rows / addForm / footLinks。务必无其它字面 %。
+// fmt.Sprintf 按下列顺序填充 12 个 %s：aside / topbarRight / warn / badges /
+// stats / converter / services / cacheMgmt / examples / rows / addForm / footLinks。
+// 务必无其它字面 %（CSS 的 % 只在 pageStyle，不在此片段）。
 var dashboardBody = `
 <div class="console" id="top">
   %s
   <div class="main">
     <div class="topbar">
-      <div class="brand">` + logoSVG + `<span>gh-mirror</span></div>
+      <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
       <h1>管理后台</h1>
       <div class="spacer">%s</div>
     </div>
@@ -434,6 +496,18 @@ var dashboardBody = `
       <div class="row">%s</div>
       <h2 style="margin-top:22px">概览</h2>
       <div class="stats">%s</div>
+    </section>
+    <section class="card">
+      <h2>链接转换</h2>
+      %s
+    </section>
+    <section class="card" id="services">
+      <h2>服务管理</h2>
+      %s
+    </section>
+    <section class="card" id="cache">
+      <h2>缓存管理</h2>
+      %s
     </section>
     <section class="card">
       <h2>代理用法示例</h2>

@@ -224,7 +224,7 @@ func (s *Server) proxyDockerV2(w http.ResponseWriter, r *http.Request) {
 	// blob：写透磁盘缓存（内容寻址，缓存极稳定）
 	canCacheBlob := isBlob && r.Method == http.MethodGet &&
 		resp.StatusCode == http.StatusOK &&
-		resp.ContentLength >= 0 && resp.ContentLength <= s.cache.maxBytes
+		resp.ContentLength >= 0 && resp.ContentLength <= s.cache.MaxBytes()
 
 	key := cacheKey(http.MethodGet, target)
 	var cf *os.File
