@@ -136,7 +136,7 @@ func (s *Server) fetch(w http.ResponseWriter, r *http.Request, dest *url.URL, ke
 		}
 	}
 	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", "github-mirror/1.0 (+https://github.com/zzidcn/github-mirror)")
+		req.Header.Set("User-Agent", "gh-mirror/1.0 (+https://github.com/yufeng8/gh-mirror)")
 	}
 	// 强制 identity，便于缓存原始字节（不透明压缩）
 	req.Header.Set("Accept-Encoding", "identity")
