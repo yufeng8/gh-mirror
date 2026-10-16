@@ -213,8 +213,7 @@ var loginBody = `
 var dashboardBody = `
 <div class="card">
   <h1>管理后台</h1>
-  <p class="muted">代理示例（已自动填入当前访问地址，复制即可用）：</p>
-  <p><code>%s</code></p>
+  %s
   <h2>Token 列表</h2>
   <table>
     <thead><tr><th>Token</th><th>备注</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
