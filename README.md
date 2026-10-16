@@ -30,7 +30,7 @@
 ### 方式一：Docker（推荐）
 
 ```bash
-docker run -d --name github-mirror \
+docker run -d --name gh-mirror \
   -p 8080:8080 \
   -e LISTEN=0.0.0.0:8080 \
   -e CACHE_DIR=/data/cache \
@@ -41,7 +41,7 @@ docker run -d --name github-mirror \
   -e DOCKER_ENABLED=true \
   -e HF_ENABLED=true \
   -v gm-data:/data \
-  ghcr.io/zzidcn/github-mirror:latest
+  ghcr.io/yufeng8/gh-mirror:latest
 ```
 
 ### 方式二：docker-compose
@@ -55,8 +55,8 @@ ADMIN_SECRET="$(openssl rand -hex 32)" docker compose up -d
 ### 方式三：本地构建
 
 ```bash
-go build -o github-mirror .
-./github-mirror   # 读取 ./config.toml（缺失则用默认值 + 环境变量）
+go build -o gh-mirror .
+./gh-mirror   # 读取 ./config.toml（缺失则用默认值 + 环境变量）
 ```
 
 > 生产建议置于 nginx + HTTPS 之后，`LISTEN` 保持 `127.0.0.1:8080` 由反代转发。一键部署/安装脚本见文末「部署脚本」。
@@ -122,7 +122,7 @@ socks5 = ""            # 如 "socks5://user:pass@127.0.0.1:1080"
 | `CACHE_TTL_MINUTES` | `1440` | 缓存有效期（分钟） |
 | `MAX_CACHE_MB` | `200` | 单文件超过此大小不缓存 |
 | `UPSTREAM_TIMEOUT` | `60` | 回源超时（秒） |
-| `USE_JSDELIVR` | `0` | `1` 让 GitHub blob/raw 走 jsDelivr 边缘缓存 |
+| `USE_JSDELIVER` | `0` | `1` 让 GitHub blob/raw 走 jsDelivr 边缘缓存 |
 | `TOKENS_FILE` | `./tokens.json` | Token 持久化文件 |
 | `ADMIN_PATH` | `/admin` | 管理后台路径 |
 | `ADMIN_USER` | `admin` | 管理员账号 |
@@ -248,13 +248,13 @@ sudo bash deploy.sh
 
 # 一键安装（从 Release 拉预编译二进制，无需源码）
 DOMAIN=mirror.example.com EMAIL=you@example.com ADMIN_PASS='你的密码' \
-  bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/github-mirror/main/install.sh)
+  bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/install.sh)
 
 # 卸载
-bash <(curl -fsSL https://raw.githubusercontent.com/zzidcn/github-mirror/main/uninstall.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/uninstall.sh)
 ```
 
-> 脚本与 GHCR 镜像目前仍指向上游 `zzidcn/github-mirror`；在本 fork 内自行部署时，请将相应 URL / 镜像名替换为 `yufeng8/gh-mirror`。
+> 一键脚本（`deploy.sh` / `install.sh` / `uninstall.sh`）与 GHCR 镜像均指向本 fork：`yufeng8/gh-mirror`（镜像 `ghcr.io/yufeng8/gh-mirror`）。
 
 ---
 
