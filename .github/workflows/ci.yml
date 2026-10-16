@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/hubproxy]
   pull_request:
-    branches: [main]
+    branches: [main, feat/hubproxy]
 
 permissions:
   contents: read
