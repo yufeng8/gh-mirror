@@ -222,18 +222,22 @@ const pageStyle = `
     background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);transition:transform .18s ease,background .18s ease}
   .auth .hero .pts li:hover{transform:translateY(-2px);background:rgba(255,255,255,.16)}
   .auth .hero .pts li::before{content:"✓";font-weight:800;color:#bbf7d0}
-  .auth .hero-foot{margin-top:28px}
-  .auth .hero-foot a{color:rgba(255,255,255,.86);font-weight:600}
-  .auth .hero-foot a:hover{color:#fff}
+  .auth .hero-foot{margin-top:30px;display:flex;gap:10px;flex-wrap:wrap}
+  .auth .hero-foot a{display:inline-flex;align-items:center;gap:8px;padding:10px 17px;border-radius:999px;font-size:.88rem;font-weight:600;
+    color:rgba(255,255,255,.92);background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:background .18s ease,transform .18s ease,box-shadow .18s ease}
+  .auth .hero-foot a:hover{color:#fff;background:rgba(255,255,255,.22);transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.18);text-decoration:none}
   .auth .brand{display:flex;align-items:center;gap:12px;font-weight:800;font-size:1.18rem}
+  /* 左侧品牌区里的 brand 是 <a>，会继承 a{color:var(--primary)} 的绿字压在绿底上，必须显式改白 */
+  .auth .hero .brand{color:#fff}
   /* 右侧登录区：水平+垂直居中，卡片表面 */
   .auth .panel{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:44px 24px;background:var(--background)}
   .auth .box{width:100%;max-width:400px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px 30px;
     box-shadow:0 18px 48px rgba(0,0,0,.10)}
   html.dark .auth .box{box-shadow:0 0 0 1px rgba(255,255,255,.05)}
-  .auth .box .brand{margin-bottom:14px}
-  .auth .box h1{font-size:1.65rem;margin:6px 0 4px;font-weight:800;letter-spacing:-.01em}
-  .auth .box .sub{color:var(--muted-foreground);font-size:.92rem;margin:0}
+  .auth .box .brand{margin-bottom:14px;justify-content:center}
+  .auth .box h1{font-size:1.65rem;margin:6px 0 4px;font-weight:800;letter-spacing:-.01em;text-align:center}
+  .auth .box .sub{color:var(--muted-foreground);font-size:.92rem;margin:0;text-align:center}
   .auth label{display:block;font-size:.86rem;font-weight:600;margin:18px 0 7px}
   .auth .box input{width:100%;height:44px;border-radius:10px;background:var(--muted);padding:0 13px}
   .auth .box input:focus{background:var(--background);border-color:var(--ring);box-shadow:0 0 0 3px rgba(22,163,74,.16)}
@@ -243,8 +247,8 @@ const pageStyle = `
   .auth .pw button{height:44px;border-radius:10px;padding:0 14px}
   .auth .btn-login{display:block;width:min(220px,72%);margin:20px auto 0;padding:12px 16px;border-radius:10px}
   .auth .err{min-height:1.3em;margin:8px 0 0;font-size:.86rem}
-  .auth .note{margin-top:18px;font-size:.82rem}
-  .auth .back{margin-top:10px;font-size:.86rem}
+  .auth .note{margin-top:18px;font-size:.82rem;text-align:center}
+  .auth .back{margin-top:10px;font-size:.86rem;text-align:center}
   /* 「忘记密码?」默认纯文字弱链：须显式重置通用 details 的边框/底色/内边距，否则会残留一个框 */
   .forgot{margin:12px 0 0;border:0;background:transparent;padding:0;text-align:right}
   .forgot summary{cursor:pointer;font-weight:500;font-size:.82rem;list-style:none;color:var(--muted-foreground);display:inline-block;padding:2px 0}
@@ -499,7 +503,7 @@ var loginBody = `
     <div>
       <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
       <h2>多服务加速网关</h2>
-      <p>Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速；浏览器与命令行（curl / wget / docker）通用。</p>
+      <p>Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速，浏览器与命令行通用</p>
       <span class="mcp">🤖 MCP 接入 · AI Agent 友好</span>
       <ul class="pts">
         <li>Token 鉴权，访问可控、可审计</li>
@@ -508,7 +512,10 @@ var loginBody = `
         <li>后台可视化管理：服务开关、缓存、链接转换</li>
       </ul>
     </div>
-    <div class="hero-foot"><a href="` + repoURL + `" target="_blank" rel="noopener">GitHub ↗</a></div>
+    <div class="hero-foot">
+      <a href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + `<span>GitHub</span></a>
+      <a href="` + repoURL + `" target="_blank" rel="noopener">⭐ Star 支持一下</a>
+    </div>
   </div>
   <div class="panel">
     <div class="box">
@@ -533,11 +540,11 @@ var loginBody = `
           <p class="muted small">gh-mirror 的登录密码是部署时设置的 <code>ADMIN_PASS</code>（环境变量 / <code>.env</code>）。忘记时可在服务器上重置：</p>
           <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code># docker run 部署：以新密码重建容器（token / 缓存在 gm-data、gm-cache 卷，不丢）
 docker rm -f gh-mirror
-docker run -d --name gh-mirror -e ADMIN_PASS='新密码' -e ADMIN_SECRET='你的密钥' -p 127.0.0.1:8080:8080 -v gm-data:/var/lib/gh-mirror ghcr.io/yufeng8/gh-mirror:&lt;最新 tag&gt;
+docker run -d --name gh-mirror -e ADMIN_PASS='新密码' -e ADMIN_SECRET='你的密钥' -p 127.0.0.1:8080:8080 -v gm-data:/var/lib/gh-mirror ghcr.io/yufeng8/gh-mirror:latest
 
 # docker compose 部署：改 .env 后重建
 sed -i 's#^ADMIN_PASS=.*#ADMIN_PASS=新密码#' .env &amp;&amp; docker compose up -d</code></pre></div>
-          <p class="muted small">镜像 tag 请以 <a href="` + repoURL + `/releases" target="_blank" rel="noopener">GitHub Releases</a> 的<strong>最新正式版</strong>为准。重置仅影响登录，不影响已创建的 Token 与缓存；重置后重新登录即可。</p>
+          <p class="muted small">镜像 tag 请用 <strong>:latest</strong>（或你当前在用的版本）。重置仅影响登录，不影响已创建的 Token 与缓存；重置后重新登录即可。</p>
         </div>
       </details>
       <p class="muted note">🔒 登录会话通过安全的 HttpOnly Cookie 保存。</p>
