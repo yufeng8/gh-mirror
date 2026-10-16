@@ -1,16 +1,19 @@
 # gh-mirror 通用 Docker 部署（与 install.sh MODE=docker 互补，纯 compose 编排，不依赖特定面板）
 #
-# 设计原则：网关核心（gh-mirror）与反向代理（nginx）解耦，由部署方按需选择，避免强行占用主机 80/443
-# （部署机可能已运行自己的 nginx / KPanel 等）。两种用法见下：
+# 设计原则：网关核心（gh-mirror）与反向代理（nginx）解耦，每个可能与宿主环境冲突的点都做成可选项，
+# 由部署方 / AI Agent 按实际情况选择，不在 compose 里写死：
 #
-#   A. 机器已有 nginx / KPanel 等反代（最常见）：
-#        docker compose up -d
-#      然后取消下方 gh-mirror 的 ports 注释，把网关暴露到本机（默认仅 127.0.0.1:8080），
-#      由既有反代转发（转发写法参考 nginx/gh-mirror.compose.conf 的 location / 段）。
+#   场景 A｜机器已有 nginx / KPanel / certbot 等：只跑网关，交给既有反代与证书体系。
+#     docker compose -f docker-compose.yml -f docker-compose.publish.yml up -d --build
+#     （publish 覆盖层把网关暴露到宿主机，默认 127.0.0.1:8080，可用 GM_BIND_ADDR/GM_HTTP_PORT 调整）
 #
-#   B. 用内置 nginx 提供 80/443（含 TLS 反代）：
-#        docker compose --profile proxy up -d
-#      如需 HTTPS，证书申请见 docs/docker-deploy.md。
+#   场景 B1｜用内置 nginx 自己申请证书（webroot）：
+#     docker compose --profile proxy up -d --build
+#     再按 docs/docker-deploy.md 用容器内 certbot 申请证书。
+#
+#   场景 B2｜用内置 nginx 但复用宿主机已有证书（宿主机已跑 certbot）：
+#     docker compose -f docker-compose.yml -f docker-compose.hostcert.yml --profile proxy up -d --build
+#     （先把 nginx/gh-mirror.hostcert.conf 里的 <DOMAIN> 换成实际域名）
 #
 # 默认从本仓库源码构建（build: .，使用根目录 Dockerfile）。
 # 如需改用预构建镜像，注释掉 build 段并取消 image 行注释即可：
@@ -20,14 +23,15 @@ services:
   gh-mirror:
     build: .
     # image: ghcr.io/yufeng8/gh-mirror:latest
-    container_name: gh-mirror
+    container_name: ${GH_MIRROR_CONTAINER_NAME:-gh-mirror}
     restart: unless-stopped
     environment:
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASS: ${ADMIN_PASS:?请在 .env 中设置 ADMIN_PASS}
       ADMIN_PATH: ${ADMIN_PATH:-/admin}
       ADMIN_SECRET: ${ADMIN_SECRET:?请在 .env 中设置 ADMIN_SECRET（openssl rand -hex 32）}
-      COOKIE_SECURE: "true"
+      # HTTPS 部署保持 true；纯 HTTP（无 TLS）部署改为 false，否则浏览器不下发 Secure cookie 导致后台无法登录
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       TOKENS_FILE: /var/lib/gh-mirror/tokens.json
       LISTEN: 0.0.0.0:8080
       CACHE_DIR: /var/cache/gh-mirror
@@ -37,19 +41,18 @@ services:
     volumes:
       - gm-cache:/var/cache/gh-mirror
       - gm-data:/var/lib/gh-mirror
-    # 场景 A：取消注释，把网关暴露到本机，交给既有 nginx/KPanel 反代到 127.0.0.1:8080
-    # （仅监听本机回环更安全；如需容器外其他机访问可改为 "8080:8080"）
-    # ports:
-    #   - "127.0.0.1:8080:8080"
+    # 对外暴露走覆盖层，不在本文件写死端口：
+    #   - 场景 A（交给既有反代）：叠加 docker-compose.publish.yml
+    #   - 场景 B（内置反代）：由下方 nginx 服务转发，无需暴露本服务端口
     expose:
       - "8080"
     networks:
       - gm-net
 
-  # 场景 B：内置反向代理。用 `docker compose --profile proxy up -d` 启用；不启用则不占用主机 80/443。
+  # 场景 B：内置反向代理。用 `--profile proxy` 启用；不启用则不占用主机 80/443。
   nginx:
     image: nginx:1.27-alpine
-    container_name: gh-mirror-nginx
+    container_name: ${NGINX_CONTAINER_NAME:-gh-mirror-nginx}
     restart: unless-stopped
     profiles: ["proxy"]
     depends_on:
@@ -59,7 +62,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/gh-mirror.compose.conf:/etc/nginx/conf.d/default.conf:ro
-      # 注意：certbot 申请证书时需要可写，故此处不加 :ro
+      # 注意：certbot 申请证书时需要可写，故此处不加 :ro；复用宿主机证书见 docker-compose.hostcert.yml
       - gm-certs:/etc/letsencrypt
       - gm-certs:/var/www/certbot
     networks:

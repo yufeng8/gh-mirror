@@ -1,0 +1,11 @@
+# 场景 A 覆盖层：把网关暴露到宿主机，交给既有反代（nginx / KPanel）转发。
+# 不修改 docker-compose.yml，仅用 CLI 叠加启用：
+#   docker compose -f docker-compose.yml -f docker-compose.publish.yml up -d --build
+#
+# 绑定地址与端口可用 .env 调整（默认仅本机回环，更安全）：
+#   GM_BIND_ADDR=127.0.0.1    # 需容器外其它机器访问可改为 0.0.0.0
+#   GM_HTTP_PORT=8080
+services:
+  gh-mirror:
+    ports:
+      - "${GM_BIND_ADDR:-127.0.0.1}:${GM_HTTP_PORT:-8080}:8080"
