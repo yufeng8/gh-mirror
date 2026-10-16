@@ -1,4 +1,6 @@
 # GitHub Actions：自动交叉编译 gh-mirror，并在打 tag 时发布 Release
+# 发布规则：tag 名含 '-'（如 v1.1.0-hubproxy / -rc / -test / -beta）→ 自动标 Pre-release；
+#           无后缀的 vX.Y.Z → 正式版。测试/预览构建不会顶成 Latest。
 name: build
 
 on:
@@ -79,8 +81,20 @@ jobs:
               --jq '.body'
           } > release-body.md
 
+      - name: Determine prerelease
+        id: pre
+        run: |
+          # tag 名含 '-'（如 v1.1.0-hubproxy / -rc / -test / -beta）→ 预发布(Pre-release)；
+          # 无后缀的 vX.Y.Z → 正式版。避免测试/预览构建被标成 Latest。
+          if printf '%s' "${{ github.ref_name }}" | grep -Eq '\-'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           body_path: release-body.md
+          prerelease: ${{ steps.pre.outputs.prerelease }}
