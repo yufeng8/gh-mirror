@@ -64,10 +64,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          OWNER="${GITHUB_REPOSITORY%/*}"
           PKG="${GITHUB_REPOSITORY,,}"
           PKG="${PKG#*/}"
           echo "Setting GHCR package '${PKG}' visibility to public..."
-          if gh api --method PATCH "user/packages/container/${PKG}/visibility" \
+          if gh api --method PATCH "users/${OWNER}/packages/container/${PKG}/visibility" \
                -f visibility=public; then
             echo "OK: package ghcr.io/${GITHUB_REPOSITORY} is now public"
           else
