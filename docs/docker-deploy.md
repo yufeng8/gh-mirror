@@ -64,12 +64,12 @@ cp .env.example .env
 ```
 - 默认从本仓库源码构建（使用根目录 `Dockerfile`）。
 - 源码构建需要宿主机 Go ≥ 1.24（`go.mod` 要求）。若本机 Go 版本更低，Go 会自动下载对应工具链（需网络）；建议直接用下方预构建镜像，免编译。
-- 改用预构建镜像：见下方「快路径：预构建镜像（不编译）」，用 `ghcr.io/yufeng8/gh-mirror:v0.1.0`（**含 HF**）。注意 `:latest` 跟踪 `main`、**不含 HF**，别用 `latest`。
+- 改用预构建镜像：见下方「快路径：预构建镜像（不编译）」，用 `ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy`（**含 HF**）。注意 `:latest` 跟踪 `main`、**不含 HF**，别用 `latest`。
 
 ## 快路径：预构建镜像（不编译）
-镜像：`ghcr.io/yufeng8/gh-mirror:v0.1.0`（多架构 amd64/arm64，含 HF/hubproxy，由 tag `v0.1.0` 触发 CI 构建）。
+镜像：`ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy`（多架构 amd64/arm64，含 HF/hubproxy，由同名 tag 触发 CI 构建）。
 ```bash
-docker pull ghcr.io/yufeng8/gh-mirror:v0.1.0      # 401 → 包非 Public，去 Packages 设置改 Public
+docker pull ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy      # 401 → 包非 Public，去 Packages 设置改 Public
 ```
 - **方式 C1｜最快，无需 clone**（场景 A，背后已有反代）：
   ```bash
@@ -78,13 +78,13 @@ docker pull ghcr.io/yufeng8/gh-mirror:v0.1.0      # 401 → 包非 Public，去 
     -e ADMIN_USER=admin -e ADMIN_PASS="$ADMIN_PASS" -e ADMIN_SECRET="$ADMIN_SECRET" \
     -e LISTEN=0.0.0.0:8080 -e COOKIE_SECURE=false -p 127.0.0.1:8080:8080 \
     -v gm-cache:/var/cache/gh-mirror -v gm-data:/var/lib/gh-mirror \
-    ghcr.io/yufeng8/gh-mirror:v0.1.0
+    ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy
   # 要开 HF 加 -e HF_ENABLED=true；随后让既有反代转发到 127.0.0.1:8080
   ```
 - **方式 C2｜compose + 预构建镜像**：clone 后，注释 `build: .` 并把 `image:` 指向 `v0.1.0`，再按场景执行（去掉 `--build`）：
   ```bash
   sed -i 's/^    build: \./    # build: ./' docker-compose.yml
-  sed -i 's#^    # image: ghcr.io/yufeng8/gh-mirror:latest#    image: ghcr.io/yufeng8/gh-mirror:v0.1.0#' docker-compose.yml
+  sed -i 's#^    # image: ghcr.io/yufeng8/gh-mirror:latest#    image: ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy#' docker-compose.yml
   docker compose -f docker-compose.yml -f docker-compose.publish.yml up -d   # 场景 A
   # docker compose --profile proxy up -d                                     # 场景 B
   ```

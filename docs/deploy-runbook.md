@@ -11,7 +11,7 @@
 - EdgeOne 前置是本次最大坑（见文末故障排查）：会导致源站 LE 报 521、并可能压掉 gh-mirror 的双斜杠路径。
 
 ## 镜像
-- 用：`ghcr.io/yufeng8/gh-mirror:v0.1.1-hubproxy`（多架构 amd64/arm64，含 HF，**已修登录 400 bug**）。
+- 用：`ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy`（多架构 amd64/arm64，含 HF，**已修登录 400 bug**）。
 - 不要用 `:latest`（跟踪 main，**无 HF**）；不要用 `:v0.1.0`（带登录 bug）。
 
 ---
@@ -19,7 +19,7 @@
 ## 1. 部署网关（Docker）
 ```bash
 # 拉镜像（若 401：到 GHCR Packages 设置把包改为 Public）
-docker pull ghcr.io/yufeng8/gh-mirror:v0.1.1-hubproxy
+docker pull ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy
 
 # 生成密码与签名密钥（记好）
 ADMIN_SECRET=$(openssl rand -hex 32); ADMIN_PASS=$(openssl rand -base64 18)
@@ -34,7 +34,7 @@ docker run -d --name gh-mirror --restart unless-stopped \
   -e HF_ENABLED=true \
   -p 127.0.0.1:8080:8080 \
   -v gm-cache:/var/cache/gh-mirror -v gm-data:/var/lib/gh-mirror \
-  ghcr.io/yufeng8/gh-mirror:v0.1.1-hubproxy
+  ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy
 
 docker logs --tail 20 gh-mirror
 curl -fsS http://127.0.0.1:8080/healthz     # 期望 ok
@@ -78,7 +78,7 @@ location / {
 - 账号 `ADMIN_USER`（默认 `admin`），密码 `ADMIN_PASS`（第 1 步那个）。
 - 忘密码：`docker inspect gh-mirror --format '{{range .Config.Env}}{{println .}}{{end}}' | grep ADMIN_`。
 - **登录后第一件事：添加 token**；之后代理请求都带它（不带 token 的代理请求返回 404，属设计）。
-- `v0.1.1-hubproxy` 已修复"点登录跳 `/%!s(MISSING)` 报 400"的问题；若仍复现，确认镜像是 `v0.1.1-hubproxy`。
+- `v0.1.2-hubproxy` 已修复"点登录跳 `/%!s(MISSING)` 报 400"的问题；若仍复现，确认镜像是 `v0.1.2-hubproxy`。
 
 ## 6. 端到端验证（token 记作 `<TK>`）
 ```bash
@@ -140,7 +140,7 @@ EOF
 cat > run.sh <<'EOF'
 #!/usr/bin/env bash
 set -e
-IMAGE="${1:-ghcr.io/yufeng8/gh-mirror:v0.1.1-hubproxy}"
+IMAGE="${1:-ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy}"
 docker pull "$IMAGE"
 docker rm -f gh-mirror 2>/dev/null || true
 docker run -d --name gh-mirror --restart unless-stopped \
@@ -161,7 +161,7 @@ cd /opt/gh-mirror
 ```
 **回滚**（新镜像有问题，用上一个 tag 再跑一次即可）：
 ```bash
-./run.sh ghcr.io/yufeng8/gh-mirror:v0.1.1-hubproxy
+./run.sh ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy
 ```
 > 注意：`gm.env` 只放**我们自己的变量**；不要把 `docker inspect` 导出的镜像默认变量（`PATH` 等）塞进去，否则可能破坏容器。改 `ADMIN_PASS`/`ADMIN_SECRET`/开关只需编辑 `gm.env` 再 `./run.sh`。
 > 若用 compose 部署则更简单：改 `docker-compose.yml` 的 `image:` tag，再 `docker compose ... up -d`（带上与首次相同的 `-f/--profile`）。
@@ -178,7 +178,7 @@ docker volume rm gm-data gm-cache        # 彻底清数据（token/缓存都没�
 ## 9. 故障排查
 | 现象 | 原因 / 处理 |
 |------|-------------|
-| 点登录跳 `/%!s(MISSING)` 报 400 | 旧镜像 `v0.1.0` 的登录 bug；换 `v0.1.1-hubproxy` |
+| 点登录跳 `/%!s(MISSING)` 报 400 | 旧镜像 `v0.1.0` 的登录 bug；换 `v0.1.2-hubproxy` |
 | 经域名 502/521 | EdgeOne 回源地址/端口/Host 不对，或源站 80 未对 EdgeOne 放行 |
 | `/g/<token>/https://...` 变 404 | EdgeOne 缓存/URL 规范化没关，或源站缺 `merge_slashes off`/`$request_uri` |
 | 后台登录无反应/反复跳登录 | 缺 `X-Forwarded-Proto https`，或 `COOKIE_SECURE` 与访问协议不符 |

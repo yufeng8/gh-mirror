@@ -1,0 +1,43 @@
+你是部署助手。请在这台 Linux 服务器上部署 gh-mirror（自托管多服务加速网关：Docker 镜像加速 / GitHub 资源加速 / HuggingFace 权重加速 + 镜像搜索），并对外通过域名 https://<DOMAIN> 提供服务。
+
+【硬性要求】
+1. 先读仓库文档，并严格按其中的「环境适配与冲突排查表」选型，不要盲目执行：
+   git clone -b feat/hubproxy https://github.com/yufeng8/gh-mirror.git
+   - docs/docker-deploy.md：通用 Docker 部署、域名前置 CDN（EdgeOne/Cloudflare）的正确接法、Docker 加速安全
+   - docs/deploy-runbook.md：先探测 → 选型 → 执行 → 端到端验证的完整流程
+2. 优先使用预构建镜像，不要编译：ghcr.io/yufeng8/gh-mirror:v0.1.2-hubproxy（多架构、含全部特性）。
+   不要用 :latest（跟踪 main、不含 HuggingFace）。
+3. 数据持久化用命名卷：gm-data（token 与设置）、gm-cache（缓存）。重建容器不得丢数据。
+4. ADMIN_PASS 与 ADMIN_SECRET 现场生成强随机值并妥善记录（勿写进任何提交或日志）。
+   ADMIN_PATH 默认 /admin，LISTEN 默认 0.0.0.0:8080。
+5. 部署方式按机器实际情况二选一，不要强占主机 80/443：
+   A. 机器已有 nginx / KPanel 等 Web 服务：只跑网关并绑定 127.0.0.1:8080，由既有反代转发；
+   B. 干净主机：用仓库自带 nginx（--profile proxy）或复用宿主机证书。
+6. 反代段必须这样配（否则代理路径会 404）：
+   merge_slashes off;
+   proxy_pass http://127.0.0.1:8080$request_uri;   # 必须带 $request_uri
+   proxy_set_header Host $host;
+   proxy_set_header X-Forwarded-Proto https;        # 经 CDN 时固定 https
+   且不要再叠加 http→https 跳转（会形成回环）。
+7. 若域名前置 CDN（EdgeOne/Cloudflare）：让 CDN 持公网证书并终止 TLS，源站只做 80 反代；
+   CDN 侧关闭缓存与 URL 规范化/重写；不要在 CDN 后面的源站用 certbot（会报 521，重申请无用）；
+   确需源站自己持证时用 DNS-01 验证。
+8. 防火墙 / 云安全组放行源站 80 入站；对外 HTTPS 由 CDN 或主机提供。
+
+【完成后必须逐项验证并回报结果】
+- curl -fsS http://127.0.0.1:8080/healthz                → ok
+- curl -fsS -H 'Host: <DOMAIN>' http://127.0.0.1/healthz → ok（源站反代段通）
+- curl -fsS https://<DOMAIN>/healthz                     → ok（全链路通）
+- 浏览器 https://<DOMAIN>/ 能打开（多服务宣传页）
+- https://<DOMAIN>/admin 能登录（ADMIN_USER / ADMIN_PASS）
+- 在后台添加 token 后：curl -fsSI "https://<DOMAIN>/g/<token>/https://raw.githubusercontent.com/octocat/Hello-World/master/README" → 200
+- 镜像搜索：curl -fsS "https://<DOMAIN>/search?q=nginx" 能返回结果
+- 若开启 Docker 加速：配置 registry-mirrors 后 docker pull 能命中缓存；
+  curl -fsS "https://<DOMAIN>/offline/library/nginx:1.25" -o nginx.tar 且本机 docker load -i nginx.tar 能载入
+
+【遇到错误】
+不要盲目重试。先读 docs/docker-deploy.md 的「已知坑 / 故障排查」，仍无法解决时，
+把关键报错与相关配置原样贴出来分析。
+
+【汇报格式】
+部署方式（A/B）、镜像 tag、验证结果逐项 ✅/❌、以及任何偏离上述要求的改动及原因。

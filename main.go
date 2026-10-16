@@ -10,12 +10,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gh-mirror/config"
 )
 
 // Server 持有缓存、回源超时、配置与管理后台相关状态。
+// svcMu 保护 dockerOn / hfOn：这两个开关可在管理后台运行时热切换（-race 安全）。
 type Server struct {
 	cfg          *config.Config
 	cache        *Cache
@@ -29,10 +31,30 @@ type Server struct {
 	limiter      *RateLimiter
 	acl          *AccessController
 	dial         func(ctx context.Context, network, addr string) (net.Conn, error)
+	svcMu        sync.RWMutex
+	dockerOn     bool
+	hfOn         bool
 }
 
 // processStart 记录进程启动时间，用于后台展示运行时长。
 var processStart = time.Now()
+
+// cacheSweepInterval 是缓存自动失效（过期清理 + 超限清理）的执行周期。
+const cacheSweepInterval = 10 * time.Minute
+
+// dockerEnabled 返回 Docker 加速当前是否开启（运行时开关，非 cfg 静态值）。
+func (s *Server) dockerEnabled() bool {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.dockerOn
+}
+
+// hfEnabled 返回 HuggingFace 加速当前是否开启（运行时开关，非 cfg 静态值）。
+func (s *Server) hfEnabled() bool {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.hfOn
+}
 
 func main() {
 	cfg := config.Load("config.toml")
@@ -86,7 +108,21 @@ func main() {
 		limiter:      limiter,
 		acl:          aclCtl,
 		dial:         dial,
+		dockerOn:     cfg.Docker.Enabled,
+		hfOn:         cfg.HF.Enabled,
 	}
+	// 运行时设置（gm-data/settings.json）优先级最高：覆盖 config.toml / 环境变量的开关与缓存参数
+	loadSettings(s, cfg)
+	// 缓存自动失效：周期清理过期文件，并在超总上限时按最旧优先清理
+	go func() {
+		ticker := time.NewTicker(cacheSweepInterval)
+		for range ticker.C {
+			if expired, over := cache.Evict(); expired > 0 || over > 0 {
+				log.Printf("缓存自动失效: 过期 %d 个、超限 %d 个，当前占用 %s",
+					expired, over, formatBytes(cache.UsageBytes()))
+			}
+		}
+	}()
 
 	log.Printf("github-mirror 启动 listen=%s adminPath=%s tokens=%d ttl=%dm useJsdelivr=%v authMode=%s",
 		cfg.Listen, adminPath, len(store.All()), cfg.CacheTTLMinutes, useJsdelivr, cfg.Auth.Mode)
@@ -143,11 +179,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleSearchAPI(w, r)
 	case path == "/api/tags":
 		s.handleTagsAPI(w, r)
-	case s.cfg.Docker.Enabled && (path == "/v2" || strings.HasPrefix(path, "/v2/") || path == "/token" || strings.HasPrefix(path, "/token/")):
+	case s.dockerEnabled() && (path == "/v2" || strings.HasPrefix(path, "/v2/") || path == "/token" || strings.HasPrefix(path, "/token/")):
 		s.handleDocker(w, r)
-	case s.cfg.Docker.Enabled && (path == "/offline" || strings.HasPrefix(path, "/offline/")):
+	case s.dockerEnabled() && (path == "/offline" || strings.HasPrefix(path, "/offline/")):
 		s.handleOffline(w, r)
-	case s.cfg.HF.Enabled && strings.HasPrefix(path, hfPrefix):
+	case s.hfEnabled() && strings.HasPrefix(path, hfPrefix):
 		s.handleHF(w, r)
 	case strings.HasPrefix(path, tokenPrefix):
 		s.handleProxy(w, r)
@@ -158,7 +194,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(homeHTML(r.Host)))
+	_, _ = w.Write([]byte(s.homeHTML(r.Host)))
 }
 
 func (s *Server) render404(w http.ResponseWriter, r *http.Request) {
