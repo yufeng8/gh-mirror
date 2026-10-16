@@ -108,6 +108,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.doDelToken(w, r)
+	case sub == "tokens":
+		if s.isAuthed(r) {
+			s.renderTokensPage(w, r)
+			return
+		}
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
 	case sub == "service":
 		if !s.isAuthed(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
@@ -224,33 +230,10 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	csrf := s.csrfToken(sid)
 	tokens := s.store.All()
-	var rows strings.Builder
 	var totalHits, totalBytes int64
 	for _, t := range tokens {
 		totalHits += t.Hits
 		totalBytes += t.Bytes
-		lastUsed := "—"
-		if t.LastUsed > 0 {
-			lastUsed = time.Unix(t.LastUsed, 0).Format("2006-01-02 15:04")
-		}
-		roleTxt, roleCls := "普通", "badge"
-		if normRole(t.Role) == RoleAdmin {
-			roleTxt, roleCls = "管理员", "badge on"
-		}
-		rows.WriteString(fmt.Sprintf(
-			`<tr><td><code>%s</code></td><td>%s</td><td><span class="%s">%s</span></td><td>%s</td><td class="num">%d</td><td class="num">%s</td><td>%s</td><td>
-<form method="post" action="%s/del" class="del-form">
-<input type="hidden" name="csrf" value="%s">
-<input type="hidden" name="token" value="%s">
-<button type="submit" class="danger" onclick="return confirm('确定删除该 token？')">删除</button>
-</form></td></tr>`,
-			html.EscapeString(t.Token), html.EscapeString(t.Note), roleCls, roleTxt,
-			time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"),
-			t.Hits, formatBytes(t.Bytes), lastUsed,
-			s.adminPath, csrf, html.EscapeString(t.Token)))
-	}
-	if len(tokens) == 0 {
-		rows.WriteString(`<tr><td colspan="8" class="muted">暂无 token，请在下方添加</td></tr>`)
 	}
 	// 自动拼接当前访问地址：经反代时按 X-Forwarded-Proto/TLS 判定 https，否则 http；host 取请求 Host
 	base := baseOf(r)
@@ -258,21 +241,24 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	if len(tokens) > 0 {
 		tk = tokens[0].Token
 	}
-	// 三个服务的代理示例：GitHub/HuggingFace 需 token；Docker 无需 token；HF/Docker 按开关显示
-	ghEx, hfEx := "请先在下方添加一个 token", "请先在下方添加一个 token"
+	// 用法示例：token 包在 .tslot 中，切换右上角选择器即可联动替换（示例 + 链接转换共用）
+	ghEx, hfEx := "请先到「Token 管理」创建一个 token", "请先到「Token 管理」创建一个 token"
 	if tk != "" {
-		ghEx = base + "/g/" + tk + "/https://github.com/yufeng8/gh-mirror/blob/main/README.md"
-		hfEx = base + "/hf/" + tk + "/openai-community/gpt2/resolve/main/config.json"
+		ghEx = base + "/g/" + tokSlot(tk) + "/https://github.com/yufeng8/gh-mirror/blob/main/README.md"
+		hfEx = base + "/hf/" + tokSlot(tk) + "/openai-community/gpt2/resolve/main/config.json"
 	}
 	if !s.hfEnabled() {
-		hfEx = "HuggingFace 加速未开启（可在下方「服务管理」开启）"
+		hfEx = "HuggingFace 加速未开启（可在「服务管理」开启）"
 	}
-	dockerEx := "Docker 加速未开启（可在下方「服务管理」开启）"
+	dockerEx := "Docker 加速未开启（可在「服务管理」开启）"
 	if s.dockerEnabled() {
 		dockerEx = "离线 tar：" + base + "/offline/library/nginx:1.25 ；或 registry 加速：daemon.json 加 \"registry-mirrors\": [\"" + base + "\"] 后 systemctl restart docker"
 	}
 	var ex strings.Builder
-	ex.WriteString(`<p class="muted">代理示例（已自动填入当前访问地址，复制即可用）：</p>`)
+	ex.WriteString(`<div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">`)
+	ex.WriteString(`<p class="muted" style="margin:0;flex:1;min-width:220px">已自动填入当前访问地址；下方示例与「链接转换」都会使用这里选定的 Token。</p>`)
+	ex.WriteString(s.tokenSelector(tokens))
+	ex.WriteString(`</div>`)
 	ex.WriteString(`<p><strong>GitHub 资源</strong>（需 token）：<br><code>` + ghEx + `</code></p>`)
 	ex.WriteString(`<p><strong>HuggingFace 权重</strong>（需 token）：<br><code>` + hfEx + `</code></p>`)
 	ex.WriteString(`<p><strong>Docker 镜像</strong>（无需 token）：<br><code>` + dockerEx + `</code></p>`)
@@ -282,17 +268,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	if s.dockerEnabled() {
 		warnHTML = `<div class="alert danger"><strong>⚠️ 安全提醒：Docker 加速/离线镜像已开启</strong>（<code>DOCKER_ENABLED=true</code>）。端点 <code>/v2</code> 与 <code>/offline</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token）。<br>· 若网关经公网/CDN 暴露，<strong>任何人都能使用你的镜像加速、拉取离线 tar</strong>，耗费上游带宽。<br>· 置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只见 CDN 回源 IP，X-Forwarded-For 可伪造）。<br><strong>降低风险（任选）：</strong>1) 不需要公网 Docker 加速就设 <code>DOCKER_ENABLED=false</code>；2) 公网反代挡掉裸路径 <code>location ^~ /v2/ { return 404; }</code>、<code>location ^~ /offline/ { return 404; }</code>，/offline 改用带秘密前缀的地址；3) registry 用「不走 CDN 的难猜子域名」直连源站 + 云安全组按来源 IP 放行；4) 在 CDN（EdgeOne）对 <code>/v2</code>、<code>/offline</code> 配速率限制与带宽封顶（CDN 看得到真实客户端 IP）。详见 <code>docs/docker-deploy.md</code>「Docker 加速安全」。</div>`
 	}
-	// 侧栏导航（仅真实存在的入口）；品牌 Logo 点击回首页
-	aside := `<aside><a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a><nav class="nav">` +
-		`<a class="navitem active" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
-		`<a class="navitem" href="#services"><span class="ic">⚙️</span>服务管理</a>` +
-		`<a class="navitem" href="#cache"><span class="ic">💾</span>缓存管理</a>` +
-		`<a class="navitem" href="#tokens"><span class="ic">🔑</span>Token 管理</a>` +
-		`<a class="navitem" href="` + repoURL + `/tree/feat/hubproxy/docs" target="_blank" rel="noopener"><span class="ic">📄</span>文档</a>` +
-		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">⎋</span>退出登录</a></nav></aside>`
-	// 顶栏右侧：健康检查 CTA + 主题切换
-	topbarRight := `<a class="btn outline" href="` + base + `/healthz" target="_blank" rel="noopener">健康检查</a>` +
-		`<button id="themeToggle" class="btn outline" type="button" onclick="toggleTheme()" aria-label="切换深色 / 浅色模式">🌙 深色</button>`
+	// 侧栏与顶栏（各页面共用组件；小屏侧栏为抽屉）
+	aside := s.consoleAside(r)
+	topbarRight := s.topbarRight(base)
 	// 服务状态徽标（GitHub 恒开；Docker/HF 按开关）
 	svcBadge := func(on bool, name, onTxt, offTxt string) string {
 		if on {
@@ -320,17 +298,18 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`<p class="muted small" style="margin-top:10px">基于当前访问地址与首个 token 生成；GitHub / HuggingFace 链接需 token，Docker 镜像名给出 <code>/offline</code> 离线 tar 地址。</p>`
 	// 服务管理三卡：GitHub 恒开；Docker / HuggingFace 即时开关（持锁内存 + settings.json 持久化）
 	svcCard := func(tag, name, desc, usage string, on bool, svc string) string {
-		state, foot := `<span class="badge on">● 已开启</span>`, `<span class="muted small">由部署参数固定，无需配置</span>`
+		// 三张卡的底部标识统一宽高，视觉一致；GitHub 恒开用「默认开启」标识代替按钮
+		state, foot := `<span class="badge on">● 已开启</span>`, `<span class="svccard-tag">默认开启</span>`
 		if svc != "" {
 			form := `<form method="post" action="` + s.adminPath + `/service" class="svc-toggle">` +
 				`<input type="hidden" name="csrf" value="` + csrf + `">` +
 				`<input type="hidden" name="name" value="` + svc + `">`
 			if on {
 				state = `<span class="badge on">● 已开启</span>`
-				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn outline">关闭</button></form>`
+				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn svccard-btn">关闭</button></form>`
 			} else {
 				state = `<span class="badge off">○ 未开启</span>`
-				foot = form + `<input type="hidden" name="on" value="1"><button type="submit" class="btn">开启</button></form>`
+				foot = form + `<input type="hidden" name="on" value="1"><button type="submit" class="btn svccard-btn">开启</button></form>`
 			}
 		}
 		return `<div class="svccard"><div class="svccard-head"><span class="tag">` + tag + `</span><h3>` + name + `</h3>` + state + `</div>` +
@@ -371,8 +350,89 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
   <button type="submit" class="btn outline">清除缓存</button>
 </form>
 <p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。时效：到期文件由后台周期任务自动删除。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
-	// 新增 Token 表单
-	addForm := `<form method="post" action="` + s.adminPath + `/add" class="row">` +
+	// Token 区块已独立成页，这里只放引导卡
+	tokensGuide := `<p class="muted">Token 的创建、复制、删除与角色管理已独立成页，便于统一维护。</p>` +
+		`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">前往 Token 管理` +
+		`（` + strconv.Itoa(len(tokens)) + `）</a></div>`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// verbs: aside, topbarRight, warn, badges, stats, converter, services, cacheMgmt, examples, tokensGuide
+	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
+	body := fmt.Sprintf(dashboardBody, aside, topbarRight, warnHTML, badges, stats, conv, services, cacheMgmt, example, tokensGuide)
+	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
+}
+
+// tokSlot 把示例里的 token 包成可被前端替换的片段（切换 Token 选择器时更新）。
+func tokSlot(tk string) string {
+	if tk == "" {
+		return `<span class="tslot">token</span>`
+	}
+	return `<span class="tslot">` + html.EscapeString(tk) + `</span>`
+}
+
+// shortTok 取 token 前 8 位用于展示，避免长串占满下拉框。
+func shortTok(tk string) string {
+	if len(tk) <= 8 {
+		return tk
+	}
+	return tk[:8]
+}
+
+// tokenSelector 生成「示例用 Token」下拉框：按列表序号 + 备注 + token 前 8 位展示，便于查找切换。
+func (s *Server) tokenSelector(tokens []*Token) string {
+	var sb strings.Builder
+	sb.WriteString(`<div class="tsel"><label for="gmTokenSel">示例使用的 Token</label><select id="gmTokenSel" onchange="gmApplyToken(this.value)">`)
+	if len(tokens) == 0 {
+		sb.WriteString(`<option value="">暂无 token</option>`)
+	} else {
+		for i, t := range tokens {
+			label := t.Note
+			if label == "" {
+				label = "（无备注）"
+			}
+			sb.WriteString(fmt.Sprintf(`<option value="%s">%d. %s · %s…</option>`,
+				html.EscapeString(t.Token), i+1, html.EscapeString(label), html.EscapeString(shortTok(t.Token))))
+		}
+	}
+	sb.WriteString(`</select></div>`)
+	return sb.String()
+}
+
+// tokenRows 渲染 Token 表格行（含一键复制与删除）。
+func (s *Server) tokenRows(tokens []*Token, csrf string) string {
+	var rows strings.Builder
+	for _, t := range tokens {
+		lastUsed := "—"
+		if t.LastUsed > 0 {
+			lastUsed = time.Unix(t.LastUsed, 0).Format("2006-01-02 15:04")
+		}
+		roleTxt, roleCls := "普通", "badge"
+		if normRole(t.Role) == RoleAdmin {
+			roleTxt, roleCls = "管理员", "badge on"
+		}
+		rows.WriteString(fmt.Sprintf(
+			`<tr><td><span class="tok-cell"><code>%s</code>`+
+				`<button type="button" class="btn outline" title="复制 token" onclick="gmCopyText(this,&quot;%s&quot;)">复制</button></span></td>`+
+				`<td>%s</td><td><span class="%s">%s</span></td><td>%s</td><td class="num">%d</td><td class="num">%s</td><td>%s</td><td>
+<form method="post" action="%s/del" class="del-form">
+<input type="hidden" name="csrf" value="%s">
+<input type="hidden" name="token" value="%s">
+<button type="submit" class="danger" onclick="return confirm('确定删除该 token？')">删除</button>
+</form></td></tr>`,
+			html.EscapeString(t.Token), html.EscapeString(t.Token), html.EscapeString(t.Note), roleCls, roleTxt,
+			time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"),
+			t.Hits, formatBytes(t.Bytes), lastUsed,
+			s.adminPath, csrf, html.EscapeString(t.Token)))
+	}
+	if len(tokens) == 0 {
+		rows.WriteString(`<tr><td colspan="8" class="muted">暂无 token，请在上方创建</td></tr>`)
+	}
+	return rows.String()
+}
+
+// tokenAddForm Token 新增表单（角色选择供 MCP 使用）。
+func (s *Server) tokenAddForm(csrf string) string {
+	return `<form method="post" action="` + s.adminPath + `/add" class="row">` +
 		`<input type="hidden" name="csrf" value="` + csrf + `">` +
 		`<input name="token" placeholder="留空则自动生成">` +
 		`<input name="note" placeholder="备注（可选）">` +
@@ -380,14 +440,56 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`<option value="user">普通用户</option><option value="admin">管理员（MCP）</option></select>` +
 		`<button type="submit" class="btn">添加</button></form>` +
 		`<p class="muted small" style="margin-top:8px">角色说明：普通 token 仅用于代理访问；<strong>管理员 token</strong> 可用于 <code>MCP</code> 接入（<code>/mcp</code> 或 <code>gh-mirror mcp</code>），请勿随意外发。</p>`
-	// 页脚链接
-	footLinks := `<a href="` + s.adminPath + `/logout">退出登录</a> · <a href="/">返回首页</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a>`
+}
 
+// tokenFoot Token 页面页脚链接。
+func (s *Server) tokenFoot() string {
+	return `<a href="` + s.adminPath + `/logout">退出登录</a> · <a href="/">返回首页</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a>`
+}
+
+// renderTokensPage 渲染 Token 管理独立页面（/admin/tokens）。
+func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
+	sid, ok := s.parseSession(r)
+	if !ok {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	csrf := s.csrfToken(sid)
+	tokens := s.store.All()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, warn, badges, stats, converter, services, cacheMgmt, examples, rows, addForm, footLinks
-	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
-	body := fmt.Sprintf(dashboardBody, aside, topbarRight, warnHTML, badges, stats, conv, services, cacheMgmt, example, rows.String(), addForm, footLinks)
-	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
+	// verbs: aside, topbarRight, rows, addForm, foot
+	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)),
+		s.tokenRows(tokens, csrf), s.tokenAddForm(csrf), s.tokenFoot())
+	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
+}
+
+// consoleAside 渲染后台侧栏（各页面共用；小屏为抽屉，唤出入口见顶栏 ☰ 按钮）。
+func (s *Server) consoleAside(r *http.Request) string {
+	n := len(s.store.All())
+	tokensNav := "Token 管理"
+	if n > 0 {
+		tokensNav = fmt.Sprintf("Token 管理（%d）", n)
+	}
+	active := ""
+	if strings.HasSuffix(r.URL.Path, "/tokens") {
+		active = " active"
+	}
+	return `<aside id="gmNav"><a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a><nav class="nav">` +
+		`<a class="navitem` + active + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
+		`<a class="navitem` + active + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
+		`<a class="navitem" href="` + s.adminPath + `#services"><span class="ic">⚙️</span>服务管理</a>` +
+		`<a class="navitem" href="` + s.adminPath + `#cache"><span class="ic">💾</span>缓存管理</a>` +
+		`<span class="navsep"></span>` +
+		`<a class="navitem" href="` + repoURL + `/#文档" target="_blank" rel="noopener"><span class="ic">📄</span>文档</a>` +
+		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">✦</span>GitHub</a>` +
+		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">⎋</span>退出登录</a></nav></aside>` +
+		`<button class="nav-mask" type="button" aria-label="关闭导航菜单" onclick="toggleNav()"></button>`
+}
+
+// topbarRight 渲染后台顶栏右侧按钮（各页面共用）。
+func (s *Server) topbarRight(base string) string {
+	return `<a class="btn outline" href="` + base + `/healthz" target="_blank" rel="noopener">健康检查</a>` +
+		`<button id="themeToggle" class="btn outline" type="button" onclick="toggleTheme()" aria-label="切换深色 / 浅色模式">🌙 深色</button>`
 }
 
 // formatBytes 把字节数格式化为易读单位。
@@ -505,8 +607,12 @@ type convertResp struct {
 func (s *Server) doConvertAPI(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	raw := strings.TrimSpace(r.FormValue("url"))
+	toks := s.store.All()
+	// token 可由前端选择器指定；未指定或不存在时回落到第一个
 	tk := ""
-	if toks := s.store.All(); len(toks) > 0 {
+	if req := strings.TrimSpace(r.FormValue("token")); req != "" && s.store.Has(req) {
+		tk = req
+	} else if len(toks) > 0 {
 		tk = toks[0].Token
 	}
 	res := s.buildAccelURL(baseOf(r), raw, tk)
@@ -610,7 +716,7 @@ func atoiOr(v string, def int) int {
 	return n
 }
 
-// fmtDuration 把时长格式化为中文可读形式（用于后台"运行时长"）。
+// fmtDuration 把时长格式化为紧凑形式（用于后台"运行时长"）：0天01:09
 func fmtDuration(d time.Duration) string {
 	if d < time.Minute {
 		return "刚刚启动"
@@ -618,12 +724,5 @@ func fmtDuration(d time.Duration) string {
 	days := int(d.Hours()) / 24
 	hours := int(d.Hours()) % 24
 	mins := int(d.Minutes()) % 60
-	switch {
-	case days > 0:
-		return fmt.Sprintf("%d 天 %d 小时", days, hours)
-	case hours > 0:
-		return fmt.Sprintf("%d 小时 %d 分", hours, mins)
-	default:
-		return fmt.Sprintf("%d 分钟", mins)
-	}
+	return fmt.Sprintf("%d天%02d:%02d", days, hours, mins)
 }
