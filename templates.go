@@ -30,6 +30,27 @@ const logoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" rol
   <path d="M21 32 L27 34 L23 28 Z" fill="#ffffff"/>
 </svg>`
 
+// logoSVGAlt 是 logoSVG 的第二份副本，唯一差别是渐变 id（gm2）。
+// 为什么必须存在：同一页面会出现两个 logo，若二者复用同一个 <linearGradient id="gm"> 就形成重复 ID；
+// 当其中一个所在容器被 display:none（如登录页 ≤860px 隐藏左侧品牌区）时，另一个的
+// fill="url(#gm)" 会解析到隐藏子树里的 paint server，导致该 logo 整体不渲染（移动端"看不到 logo"）。
+// 因此同页第二处 logo 一律使用本副本。注意事项与 logoSVG 相同：不得出现字面 %。
+const logoSVGAlt = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="gh-mirror logo">
+  <defs>
+    <linearGradient id="gm2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#gm2)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round">
+    <path d="M21 32 A11 11 0 0 1 43 32"/>
+    <path d="M43 32 A11 11 0 0 1 21 32"/>
+  </g>
+  <path d="M43 32 L37 30 L41 36 Z" fill="#ffffff"/>
+  <path d="M21 32 L27 34 L23 28 Z" fill="#ffffff"/>
+</svg>`
+
 // githubSVG 是 GitHub 标志（内联，用于顶栏/引导的明显位置）。
 const githubSVG = `<svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-2.91-.88-2.91-2.82 0-.63.22-1.15.58-1.55-.06-.14-.25-.71.06-1.48 0 0 .58-.18 1.9.7a6.6 6.6 0 0 1 1.74-.23c.59 0 1.18.08 1.74.23 1.32-.89 1.9-.7 1.9-.7.31.77.12 1.34.06 1.48.36.4.58.92.58 1.55 0 1.95-1.14 2.62-2.92 2.82.3.26.56.76.56 1.54 0 1.11-.01 2.01-.01 2.29 0 .21.15.46.55.38A7.99 7.99 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>`
 
@@ -179,31 +200,59 @@ const pageStyle = `
   html.dark .badge.on{color:#4ade80}
   html.dark .badge.off{color:#fbbf24}
   .auth{display:grid;grid-template-columns:1.05fr .95fr;min-height:100vh}
-  .auth .hero{margin:0;padding:48px 44px;background:linear-gradient(150deg,#15803d,#16a34a 46%,#0ea5e9);color:#fff;display:flex;flex-direction:column;justify-content:space-between}
-  .auth .hero h2{font-size:2.1rem;margin:20px 0 10px;font-weight:800;line-height:1.15}
-  .auth .hero p{opacity:.92;max-width:42ch;margin:0}
-  .auth .hero .pts{list-style:none;padding:0;margin:22px 0 0;display:grid;gap:12px}
-  .auth .hero .pts li{display:flex;gap:10px;align-items:flex-start;opacity:.95}
-  .auth .hero .pts li::before{content:"✓";font-weight:800}
-  .auth .hero-foot a{color:#fff;opacity:.9;font-weight:600}
+  /* 左侧品牌面板：多层渐变 + 双光晕 + 装饰环，内容垂直居中单列 */
+  .auth .hero{position:relative;overflow:hidden;margin:0;padding:56px 48px;color:#fff;display:flex;flex-direction:column;justify-content:center;
+    background:linear-gradient(155deg,#0b3d24 0%,#15803d 42%,#16a34a 68%,#0ea5e9 100%)}
+  .auth .hero::before{content:"";position:absolute;pointer-events:none;width:520px;height:520px;right:-170px;top:-150px;border-radius:50%;
+    background:radial-gradient(circle,rgba(56,189,248,.34),transparent 62%)}
+  .auth .hero::after{content:"";position:absolute;pointer-events:none;width:430px;height:430px;left:-140px;bottom:-170px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.15),transparent 65%)}
+  .auth .hero .deco{position:absolute;pointer-events:none;z-index:0;border-radius:50%;border:1px solid rgba(255,255,255,.16)}
+  .auth .hero .deco.a{width:320px;height:320px;right:-100px;bottom:-80px}
+  .auth .hero .deco.b{width:190px;height:190px;right:130px;bottom:70px;border-color:rgba(255,255,255,.12)}
+  .auth .hero>*:not(.deco){position:relative;z-index:1;max-width:460px}
+  .auth .hero h2{font-size:2.25rem;margin:22px 0 12px;font-weight:800;line-height:1.18;text-shadow:0 2px 18px rgba(0,0,0,.18)}
+  .auth .hero p{color:rgba(255,255,255,.84);max-width:44ch;margin:0;line-height:1.75}
+  .auth .hero .mcp{display:inline-flex;align-items:center;gap:7px;margin-top:20px;padding:6px 14px;border-radius:999px;
+    background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.26);color:#fff;font-size:.84rem;font-weight:600;
+    transition:background .18s ease,transform .18s ease}
+  .auth .hero .mcp:hover{background:rgba(255,255,255,.22);transform:translateY(-2px)}
+  .auth .hero .pts{list-style:none;padding:0;margin:24px 0 0;display:grid;gap:10px}
+  .auth .hero .pts li{display:flex;gap:10px;align-items:flex-start;padding:9px 14px;border-radius:12px;font-size:.92rem;
+    background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);transition:transform .18s ease,background .18s ease}
+  .auth .hero .pts li:hover{transform:translateY(-2px);background:rgba(255,255,255,.16)}
+  .auth .hero .pts li::before{content:"✓";font-weight:800;color:#bbf7d0}
+  .auth .hero-foot{margin-top:28px}
+  .auth .hero-foot a{color:rgba(255,255,255,.86);font-weight:600}
+  .auth .hero-foot a:hover{color:#fff}
   .auth .brand{display:flex;align-items:center;gap:12px;font-weight:800;font-size:1.18rem}
-  .auth .panel{display:flex;align-items:center;justify-content:center;padding:40px 24px;background:var(--background)}
-  .auth .box{width:100%;max-width:388px}
-  .auth .box .brand{margin-bottom:10px}
-  .auth .box h1{font-size:1.7rem;margin:6px 0 2px;font-weight:800}
-  .auth label{display:block;font-size:.86rem;font-weight:600;margin:16px 0 6px}
-  .auth .box input{width:100%}
+  /* 右侧登录区：水平+垂直居中，卡片表面 */
+  .auth .panel{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:44px 24px;background:var(--background)}
+  .auth .box{width:100%;max-width:400px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px 30px;
+    box-shadow:0 18px 48px rgba(0,0,0,.10)}
+  html.dark .auth .box{box-shadow:0 0 0 1px rgba(255,255,255,.05)}
+  .auth .box .brand{margin-bottom:14px}
+  .auth .box h1{font-size:1.65rem;margin:6px 0 4px;font-weight:800;letter-spacing:-.01em}
+  .auth .box .sub{color:var(--muted-foreground);font-size:.92rem;margin:0}
+  .auth label{display:block;font-size:.86rem;font-weight:600;margin:18px 0 7px}
+  .auth .box input{width:100%;height:44px;border-radius:10px;background:var(--muted);padding:0 13px}
+  .auth .box input:focus{background:var(--background);border-color:var(--ring);box-shadow:0 0 0 3px rgba(22,163,74,.16)}
+  html.dark .auth .box input:focus{box-shadow:0 0 0 3px rgba(34,197,94,.20)}
   .auth .pw{display:flex;gap:8px}
   .auth .pw input{flex:1;min-width:0}
-  .auth .btn-login{display:block;width:min(220px,72%);margin:16px auto 0;padding:11px 16px}
+  .auth .pw button{height:44px;border-radius:10px;padding:0 14px}
+  .auth .btn-login{display:block;width:min(220px,72%);margin:20px auto 0;padding:12px 16px;border-radius:10px}
   .auth .err{min-height:1.3em;margin:8px 0 0;font-size:.86rem}
   .auth .note{margin-top:18px;font-size:.82rem}
-  .forgot{margin-top:10px;text-align:right}
+  .auth .back{margin-top:10px;font-size:.86rem}
+  /* 「忘记密码?」默认纯文字弱链：须显式重置通用 details 的边框/底色/内边距，否则会残留一个框 */
+  .forgot{margin:12px 0 0;border:0;background:transparent;padding:0;text-align:right}
   .forgot summary{cursor:pointer;font-weight:500;font-size:.82rem;list-style:none;color:var(--muted-foreground);display:inline-block;padding:2px 0}
   .forgot summary:hover{color:var(--primary)}
+  .forgot summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px;border-radius:4px}
   .forgot summary::-webkit-details-marker{display:none}
-  .forgot[open]{text-align:left;border:1px solid var(--border);border-radius:var(--radius);background:var(--muted);padding:4px 14px 14px}
-  .forgot-title{font-weight:700;margin:10px 0 6px}
+  .forgot[open]{text-align:left;margin-top:14px;border:1px solid var(--border);border-radius:12px;background:var(--muted);padding:12px 14px}
+  .forgot-title{font-weight:700;margin:2px 0 8px}
   .small{font-size:.82rem}
   .svcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
   .svccard{background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
@@ -218,7 +267,23 @@ const pageStyle = `
   .fld{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted-foreground);font-weight:600}
   .fld input{width:130px}
   @media (max-width:900px){.grid-svc{grid-template-columns:1fr}.svcgrid{grid-template-columns:1fr}.hero h1{font-size:2.3rem}}
-  @media (max-width:860px){.auth{grid-template-columns:1fr}.auth .hero{display:none}}
+  @media (max-width:860px){
+    .auth{grid-template-columns:1fr}
+    .auth .hero{display:none}
+    /* 左侧品牌区在小屏隐藏，故在卡片顶部补 logo + 品牌名并整体居中，避免"看不到 logo" */
+    .auth .panel{min-height:100vh;min-height:100svh;padding:30px 16px 44px;
+      background:linear-gradient(180deg,rgba(22,163,74,.10),transparent 300px),var(--background)}
+    .auth .box{max-width:420px;padding:26px 22px}
+    .auth .box .brand{justify-content:center;margin-bottom:12px}
+    .auth .box .brand>svg{width:56px;height:56px;border-radius:15px}
+    .auth .box h1{text-align:center}
+    .auth .box .sub{text-align:center}
+  }
+  @media (max-width:420px){
+    .auth .panel{padding:22px 12px 32px}
+    .auth .box{padding:22px 18px;border-radius:14px}
+    .auth .box .brand>svg{width:52px;height:52px}
+  }
   @media (max-width:820px){
     .console{flex-direction:column}
     .console aside{width:100%;height:auto;position:static;display:flex;gap:6px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border);padding:10px 12px}
@@ -429,23 +494,27 @@ var notFoundHTML = page("404 - gh-mirror", "页面未找到", `
 var loginBody = `
 <div class="auth">
   <div class="hero">
+    <span class="deco a" aria-hidden="true"></span>
+    <span class="deco b" aria-hidden="true"></span>
     <div>
       <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
       <h2>多服务加速网关</h2>
-      <p>Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。</p>
+      <p>Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速；浏览器与命令行（curl / wget / docker）通用。</p>
+      <span class="mcp">🤖 MCP 接入 · AI Agent 友好</span>
       <ul class="pts">
         <li>Token 鉴权，访问可控、可审计</li>
         <li>流式代理 + 磁盘缓存，支持 Range 续传</li>
         <li>私有化部署，零第三方依赖单二进制</li>
+        <li>后台可视化管理：服务开关、缓存、链接转换</li>
       </ul>
     </div>
     <div class="hero-foot"><a href="` + repoURL + `" target="_blank" rel="noopener">GitHub ↗</a></div>
   </div>
   <div class="panel">
     <div class="box">
-      <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
+      <a class="brand" href="/" title="返回首页">` + logoSVGAlt + `<span>gh-mirror</span></a>
       <h1>欢迎回来</h1>
-      <p class="muted">登录 gh-mirror 管理后台</p>
+      <p class="sub">登录 gh-mirror 管理后台</p>
       <form method="post" action="%s">
         <label for="user">账号</label>
         <input id="user" name="user" placeholder="请输入账号" required autofocus>
@@ -461,18 +530,18 @@ var loginBody = `
         <summary>忘记密码？</summary>
         <div class="forgot-body">
           <p class="forgot-title">在服务器上重置密码</p>
-          <p class="muted">gh-mirror 的登录密码是部署时设置的 <code>ADMIN_PASS</code>（环境变量 / <code>.env</code>）。忘记时可在服务器上重置：</p>
+          <p class="muted small">gh-mirror 的登录密码是部署时设置的 <code>ADMIN_PASS</code>（环境变量 / <code>.env</code>）。忘记时可在服务器上重置：</p>
           <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code># docker run 部署：以新密码重建容器（token / 缓存在 gm-data、gm-cache 卷，不丢）
 docker rm -f gh-mirror
-docker run -d --name gh-mirror -e ADMIN_PASS='新密码' -e ADMIN_SECRET='你的密钥' -p 127.0.0.1:8080:8080 -v gm-data:/var/lib/gh-mirror ghcr.io/yufeng8/gh-mirror:v0.1.0
+docker run -d --name gh-mirror -e ADMIN_PASS='新密码' -e ADMIN_SECRET='你的密钥' -p 127.0.0.1:8080:8080 -v gm-data:/var/lib/gh-mirror ghcr.io/yufeng8/gh-mirror:&lt;最新 tag&gt;
 
 # docker compose 部署：改 .env 后重建
 sed -i 's#^ADMIN_PASS=.*#ADMIN_PASS=新密码#' .env &amp;&amp; docker compose up -d</code></pre></div>
-          <p class="muted small">重置仅影响登录，不影响已创建的 Token 与缓存；重置后重新登录即可。登录会话通过安全的 HttpOnly Cookie 保存。</p>
+          <p class="muted small">镜像 tag 请以 <a href="` + repoURL + `/releases" target="_blank" rel="noopener">GitHub Releases</a> 的<strong>最新正式版</strong>为准。重置仅影响登录，不影响已创建的 Token 与缓存；重置后重新登录即可。</p>
         </div>
       </details>
       <p class="muted note">🔒 登录会话通过安全的 HttpOnly Cookie 保存。</p>
-      <p class="muted"><a href="/">返回首页</a></p>
+      <p class="muted back"><a href="/">返回首页</a></p>
     </div>
   </div>
 </div>`
