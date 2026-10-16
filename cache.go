@@ -33,6 +33,22 @@ func NewCache(dir string, ttl time.Duration, maxMB int) *Cache {
 	}
 }
 
+// MaxBytes 返回缓存目录上限（字节）。
+func (c *Cache) MaxBytes() int64 { return c.maxBytes }
+
+// UsageBytes 遍历缓存目录，返回当前已占用字节数（含 .meta/.tmp 旁路文件）。
+func (c *Cache) UsageBytes() int64 {
+	var total int64
+	_ = filepath.Walk(c.dir, func(_ string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() {
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	return total
+}
+
 func cacheKey(method, target string) string {
 	sum := sha256.Sum256([]byte(method + " " + target))
 	return hex.EncodeToString(sum[:])
