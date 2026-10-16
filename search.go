@@ -101,9 +101,9 @@ type hubTagsResp struct {
 	Results []hubTagResult `json:"results"`
 }
 
-// hubGet 请求 Docker Hub 公共 API（带超时，限长读取）。
-func hubGet(r *http.Request, target string) ([]byte, string, int, error) {
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+// hubGetCtx 请求 Docker Hub 公共 API（带超时，限长读取）。供 handler 与 MCP 工具共用。
+func hubGetCtx(ctx context.Context, target string) ([]byte, string, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
@@ -122,6 +122,11 @@ func hubGet(r *http.Request, target string) ([]byte, string, int, error) {
 		ct = "application/json"
 	}
 	return body, ct, resp.StatusCode, err
+}
+
+// hubGet 保留原签名（handler 使用请求上下文）。
+func hubGet(r *http.Request, target string) ([]byte, string, int, error) {
+	return hubGetCtx(r.Context(), target)
 }
 
 // validRepo 校验仓库名，防止路径注入与 URL 路径穿越。

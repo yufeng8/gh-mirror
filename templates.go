@@ -516,7 +516,7 @@ var dashboardBody = `
     <section class="card" id="tokens">
       <h2>Token 管理</h2>
       <table>
-        <thead><tr><th>Token</th><th>备注</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
+        <thead><tr><th>Token</th><th>备注</th><th>角色</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
         <tbody>%s</tbody>
       </table>
       <h2 style="margin-top:22px">新增 Token</h2>

@@ -7,18 +7,36 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
+// token 的角色。admin 具备运维能力（可用于 MCP 接入）；user 仅用于代理访问。
+const (
+	RoleUser  = "user"
+	RoleAdmin = "admin"
+)
+
 // Token 代表一个代理访问令牌。Hits/Bytes/LastUsed 为运行时统计字段。
+// Role 为空（旧 tokens.json）时按 user 处理。
 type Token struct {
 	Token     string `json:"token"`
 	Note      string `json:"note"`
+	Role      string `json:"role,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 	Hits      int64  `json:"hits"`
 	Bytes     int64  `json:"bytes"`
 	LastUsed  int64  `json:"last_used"`
+}
+
+// normRole 归一化角色：空值或非法值按 user 处理（兼容旧 tokens.json）。
+func normRole(r string) string {
+	r = strings.ToLower(strings.TrimSpace(r))
+	if r == RoleAdmin {
+		return RoleAdmin
+	}
+	return RoleUser
 }
 
 // Store 以 JSON 文件持久化 token 列表，读写均加锁。
@@ -44,6 +62,7 @@ func (s *Store) load() {
 		return
 	}
 	for _, t := range list {
+		t.Role = normRole(t.Role)
 		s.tokens[t.Token] = t
 	}
 }
@@ -75,11 +94,20 @@ func (s *Store) Has(token string) bool {
 	return ok
 }
 
-func (s *Store) Add(token, note string) {
+// Add 新增 token；role 传空串按 user 处理。
+func (s *Store) Add(token, note, role string) {
 	s.mu.Lock()
-	s.tokens[token] = &Token{Token: token, Note: note, CreatedAt: time.Now().Unix()}
+	s.tokens[token] = &Token{Token: token, Note: note, Role: normRole(role), CreatedAt: time.Now().Unix()}
 	_ = s.saveLocked()
 	s.mu.Unlock()
+}
+
+// IsAdmin 判断 token 存在且具备 admin 角色（MCP 鉴权使用）。
+func (s *Store) IsAdmin(token string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tokens[token]
+	return ok && normRole(t.Role) == RoleAdmin
 }
 
 func (s *Store) Delete(token string) {
