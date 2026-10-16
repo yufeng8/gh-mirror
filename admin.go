@@ -246,10 +246,15 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	ex.WriteString(`<p><strong>HuggingFace 权重</strong>（需 token）：<br><code>` + hfEx + `</code></p>`)
 	ex.WriteString(`<p><strong>Docker 镜像</strong>（无需 token）：<br><code>` + dockerEx + `</code></p>`)
 	example := ex.String()
+	// Docker 开启时在后台顶部强提醒：/v2、/offline 端点无 Token 鉴权，公网暴露有滥用/带宽风险
+	warnHTML := ""
+	if s.cfg.Docker.Enabled {
+		warnHTML = `<div class="alert danger"><strong>⚠️ 安全提醒：Docker 加速/离线镜像已开启</strong>（<code>DOCKER_ENABLED=true</code>）。端点 <code>/v2</code> 与 <code>/offline</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token）。<br>· 若网关经公网/CDN 暴露，<strong>任何人都能使用你的镜像加速、拉取离线 tar</strong>，耗费上游带宽。<br>· 置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只见 CDN 回源 IP，X-Forwarded-For 可伪造）。<br><strong>降低风险（任选）：</strong>1) 不需要公网 Docker 加速就设 <code>DOCKER_ENABLED=false</code>；2) 公网反代挡掉裸路径 <code>location ^~ /v2/ { return 404; }</code>、<code>location ^~ /offline/ { return 404; }</code>，/offline 改用带秘密前缀的地址；3) registry 用「不走 CDN 的难猜子域名」直连源站 + 云安全组按来源 IP 放行；4) 在 CDN（EdgeOne）对 <code>/v2</code>、<code>/offline</code> 配速率限制与带宽封顶（CDN 看得到真实客户端 IP）。详见 <code>docs/docker-deploy.md</code>「Docker 加速安全」。</div>`
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: example, rows, add-action, add-form-csrf, logout-href
+	// verbs: warn, example, rows, add-action, add-form-csrf, logout-href
 	// 只对 body 片段做 Sprintf（body 内无 CSS 的 %），再用 page() 包裹，避免 CSS 中的 % 被误当作格式化动词
-	body := fmt.Sprintf(dashboardBody, example, rows.String(), s.adminPath, csrf, s.adminPath)
+	body := fmt.Sprintf(dashboardBody, warnHTML, example, rows.String(), s.adminPath, csrf, s.adminPath)
 	_, _ = w.Write([]byte(page("管理后台 - gh-mirror", "管理后台", body)))
 }
 
