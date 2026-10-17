@@ -463,8 +463,10 @@ const pageStyle = `
   .aside-foot svg{flex:0 0 auto;opacity:.9}
   /* Token 表格：桌面为表格，窄屏变卡片式 */
   .badge.role-admin{background:var(--primary);color:#fff;border-color:var(--primary)}
-  .ops{display:inline-flex;gap:6px;align-items:center;flex-wrap:nowrap}
+  .ops{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
   .ops .btn,.ops .danger,.tok-cell .btn{height:32px;padding:0 12px;border-radius:8px;white-space:nowrap;min-width:64px}
+  .ops .del-form{display:inline-flex;gap:6px;align-items:center;max-width:100%}
+  .ops .del-form input[type="password"]{width:110px;max-width:100%;box-sizing:border-box}
   .tok-cell code{white-space:nowrap}
   /* 8 列在窄卡片内会被压成"一字宽"导致中文逐字换行：给表格足够最小宽度，
      超出部分交由 .table-wrap 横向滚动（不会把整页撑破） */
@@ -538,12 +540,13 @@ const pageStyle = `
     .hero#top .lede{margin:6px 0 2px}
     .hero#top .row{justify-content:center}
     .hero#top .sub{text-align:left}
-    /* 卡片式下取消表格横向滚动与最小宽度 */
-    .table-wrap{overflow:visible}
-    .table-wrap table{min-width:0}
+    /* 卡片式下取消表格横向滚动与最小宽度；行与单元格收敛到容器宽度，避免溢出撑破页面 */
+    .table-wrap{overflow-x:auto}
+    .table-wrap table{min-width:0;max-width:100%}
     .tok-table thead{display:none}
-    .tok-table,.tok-table tbody{display:block;overflow:visible;white-space:normal}
-    .tok-table tr.tok-row{display:block;border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
+    .tok-table,.tok-table tbody{display:block;overflow:visible;white-space:normal;max-width:100%}
+    .tok-table tr.tok-row{display:block;width:100%;max-width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
+    .tok-table tr.tok-row td{max-width:100%;min-width:0;box-sizing:border-box}
     .tok-table tr.tok-row:hover{background:var(--card)}
     .tok-table tr.tok-row td{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border:0;padding:5px 0;white-space:normal;text-align:left}
     .tok-table tr.tok-row td::before{content:attr(data-label);color:var(--muted-foreground);font-size:.78rem;font-weight:600;flex:0 0 auto}
@@ -943,6 +946,33 @@ var mcpBody = `
     </section>
     <section class="card">
       <h2>可用工具（12 个）</h2>
+      %s
+    </section>
+  </div>
+</div>`
+
+// usersBody 是用户管理页面的 body 片段（/admin/users，仅超级管理员）。
+// 动词：aside / topbarRight / flash / rows / addForm
+var usersBody = `
+<div class="console" id="top">
+  %s
+  <div class="main">
+    <div class="topbar">
+      <button class="btn outline nav-toggle" type="button" onclick="toggleNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+      <h1>用户管理</h1>
+      <div class="spacer">%s</div>
+    </div>
+    %s
+    <section class="card">
+      <h2>用户列表</h2>
+      <p class="muted small">超级管理员可管理所有用户并查看全局；普通用户只管理自己的 Token / Docker 路径 / MCP。</p>
+      <div class="table-wrap">
+      <table class="tok-table">
+        <thead><tr><th>用户名</th><th>角色</th><th>创建时间</th><th>操作</th></tr></thead>
+        <tbody>%s</tbody>
+      </table>
+      </div>
+      <h2 style="margin-top:22px">新增用户</h2>
       %s
     </section>
   </div>

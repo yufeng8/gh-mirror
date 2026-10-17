@@ -9,7 +9,7 @@
   gh-mirror
 </h1>
 
-> Self-hosted GitHub resource mirror / acceleration proxy · Token auth · Web admin dashboard · Fully private deployment
+> Self-hosted multi-service acceleration gateway — **Docker images · GitHub resources · HuggingFace weights**, all in one. Token auth, disk cache, image search, and a built-in **MCP server** (AI Agent friendly).
 
 <p align="center">
   <strong>English</strong> | <a href="README.md">中文</a>

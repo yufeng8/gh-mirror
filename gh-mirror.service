@@ -1,5 +1,5 @@
 [Unit]
-Description=GitHub Mirror Proxy
+Description=gh-mirror 多服务加速网关（Docker / GitHub / HuggingFace + MCP）
 After=network.target
 
 [Service]

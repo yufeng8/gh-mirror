@@ -121,7 +121,7 @@ gh-mirror mcp --token <高级Token>
 - 🛡️ **安全管控**：Token 鉴权（默认）+ 可选开放模式；IP（CIDR）/ 仓库（通配符）黑白名单；按真实客户端 IP 的令牌桶限流（IPv6 归并 `/64`）。
 - ⚙️ **统一配置**：`config.toml` + 环境变量覆盖，平滑兼容旧的环境变量部署。
 - 🧦 **可选 SOCKS5 出站**：为 GitHub/HF/Docker 回源统一走 SOCKS5 代理。
-- 🤖 **MCP 接入（AI Agent 友好）**：内置 MCP 服务端，AI Agent 可通过标准协议调用网关能力——管理 Token、开关 Docker/HuggingFace 加速、查看与调整缓存、链接转换、健康检查、镜像搜索与标签。支持 `POST /mcp` 与 `gh-mirror mcp` stdio 两种接入（需 admin 角色 token），详见 `docs/mcp.md`。
+- 🤖 **MCP 接入（AI Agent 友好）**：内置 MCP 服务端，AI Agent 可通过标准协议调用网关能力——管理 Token、开关 Docker/HuggingFace 加速、查看与调整缓存、链接转换、健康检查、镜像搜索与标签。支持 `POST /mcp` 与 `gh-mirror mcp` stdio 两种接入（需归属自己的高级 Token），详见 `docs/mcp.md`。
 - 🎛️ **后台可视化运维**：服务状态徽标、概览统计（Token 数 / 命中 / 流量 / 缓存占用 / 运行时长）、服务开关即时生效、缓存上限与时效可调 + 自动失效、链接转换工具。
 
 > 文档示例域名为 `mirror.example.com`，请替换为你自己的域名。

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05100b"/>
+      <stop offset="0.5" stop-color="#0a2a1c"/>
+      <stop offset="1" stop-color="#06222f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#22c55e" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#22c55e" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4ade80"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.04"/>
+    </linearGradient>
+    <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+      <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#16213a" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#grid)" opacity="0.4"/>
+  <ellipse cx="150" cy="200" rx="320" ry="260" fill="url(#glow)"/>
+
+  <!-- 项目 logo（渐变圆角方块 + 白色循环箭头，与站内 logoSVG 一致） -->
+  <g transform="translate(66,66) scale(1.9)">
+    <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#logoGrad)"/>
+    <g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round">
+      <path d="M21 32 A11 11 0 0 1 43 32"/>
+      <path d="M43 32 A11 11 0 0 1 21 32"/>
+    </g>
+    <path d="M43 32 L37 30 L41 36 Z" fill="#ffffff"/>
+    <path d="M21 32 L27 34 L23 28 Z" fill="#ffffff"/>
+  </g>
+
+  <text x="72" y="256" font-size="16" letter-spacing="4" fill="#7dd3fc" font-weight="600">自托管 · 多服务加速网关</text>
+  <text x="68" y="344" font-size="88" font-weight="800" fill="url(#title)">gh-mirror</text>
+  <rect x="72" y="370" width="212" height="5" rx="2.5" fill="url(#logoGrad)"/>
+
+  <text x="70" y="420" font-size="27" fill="#d7f5e5">Docker 镜像 · GitHub 资源 · HuggingFace 权重</text>
+  <text x="70" y="456" font-size="27" fill="#d7f5e5">一个网关，一站加速 · 内置 MCP（AI Agent 友好）</text>
+
+  <!-- 功能标签 -->
+  <g font-size="16" fill="#cbd5e1">
+    <rect x="70" y="488" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="507" r="5" fill="#22d3ee"/><text x="108" y="513">MCP 接入</text>
+    <rect x="258" y="488" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="280" cy="507" r="5" fill="#34d399"/><text x="296" y="513">Docker 加速</text>
+    <rect x="446" y="488" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="468" cy="507" r="5" fill="#a78bfa"/><text x="484" y="513">GitHub 加速</text>
+    <rect x="70" y="538" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="557" r="5" fill="#fbbf24"/><text x="108" y="563">HF 权重</text>
+    <rect x="258" y="538" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="280" cy="557" r="5" fill="#f472b6"/><text x="296" y="563">Token 鉴权</text>
+    <rect x="446" y="538" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="468" cy="557" r="5" fill="#38bdf8"/><text x="484" y="563">离线 tar</text>
+  </g>
+
+  <text x="70" y="608" font-size="16" fill="#94a3b8">Go 标准库 · 零第三方依赖 · 单二进制 · 离线可构建</text>
+
+  <!-- 右侧：服务卡片 -->
+  <g>
+    <rect x="700" y="120" width="500" height="120" rx="14" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
+    <circle cx="730" cy="144" r="12" fill="#2496ED"/>
+    <text x="754" y="150" font-size="17" fill="#ffffff" fill-opacity="0.94">Docker 镜像加速</text>
+    <text x="1172" y="150" font-size="13" fill="#9fe8c4" text-anchor="end">/v2/&lt;用户名&gt;/…</text>
+    <rect x="700" y="250" width="500" height="120" rx="14" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
+    <circle cx="730" cy="274" r="12" fill="#e6edf3"/>
+    <text x="754" y="280" font-size="17" fill="#ffffff" fill-opacity="0.94">GitHub 资源加速</text>
+    <text x="1172" y="280" font-size="13" fill="#9fe8c4" text-anchor="end">/g/&lt;token&gt;/…</text>
+    <rect x="700" y="380" width="500" height="120" rx="14" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
+    <circle cx="730" cy="404" r="12" fill="#FFD21E"/>
+    <text x="754" y="410" font-size="17" fill="#ffffff" fill-opacity="0.94">HuggingFace 权重</text>
+    <text x="1172" y="410" font-size="13" fill="#9fe8c4" text-anchor="end">/hf/…</text>
+    <rect x="700" y="510" width="500" height="120" rx="14" fill="#6f42c1" fill-opacity="0.16" stroke="#a78bfa" stroke-opacity="0.4"/>
+    <circle cx="730" cy="534" r="12" fill="#a78bfa"/>
+    <text x="754" y="540" font-size="17" fill="#ffffff" fill-opacity="0.94">MCP 服务端（AI Agent 直接接管）</text>
+    <text x="1172" y="540" font-size="13" fill="#c4b5fd" text-anchor="end">POST /mcp</text>
+  </g>
+</svg>

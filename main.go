@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,9 +24,9 @@ type Server struct {
 	cache        *Cache
 	timeout      time.Duration
 	store        *Store
+	users        *UserStore
 	adminPath    string
-	adminUser    string
-	adminPass    string
+	adminUser    string // 初始超级管理员用户名（启动种子；运行态当前用户从 session 取）
 	secret       []byte
 	cookieSecure bool
 	limiter      *RateLimiter
@@ -87,6 +88,16 @@ func main() {
 	}
 
 	store := NewStore(cfg.TokensFile)
+	// 用户表与 tokens.json 同目录：ADMIN_USER/ADMIN_PASS 作为「初始超级管理员」种子迁移进用户表，
+	// 之后账号管理完全走 users.json（ADMIN_PASS 只在首次启动时用于创建种子账号）。
+	users := NewUserStore(filepath.Join(filepath.Dir(cfg.TokensFile), "users.json"))
+	if !users.Has(adminUser) {
+		if err := users.Add(adminUser, adminPass, RoleSuper); err != nil {
+			log.Printf("⚠️ 初始化超级管理员账号失败: %v（ADMIN_USER 需 2-32 位字母数字._-）", err)
+		} else {
+			log.Printf("已初始化超级管理员账号: %s（来自 ADMIN_USER；后续可在「用户管理」中增删）", adminUser)
+		}
+	}
 	cache := NewCache(cfg.CacheDir, time.Duration(cfg.CacheTTLMinutes)*time.Minute, cfg.MaxCacheMB)
 	useJsdelivr = cfg.UseJsdelivr
 
@@ -110,9 +121,9 @@ func main() {
 		cache:        cache,
 		timeout:      time.Duration(cfg.UpstreamTimeoutSec) * time.Second,
 		store:        store,
+		users:        users,
 		adminPath:    adminPath,
 		adminUser:    adminUser,
-		adminPass:    adminPass,
 		secret:       secret,
 		cookieSecure: cfg.Admin.CookieSecure,
 		limiter:      limiter,

@@ -80,7 +80,16 @@ type mcpTool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"inputSchema"`
-	handler     func(s *Server, base string, args map[string]any) mcpCallResult
+	// owner 为调用方（鉴权用高级 Token）的归属用户名，供 create_token 等需要归属的操作使用。
+	handler func(s *Server, base string, args map[string]any, owner string) mcpCallResult
+}
+
+// mcpOwner 返回鉴权 token 的归属用户名（空 owner 归默认管理员）。
+func (s *Server) mcpOwner(tok string) string {
+	if t, ok := s.store.Get(tok); ok && t.Owner != "" {
+		return t.Owner
+	}
+	return s.adminUser
 }
 
 func textResult(text string) mcpCallResult {
@@ -143,7 +152,7 @@ var mcpRegistry = []mcpTool{
 	{
 		Name: "health", Description: "健康检查：返回服务状态与运行时长。",
 		InputSchema: objSchema(nil, nil),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			return textResult(fmt.Sprintf("ok\n运行时长: %s\n监听: %s\n后台路径: %s",
 				fmtDuration(time.Since(processStart)), s.cfg.Listen, s.adminPath))
 		},
@@ -151,7 +160,7 @@ var mcpRegistry = []mcpTool{
 	{
 		Name: "list_tokens", Description: "列出全部 Token（含类型、命中数、流量、创建与最近使用时间）。",
 		InputSchema: objSchema(nil, nil),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			toks := s.store.All()
 			type row struct {
 				Token     string `json:"token"`
@@ -182,7 +191,7 @@ var mcpRegistry = []mcpTool{
 			"note":  propStr("备注说明"),
 			"role":  propStr("角色：user 或 admin，默认 user"),
 		}, nil),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			tok := argStr(args, "token")
 			if tok == "" {
 				tok = GenToken()
@@ -191,7 +200,7 @@ var mcpRegistry = []mcpTool{
 				return errorResult("该 token 已存在")
 			}
 			role := normRole(argStr(args, "role"))
-			s.store.Add(tok, argStr(args, "note"), role, s.adminUser)
+			s.store.Add(tok, argStr(args, "note"), role, owner)
 			log.Printf("MCP 创建 token: role=%s", role)
 			return textResult(fmt.Sprintf("已创建 token（角色 %s）：\n%s", role, tok))
 		},
@@ -199,7 +208,7 @@ var mcpRegistry = []mcpTool{
 	{
 		Name: "delete_token", Description: "删除指定 Token。",
 		InputSchema: objSchema(map[string]any{"token": propStr("要删除的 token")}, []string{"token"}),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			tok := argStr(args, "token")
 			if !s.store.Has(tok) {
 				return errorResult("token 不存在")
@@ -212,7 +221,7 @@ var mcpRegistry = []mcpTool{
 	{
 		Name: "get_services", Description: "查询三个服务的启用状态（GitHub 恒开；Docker / HuggingFace 可开关）。",
 		InputSchema: objSchema(nil, nil),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			b, _ := json.MarshalIndent(map[string]any{
 				"github": true, "docker": s.dockerEnabled(), "hf": s.hfEnabled(),
 			}, "", "  ")
@@ -225,7 +234,7 @@ var mcpRegistry = []mcpTool{
 			"name":    propStr("服务名：docker 或 hf"),
 			"enabled": propBool("true 开启 / false 关闭"),
 		}, []string{"name", "enabled"}),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			name := strings.ToLower(argStr(args, "name"))
 			if name != "docker" && name != "hf" {
 				return errorResult("name 仅支持 docker 或 hf")
@@ -245,7 +254,7 @@ var mcpRegistry = []mcpTool{
 	{
 		Name: "get_cache_stats", Description: "查询缓存：已用容量、单文件上限、总上限、时效与缓存目录。",
 		InputSchema: objSchema(nil, nil),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			maxTotal := s.cache.MaxTotalBytes()
 			totalTxt := "不限"
 			if maxTotal > 0 {
@@ -274,7 +283,7 @@ var mcpRegistry = []mcpTool{
 			"maxTotalMB": propInt("缓存总上限 MB，0 = 不限（超限按最旧优先清理）"),
 			"ttlMinutes": propInt("缓存时效分钟，0 = 永不过期"),
 		}, nil),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			mf := argInt(args, "maxFileMB", -1)
 			mt := argInt(args, "maxTotalMB", -1)
 			tt := argInt(args, "ttlMinutes", -1)
@@ -291,7 +300,7 @@ var mcpRegistry = []mcpTool{
 	{
 		Name: "clear_cache", Description: "清空缓存目录内的所有文件（不影响 Token 与设置）。",
 		InputSchema: objSchema(nil, nil),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			files, bytes := s.cache.Clear()
 			log.Printf("MCP 清除缓存: %d 个文件，%s", files, formatBytes(bytes))
 			return textResult(fmt.Sprintf("已清除缓存：%d 个文件，%s", files, formatBytes(bytes)))
@@ -302,7 +311,7 @@ var mcpRegistry = []mcpTool{
 		InputSchema: objSchema(map[string]any{
 			"url": propStr("GitHub / HuggingFace 原始链接，或 Docker 镜像名如 library/nginx:1.25"),
 		}, []string{"url"}),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			raw := argStr(args, "url")
 			if raw == "" {
 				return errorResult("缺少参数 url")
@@ -324,7 +333,7 @@ var mcpRegistry = []mcpTool{
 			"q":    propStr("搜索关键词，如 nginx"),
 			"page": propStr("页码，默认 1"),
 		}, []string{"q"}),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			q := argStr(args, "q")
 			page := argStr(args, "page")
 			if page == "" {
@@ -368,7 +377,7 @@ var mcpRegistry = []mcpTool{
 	{
 		Name: "list_tags", Description: "列出 Docker Hub 上某仓库的标签（等价 /api/tags）。",
 		InputSchema: objSchema(map[string]any{"repo": propStr("仓库名，如 library/nginx")}, []string{"repo"}),
-		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
+		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			repo := argStr(args, "repo")
 			if !validRepo(repo) {
 				return errorResult("repo 不合法")
@@ -404,7 +413,7 @@ var mcpRegistry = []mcpTool{
 }
 
 // mcpDispatch 分发一个 JSON-RPC 请求。返回 nil 表示通知类方法（不回响应）。
-func mcpDispatch(s *Server, base string, req rpcReq) *rpcResp {
+func mcpDispatch(s *Server, base string, owner string, req rpcReq) *rpcResp {
 	switch req.Method {
 	case "initialize":
 		ver := mcpDefaultProtocol
@@ -445,7 +454,7 @@ func mcpDispatch(s *Server, base string, req rpcReq) *rpcResp {
 		}
 		for _, t := range mcpRegistry {
 			if t.Name == p.Name {
-				res := okResp(req.ID, t.handler(s, base, p.Arguments))
+				res := okResp(req.ID, t.handler(s, base, p.Arguments, owner))
 				return &res
 			}
 		}
@@ -458,7 +467,7 @@ func mcpDispatch(s *Server, base string, req rpcReq) *rpcResp {
 }
 
 // serveMCPRPC 解析请求体（单个对象或 JSON 数组批量），逐个分发并通过 emit 回写。
-func (s *Server) serveMCPRPC(base string, body []byte, emit func(*rpcResp)) {
+func (s *Server) serveMCPRPC(base string, owner string, body []byte, emit func(*rpcResp)) {
 	trimmed := strings.TrimSpace(string(body))
 	if trimmed == "" {
 		e := errResp(nil, rpcInvalidRequest, "空请求")
@@ -478,7 +487,7 @@ func (s *Server) serveMCPRPC(base string, body []byte, emit func(*rpcResp)) {
 			return
 		}
 		for _, req := range reqs {
-			s.emitMCPOne(base, req, emit)
+			s.emitMCPOne(base, owner, req, emit)
 		}
 		return
 	}
@@ -488,11 +497,11 @@ func (s *Server) serveMCPRPC(base string, body []byte, emit func(*rpcResp)) {
 		emit(&e)
 		return
 	}
-	s.emitMCPOne(base, req, emit)
+	s.emitMCPOne(base, owner, req, emit)
 }
 
 // emitMCPOne 分发单个请求；对工具处理中的 panic 兜底，避免中断整个传输。
-func (s *Server) emitMCPOne(base string, req rpcReq, emit func(*rpcResp)) {
+func (s *Server) emitMCPOne(base string, owner string, req rpcReq, emit func(*rpcResp)) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Printf("MCP 处理异常: %v", rec)
@@ -500,7 +509,7 @@ func (s *Server) emitMCPOne(base string, req rpcReq, emit func(*rpcResp)) {
 			emit(&e)
 		}
 	}()
-	if resp := mcpDispatch(s, base, req); resp != nil {
+	if resp := mcpDispatch(s, base, owner, req); resp != nil {
 		emit(resp)
 	}
 }
@@ -515,14 +524,15 @@ func mcpBearerToken(r *http.Request) string {
 }
 
 // handleMCP 处理 POST /mcp（Streamable HTTP：单次请求/响应，不做 SSE 流式）。
-// 鉴权：Bearer token 必须是 admin 角色（与普通代理用的 user token 区分）。
+// 鉴权：Bearer token 必须是高级 Token（与普通代理用的 user token 区分）。
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持 POST", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.store.IsAdmin(mcpBearerToken(r)) {
-		http.Error(w, "未授权：需要 admin 角色的 token（Authorization: Bearer <token>）", http.StatusUnauthorized)
+	tok := mcpBearerToken(r)
+	if !s.store.IsAdmin(tok) {
+		http.Error(w, "未授权：需要高级 Token（Authorization: Bearer <token>）", http.StatusUnauthorized)
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -531,7 +541,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		s.writeMCPJSON(w, &resp)
 		return
 	}
-	s.serveMCPRPC(baseOf(r), body, func(resp *rpcResp) { s.writeMCPJSON(w, resp) })
+	s.serveMCPRPC(baseOf(r), s.mcpOwner(tok), body, func(resp *rpcResp) { s.writeMCPJSON(w, resp) })
 }
 
 func (s *Server) writeMCPJSON(w http.ResponseWriter, resp *rpcResp) {
@@ -553,13 +563,13 @@ func serveMCPStdio(s *Server, token, base string) error {
 			continue
 		}
 		if !s.store.IsAdmin(token) {
-			log.Printf("MCP stdio: token 无效或非 admin 角色")
-			resp := errResp(nil, rpcInvalidRequest, "未授权：token 无效或不是 admin 角色")
+			log.Printf("MCP stdio: token 无效或不是高级 Token")
+			resp := errResp(nil, rpcInvalidRequest, "未授权：token 无效或不是高级 Token")
 			writeMCPLine(out, &resp)
 			out.Flush()
 			continue
 		}
-		s.serveMCPRPC(base, []byte(line), func(resp *rpcResp) { writeMCPLine(out, resp) })
+		s.serveMCPRPC(base, s.mcpOwner(token), []byte(line), func(resp *rpcResp) { writeMCPLine(out, resp) })
 		out.Flush()
 	}
 	return in.Err()
@@ -573,7 +583,7 @@ func writeMCPLine(w io.Writer, resp *rpcResp) {
 // runMCPStdio 解析 `gh-mirror mcp` 子命令参数并以 stdio 传输运行。
 func runMCPStdio(s *Server) {
 	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
-	token := fs.String("token", "", "admin 角色的 token（也可设 GM_MCP_TOKEN 环境变量）")
+	token := fs.String("token", "", "高级 Token（也可设 GM_MCP_TOKEN 环境变量）")
 	base := fs.String("base", "", "生成加速链接用的基地址，默认由 LISTEN 推导")
 	_ = fs.Parse(os.Args[2:])
 	if *token == "" {
@@ -583,7 +593,7 @@ func runMCPStdio(s *Server) {
 		*base = defaultBase(s.cfg.Listen)
 	}
 	if *token == "" {
-		fmt.Fprintln(os.Stderr, "缺少 admin token：请使用 --token <token> 或设置 GM_MCP_TOKEN")
+		fmt.Fprintln(os.Stderr, "缺少高级 Token：请使用 --token <token> 或设置 GM_MCP_TOKEN")
 		fmt.Fprintln(os.Stderr, "提示：在管理后台创建 token 时把类型选为「高级 Token（可用于 MCP）」（内部值 admin）。")
 		os.Exit(2)
 	}

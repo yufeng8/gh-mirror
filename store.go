@@ -96,6 +96,14 @@ func (s *Store) Has(token string) bool {
 	return ok
 }
 
+// Get 返回指定 token（不存在返回 false）。
+func (s *Store) Get(token string) (*Token, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tokens[token]
+	return t, ok
+}
+
 // Add 新增 token；role 传空串按 user 处理；owner 为归属用户名（空表示默认管理员）。
 func (s *Store) Add(token, note, role, owner string) {
 	s.mu.Lock()

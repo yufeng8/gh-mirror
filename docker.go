@@ -131,23 +131,37 @@ var dockerClient = &http.Client{
 
 // handleDocker 是 Docker 加速入口，由 main.handle 在 [docker].enabled=true 时按前缀分发进来。
 func (s *Server) handleDocker(w http.ResponseWriter, r *http.Request) {
-	// /v2 的路径前缀固定为 <用户名>[/<自定义路径>]：用户名段强制存在、不可省略，
-	// 既给 registry 端点加了一道「只有知道路径的人能用」的保护，也让每个用户天然拥有独立路径
-	// （后续多用户直接复用这条规则）。registry 协议无法携带 Token，所以这里是唯一可行的保护位。
+	// /v2 路径第一段是「用户名段」（小写化、对应一个真实用户），其后可选「全局自定义路径」。
+	// 这样每个用户天然拥有独立路径（多用户隔离），registry 协议无法携带 Token，路径前缀是唯一保护位。
 	if !strings.HasPrefix(r.URL.Path, "/token") {
-		prefix := "/v2/" + s.dockerV2Prefix()
 		switch {
 		case r.URL.Path == "/v2" || r.URL.Path == "/v2/":
 			// registry 探测端点：必须放行并由上游返回 401 挑战。
 			// 若这里也 404，docker 客户端会判定该 registry 不支持 v2，pull 直接失败。
-		case r.URL.Path == prefix:
-			r.URL.Path = "/v2/"
-		case strings.HasPrefix(r.URL.Path, prefix+"/"):
-			r.URL.Path = "/v2/" + strings.TrimPrefix(r.URL.Path, prefix+"/")
-		default:
-			// 未带 <用户名>/<自定义路径> 前缀 → 一律 404，不暴露端点是否存在
-			s.render404(w, r)
-			return
+		case strings.HasPrefix(r.URL.Path, "/v2/"):
+			rest := strings.TrimPrefix(r.URL.Path, "/v2/")
+			seg, rem := rest, ""
+			if i := strings.IndexByte(rest, '/'); i >= 0 {
+				seg, rem = rest[:i], rest[i+1:]
+			}
+			// 用户名段反查用户表：不存在一律 404，不暴露端点/用户是否存在
+			if _, ok := s.userByDockerSegment(seg); !ok {
+				s.render404(w, r)
+				return
+			}
+			// 剥掉全局自定义路径（可选、可含 /）
+			if p := s.dockerPath(); p != "" {
+				switch {
+				case rem == p:
+					rem = ""
+				case strings.HasPrefix(rem, p+"/"):
+					rem = strings.TrimPrefix(rem, p+"/")
+				default:
+					s.render404(w, r)
+					return
+				}
+			}
+			r.URL.Path = "/v2/" + rem
 		}
 	}
 	switch {
