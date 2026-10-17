@@ -503,7 +503,7 @@ It complements gh-mirror nicely: gh-mirror makes "upstream access faster" (with 
 
 MIT (same license as the upstream project).
 
-## ⭐ Star & Fork guide
+## ⭐ Star & Fork
 
 If this project saves you time or solves a real download pain point, please consider supporting it on GitHub:
 
@@ -511,7 +511,7 @@ If this project saves you time or solves a real download pain point, please cons
 - 🍴 **Fork**: <https://github.com/yufeng8/gh-mirror/fork> — add features, customize the UI, or adapt it for your internal network.
 - 🐛 **Issue / PR**: find a bug or have an idea? Share it at <https://github.com/yufeng8/gh-mirror/issues>.
 
-> Tip: the deployed homepage (`/`) also has a "Star on GitHub" button at the bottom for easy access.
+> Your support keeps me motivated — thank you!
 
 ---
 
