@@ -131,6 +131,25 @@ var dockerClient = &http.Client{
 
 // handleDocker 是 Docker 加速入口，由 main.handle 在 [docker].enabled=true 时按前缀分发进来。
 func (s *Server) handleDocker(w http.ResponseWriter, r *http.Request) {
+	// 自定义路径（可选）：设置后 /v2 请求必须带该前缀，剥掉前缀再按原有逻辑处理。
+	// registry 协议无法携带 Token，这条前缀相当于给 /v2 加了一道「只有知道路径的人能用」的保护，
+	// 也为将来多用户（每个用户一条路径）留出扩展位。
+	if p := s.dockerPath(); p != "" {
+		prefix := "/v2/" + p
+		isToken := r.URL.Path == "/token" || strings.HasPrefix(r.URL.Path, "/token/")
+		if !isToken {
+			switch {
+			case r.URL.Path == prefix:
+				r.URL.Path = "/v2/"
+			case strings.HasPrefix(r.URL.Path, prefix+"/"):
+				r.URL.Path = "/v2/" + strings.TrimPrefix(r.URL.Path, prefix+"/")
+			default:
+				// 未带自定义路径 → 一律 404，不暴露端点是否存在
+				s.render404(w, r)
+				return
+			}
+		}
+	}
 	switch {
 	case r.URL.Path == "/token" || strings.HasPrefix(r.URL.Path, "/token/"):
 		s.proxyDockerToken(w, r)

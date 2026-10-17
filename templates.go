@@ -63,15 +63,21 @@ func svcTagHTML(code string) string {
 	return `<span class="tag">` + code + `</span>`
 }
 
-// dockerModal 是开启 Docker 加速前的安全确认弹窗（原先常驻后台顶部，改为按需弹出）。
-// 静态文案，无格式化动词。确认按钮由 gmOpenModal 注入的表单 id 决定是否显示。
-const dockerModal = `
+// dockerModalHTML 生成开启 Docker 加速前的安全确认弹窗（原先常驻后台顶部，改为按需弹出）。
+// cur 是当前已保存的自定义路径（/v2 前缀），用于回填输入框；确认按钮由 gmOpenModal 决定是否显示。
+func dockerModalHTML(cur string) string {
+	return `
 <div class="modal" id="gmDockerModal" hidden>
   <div class="modal-mask" onclick="gmCloseModal()"></div>
   <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="gmDockerModalTitle">
     <div class="modal-head"><span class="badge warn">⚠️ 安全说明</span><h3 id="gmDockerModalTitle">开启 Docker 加速前请先确认风险</h3></div>
     <div class="modal-body">
-      端点 <code>/v2</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token）；<code>/offline</code> 离线包<strong>必须带 Token</strong>（<code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code>，缺失或无效一律 404）。
+      <div class="modal-field">
+        <label for="gmDockerPath">自定义路径（可选，建议填一段只有你知道的串）</label>
+        <input id="gmDockerPath" name="dockerPath" form="gmSvcForm-docker" value="` + html.EscapeString(cur) + `" placeholder="如 team-a/9f3k2" maxlength="64" autocomplete="off" spellcheck="false">
+        <p class="muted small">填了之后，Docker 拉取地址要带上该前缀：<code>docker pull &lt;本服务域名&gt;/&lt;自定义路径&gt;/library/nginx:1.25</code>；此时 <code>registry-mirrors</code> 不再生效。留空则按传统 registry-mirrors 方式（无前缀）。仅支持字母、数字、<code>-</code>、<code>_</code>、<code>/</code>，最长 64 字符。</p>
+      </div>
+      端点 <code>/v2</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token），自定义路径就是给它的「秘密前缀」式保护；<code>/offline</code> 离线包<strong>必须带 Token</strong>（<code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code>，缺失或无效一律 404）。
       <ul>
         <li>若网关经<strong>公网 / CDN 暴露</strong>，任何人都能使用你的镜像加速、拉取离线 tar，<strong>耗费上游带宽</strong>。</li>
         <li>置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只看到 CDN 回源 IP，X-Forwarded-For 可伪造）。</li>
@@ -91,6 +97,7 @@ const dockerModal = `
     </div>
   </div>
 </div>`
+}
 
 // logoutSVG 是「退出登录」用的图标（门 + 外出的箭头，比符号 ⎋ 更直观）。
 const logoutSVG = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 2H4.2A1.7 1.7 0 0 0 2.5 3.7v8.6A1.7 1.7 0 0 0 4.2 14h2.3"/><path d="M10.6 11.2 13.8 8l-3.2-3.2"/><path d="M13.8 8H6.2"/></svg>`
@@ -224,6 +231,11 @@ const pageStyle = `
   /* 文案块可伸缩：大屏下铺满剩余宽度（不再因过宽而换行、也不留大片空白）。
      用 .hero#top 限定首页 Home Hero，避免影响登录页的 .auth .hero */
   .hero#top>div{flex:1 1 420px;min-width:0}
+  /* Logo 放大到与右侧文案块同高（上下齐平），视觉更饱满；
+     高度撑满容器、宽度由 aspect-ratio 反推，保证是正方形 */
+  .hero#top{align-items:stretch}
+  .hero#top .mark{height:100%;width:auto;aspect-ratio:1/1;flex:0 0 auto;
+    max-height:320px;border-radius:26px;box-shadow:0 18px 44px rgba(22,163,74,.28)}
   /* line-height 过小会让渐变 background-clip:text 裁掉 g 等字母的降部，故用 1.15 并补一点下内边距 */
   .hero h1{font-size:clamp(2.9rem,5.4vw,4.4rem);line-height:1.15;margin:0;padding-bottom:.08em;font-weight:800;letter-spacing:-.02em;color:var(--primary)}
   @supports(-webkit-background-clip:text){.hero h1{background:linear-gradient(120deg,var(--primary),#0284c7);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}}
@@ -397,6 +409,13 @@ const pageStyle = `
   .modal-head h3{margin:0;font-size:1.02rem;font-weight:750}
   .modal-body{padding:16px 20px;overflow-y:auto;font-size:.88rem;line-height:1.75;color:var(--muted-foreground)}
   .modal-body strong{color:var(--foreground)}
+  /* 弹窗内的表单字段（如 Docker 自定义路径） */
+  .modal-field{margin:0 0 14px;padding:0 0 14px;border-bottom:1px dashed var(--border)}
+  .modal-field label{display:block;font-size:.82rem;font-weight:700;color:var(--foreground);margin:0 0 6px}
+  .modal-field input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px;
+    background:var(--background);color:var(--foreground);font-size:.9rem}
+  .modal-field input:focus{outline:none;border-color:var(--ring);box-shadow:0 0 0 3px rgba(22,163,74,.16)}
+  .modal-field p{margin:8px 0 0}
   .modal-body ol{margin:10px 0 0;padding-left:20px}
   .modal-body li{margin:6px 0}
   .modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);flex-wrap:wrap}
@@ -485,7 +504,8 @@ const pageStyle = `
   @media (max-width:760px){
     /* 小屏 Hero：logo / 项目名 / 一句话定位 / MCP 徽标 / 按钮组居中（正文段落保持左对齐更好读） */
     .hero#top{flex-direction:column;align-items:center;gap:14px;padding:30px 0 6px;text-align:center}
-    .hero#top .mark{width:88px;height:88px}
+    /* 重置桌面端为「齐平」而设的伸缩，否则 logo 会被顶到左边不居中 */
+    .hero#top .mark{width:88px;height:88px;align-self:center;max-height:none}
     .hero#top .lede{margin:6px 0 2px}
     .hero#top .row{justify-content:center}
     .hero#top .sub{text-align:left}
@@ -540,8 +560,8 @@ function gmDismissFlash(){var f=document.getElementById('gmFlash');if(f)f.remove
 /* 反馈条：清掉 URL 上的 ok/err 参数避免刷新重复提示，并 4 秒后自动淡出 */
 (function(){var f=document.getElementById('gmFlash');if(!f)return;try{var u=new URL(location.href);if(u.searchParams.has('ok')||u.searchParams.has('err')){u.searchParams.delete('ok');u.searchParams.delete('err');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}setTimeout(function(){f.classList.add('out');setTimeout(function(){if(f.parentNode)f.remove()},400)},4000)})();
 /* 弹窗：formId 为空时只作提示（隐藏确认按钮）；有 formId 时确认即提交对应表单 */
-var gmPendingForm=null;
-function gmOpenModal(id,formId){var m=document.getElementById(id);if(!m)return;gmPendingForm=formId?document.getElementById(formId):null;var ok=m.querySelector('[data-modal-ok]');if(ok)ok.hidden=!gmPendingForm;m.removeAttribute('hidden');try{var b=(ok&&!ok.hidden)?ok:m.querySelector('[data-modal-cancel]');if(b)b.focus()}catch(e){}}
+var gmPendingForm=null,gmOkDefault='';
+function gmOpenModal(id,formId,okLabel){var m=document.getElementById(id);if(!m)return;gmPendingForm=formId?document.getElementById(formId):null;var ok=m.querySelector('[data-modal-ok]');if(ok){if(!gmOkDefault)gmOkDefault=ok.textContent;ok.hidden=!gmPendingForm;ok.textContent=okLabel||gmOkDefault}m.removeAttribute('hidden');try{var b=(ok&&!ok.hidden)?ok:m.querySelector('[data-modal-cancel]');if(b)b.focus()}catch(e){}}
 function gmCloseModal(){var ms=document.querySelectorAll('.modal');for(var i=0;i<ms.length;i++)ms[i].setAttribute('hidden','');gmPendingForm=null}
 function gmConfirmModal(){var f=gmPendingForm;gmCloseModal();if(f)if(typeof f.requestSubmit==='function'){f.requestSubmit()}else{f.submit()}}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')gmCloseModal()});

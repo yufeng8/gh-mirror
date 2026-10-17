@@ -34,6 +34,7 @@ type Server struct {
 	svcMu        sync.RWMutex
 	dockerOn     bool
 	hfOn         bool
+	dockerPrefix string // /v2 自定义路径前缀（空=未启用），持 svcMu 保护；读取用 dockerPath()
 }
 
 // processStart 记录进程启动时间，用于后台展示运行时长。

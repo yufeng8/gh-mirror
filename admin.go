@@ -264,8 +264,14 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	dockerEx := "Docker 加速未开启（可在「服务管理」开启）"
 	if s.dockerEnabled() {
+		regHint := `daemon.json 加 "registry-mirrors": ["` + base + `"] 后 systemctl restart docker`
+		if p := s.dockerPath(); p != "" {
+			// 设置了自定义路径后，registry-mirrors 不再生效，改为带前缀的 pull-through
+			regHint = "已设置自定义路径，改用 <code>docker pull " + base + "/" + html.EscapeString(p) +
+				"/library/nginx:1.25</code>（此时 registry-mirrors 不再生效）"
+		}
 		dockerEx = "离线 tar（需 token）：" + base + "/offline/" + tokSlot(tk) + "/library/nginx:1.25" +
-			" ；registry 加速（无需 token，Docker 客户端直连 /v2）：daemon.json 加 \"registry-mirrors\": [\"" + base + "\"] 后 systemctl restart docker"
+			" ；registry 加速（无需 token，Docker 客户端直连 /v2）：" + regHint
 	}
 	var ex strings.Builder
 	ex.WriteString(`<div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">`)
@@ -318,15 +324,25 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 				`<input type="hidden" name="csrf" value="` + csrf + `">` +
 				`<input type="hidden" name="name" value="` + svc + `">`
 			switch {
+			case svc == "docker" && on:
+				// 已开启：提供「自定义路径」（弹窗内改前缀，提交时 on=1 幂等，仅更新路径）+「关闭」
+				state = `<span class="badge on">● 已开启</span>`
+				off := `<form method="post" action="` + s.adminPath + `/service" class="svc-toggle" id="gmSvcForm-docker-off">` +
+					`<input type="hidden" name="csrf" value="` + csrf + `">` +
+					`<input type="hidden" name="name" value="docker">` +
+					`<input type="hidden" name="on" value="0">`
+				foot = form + `<input type="hidden" name="on" value="1">` +
+					`<button type="button" class="btn outline svccard-btn" onclick="gmOpenModal('gmDockerModal','gmSvcForm-docker','保存路径')">自定义路径</button></form>` +
+					off + `<button type="submit" class="btn svccard-btn is-off">关闭</button></form>`
 			case on:
 				// 关闭按钮用另一套配色，和「开启」形成状态区分
 				state = `<span class="badge on">● 已开启</span>`
 				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn svccard-btn is-off">关闭</button></form>`
 			case svc == "docker":
-				// 开启 Docker 前先弹安全确认（风险说明不再常驻页面）
+				// 开启 Docker 前先弹安全确认（风险说明 + 可选自定义路径），确认后才真正开启
 				state = `<span class="badge off">○ 未开启</span>`
 				foot = form + `<input type="hidden" name="on" value="1">` +
-					`<button type="button" class="btn svccard-btn" onclick="gmOpenModal('gmDockerModal','gmSvcForm-docker')">开启</button></form>`
+					`<button type="button" class="btn svccard-btn" onclick="gmOpenModal('gmDockerModal','gmSvcForm-docker','我已知晓，确认开启')">开启</button></form>`
 			default:
 				state = `<span class="badge off">○ 未开启</span>`
 				foot = form + `<input type="hidden" name="on" value="1"><button type="submit" class="btn svccard-btn">开启</button></form>`
@@ -336,11 +352,16 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 			`<p>` + desc + `</p><p><code>` + usage + `</code></p>` +
 			`<div class="svccard-foot">` + foot + `</div></div>`
 	}
+	// Docker 卡片的用法说明会随「自定义路径」变化
+	dockerUsage := "daemon.json → registry-mirrors（/v2，无需 token）；/offline/&lt;token&gt;/&lt;image&gt;"
+	if p := s.dockerPath(); p != "" {
+		dockerUsage = "docker pull &lt;域名&gt;/" + html.EscapeString(p) + "/library/nginx:1.25（自定义路径）；/offline/&lt;token&gt;/&lt;image&gt;"
+	}
 	services := `<div class="svcgrid">` +
 		svcCard("GH", "GitHub 资源加速", "覆盖 blob / raw、Releases、仓库打包 archive 与短链，支持 Range 断点续传。始终可用。", "/g/&lt;token&gt;/https://github.com/owner/repo", true, "") +
-		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", "daemon.json → registry-mirrors（/v2，无需 token）；/offline/&lt;token&gt;/&lt;image&gt;", s.dockerEnabled(), "docker") +
+		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", dockerUsage, s.dockerEnabled(), "docker") +
 		svcCard("HF", "HuggingFace 权重", "加速模型与 LFS 大文件下载，token 模式下需带 token。", "/hf/&lt;token&gt;/owner/repo/resolve/main/file", s.hfEnabled(), "hf") +
-		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModal
+		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.dockerPath())
 	// 缓存管理：已用总量 / 单文件上限 / 总上限 / 时效，均热改；超限与过期自动清理；可一键清除
 	maxFileMB := int(s.cache.MaxBytes() / (1024 * 1024))
 	maxTotalMB := int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -609,6 +630,7 @@ var flashErr = map[string]string{
 	"bad_input":     "输入不合法，请检查后重试",
 	"svc_unknown":   "未知服务，仅支持 Docker / HuggingFace",
 	"svc_failed":    "服务开关调整失败，请查看日志",
+	"path_invalid":  "自定义路径不合法（仅支持字母、数字、-、_、/，最长 64 字符）",
 }
 
 // flashHTML 渲染一次性操作反馈条（保存 / 创建 / 开关等操作后的即时提示）。
@@ -709,6 +731,20 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	on := r.FormValue("on") == "1" || strings.EqualFold(r.FormValue("on"), "true") || strings.EqualFold(r.FormValue("on"), "on")
+	// 表单里存在 dockerPath 才更新自定义路径（只有 Docker 的开关表单会带该字段）
+	if name == "docker" {
+		if vals, ok := r.PostForm["dockerPath"]; ok {
+			p := ""
+			if len(vals) > 0 {
+				p = vals[0]
+			}
+			if err := s.setDockerPath(p); err != nil {
+				http.Redirect(w, r, s.adminPath+"?err=path_invalid#services", http.StatusFound)
+				return
+			}
+			log.Printf("Docker 自定义路径已更新: %q", s.dockerPath())
+		}
+	}
 	if err := s.setService(name, on); err != nil {
 		http.Redirect(w, r, s.adminPath+"?err=svc_failed#services", http.StatusFound)
 		return
