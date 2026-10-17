@@ -20,10 +20,12 @@ const (
 
 // Token 代表一个代理访问令牌。Hits/Bytes/LastUsed 为运行时统计字段。
 // Role 为空（旧 tokens.json）时按 user 处理。
+// Owner 为归属用户名（多用户预留）；空值表示归属默认管理员（兼容旧数据）。
 type Token struct {
 	Token     string `json:"token"`
 	Note      string `json:"note"`
 	Role      string `json:"role,omitempty"`
+	Owner     string `json:"owner,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 	Hits      int64  `json:"hits"`
 	Bytes     int64  `json:"bytes"`
@@ -94,10 +96,10 @@ func (s *Store) Has(token string) bool {
 	return ok
 }
 
-// Add 新增 token；role 传空串按 user 处理。
-func (s *Store) Add(token, note, role string) {
+// Add 新增 token；role 传空串按 user 处理；owner 为归属用户名（空表示默认管理员）。
+func (s *Store) Add(token, note, role, owner string) {
 	s.mu.Lock()
-	s.tokens[token] = &Token{Token: token, Note: note, Role: normRole(role), CreatedAt: time.Now().Unix()}
+	s.tokens[token] = &Token{Token: token, Note: note, Role: normRole(role), Owner: strings.TrimSpace(owner), CreatedAt: time.Now().Unix()}
 	_ = s.saveLocked()
 	s.mu.Unlock()
 }
