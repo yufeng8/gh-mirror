@@ -40,16 +40,12 @@
         <source media="(prefers-color-scheme: dark)" srcset="docs/images/admin-overview-dark.png">
         <img src="docs/images/admin-overview-light.png" alt="管理后台概览">
       </picture>
-      <br><sub><b>管理后台</b>：服务状态 / 统计 / 链接转换　<i>（此图跟随 GitHub 主题自动切换深浅）</i></sub>
+      <br><sub><b>管理后台</b>：服务状态 / 统计 / 链接转换　<i>（主题支持切换深浅）</i></sub>
     </td>
   </tr>
   <tr>
     <td><img src="docs/images/admin-services.png" alt="服务管理"><br><sub><b>服务管理</b>：开关即时生效并持久化</sub></td>
     <td><img src="docs/images/admin-tokens.png" alt="Token 管理"><br><sub><b>Token 管理</b>：独立页面，类型 / 复制 / 行内编辑</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/images/admin-conv-result.png" alt="链接转换"><br><sub><b>链接转换</b>：粘贴原始地址即得加速链接</sub></td>
-    <td><img src="docs/images/admin-usage.png" alt="用法示例"><br><sub><b>用法示例</b>：Token 一键切换、全页联动</sub></td>
   </tr>
 </table>
 
