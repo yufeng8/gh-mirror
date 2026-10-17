@@ -295,6 +295,19 @@ gh-mirror 受其思路启发，以 Go **独立实现**，并扩展了 Web 管理
 
 本项目与 hubproxy **无任何关联（not affiliated）**。如有对其代码的复用，均遵循其 MIT 许可并保留相应声明。
 
+### 生态推荐：[KPanel](https://github.com/kejilion/KPanel)
+
+如果你还想在同一台机器上把「主机运维 + 项目自动化部署」一起管起来，可以看看 **[kejilion/KPanel](https://github.com/kejilion/KPanel)**：
+
+- **服务器 AI Agent**：以自然语言驱动真实主机上的操作，不必在面板、SSH 与命令行之间来回切换。
+- **小主机友好**：**1 GB 内存的小主机也能正常运行**，适合低配 VPS、家用小主机与轻量生产环境。
+- **自动化部署项目**：把部署流程交给 Agent 执行，减少手工步骤与人为失误。
+- **围绕同一台真实主机协同**：系统、网站、Docker、文件、集群与 AI 助手在同一台机器上打通，而不是各管一摊。
+
+和 gh-mirror 的定位刚好互补：gh-mirror 负责让「上游资源访问更快」（内置 MCP，Agent 可直接管理 Token、服务开关与缓存），KPanel 负责「主机与项目本身的运维编排」。两者都主张让 AI Agent 真正落地到一台真实服务器上干活。
+
+> 仅为生态推荐，与本项目无关联（not affiliated），也不构成任何担保；请自行评估后使用。
+
 ## License
 
 MIT（沿用上游项目协议）。
