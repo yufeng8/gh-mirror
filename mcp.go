@@ -191,7 +191,7 @@ var mcpRegistry = []mcpTool{
 				return errorResult("该 token 已存在")
 			}
 			role := normRole(argStr(args, "role"))
-			s.store.Add(tok, argStr(args, "note"), role)
+			s.store.Add(tok, argStr(args, "note"), role, s.adminUser)
 			log.Printf("MCP 创建 token: role=%s", role)
 			return textResult(fmt.Sprintf("已创建 token（角色 %s）：\n%s", role, tok))
 		},

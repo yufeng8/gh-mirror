@@ -207,7 +207,8 @@ func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 	if s.store.Has(tok) {
 		code = "token_exists"
 	} else {
-		s.store.Add(tok, note, role)
+		// 新 token 归属当前登录用户（多用户预留：每位用户各自管理自己的 token）
+		s.store.Add(tok, note, role, s.adminUser)
 	}
 	// 跳回 Token 管理页（该页才是操作上下文），并带上一次性反馈码
 	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
@@ -564,21 +565,22 @@ func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
 }
 
-// adminTokens 过滤出 role=admin（高级 Token）的 token —— MCP 鉴权要求 admin 角色。
-func adminTokens(tokens []*Token) []*Token {
+// adminTokensFor 过滤出「归属某用户」且 role=admin（高级 Token）的 token。
+// owner 为空视为归属默认管理员（兼容旧数据）——为多用户预留：每位用户只看到自己的高级 Token。
+func adminTokensFor(tokens []*Token, user string) []*Token {
 	var out []*Token
 	for _, t := range tokens {
-		if normRole(t.Role) == RoleAdmin {
+		if normRole(t.Role) == RoleAdmin && (t.Owner == user || t.Owner == "") {
 			out = append(out, t)
 		}
 	}
 	return out
 }
 
-// mcpTokenSelector 生成 MCP 页的 Token 选择器（只列 admin 角色 token，默认选中第一个）。
+// mcpTokenSelector 生成 MCP 页的 Token 选择器（只列「归属当前用户」的 admin token，默认选中第一个）。
 // 用 .gmtok class 复用全局联动：切换后同步本页所有 .tslot（HTTP/stdio 示例里的 token）。
-func (s *Server) mcpTokenSelector(tokens []*Token) string {
-	adm := adminTokens(tokens)
+func (s *Server) mcpTokenSelector(tokens []*Token, user string) string {
+	adm := adminTokensFor(tokens, user)
 	var sb strings.Builder
 	sb.WriteString(`<div class="tsel"><label>用于 MCP 接入的高级 Token</label><select class="gmtok" onchange="gmApplyToken(this.value)" aria-label="选择用于 MCP 接入的 Token">`)
 	if len(adm) == 0 {
@@ -631,21 +633,22 @@ func (s *Server) renderMCPPage(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = sid
 	tokens := s.store.All()
-	adm := adminTokens(tokens)
+	user := s.adminUser
+	adm := adminTokensFor(tokens, user)
 	base := baseOf(r)
 	tk := ""
 	if len(adm) > 0 {
 		tk = adm[0].Token
 	}
 
-	// 就绪状态卡：有 admin token 则就绪并给出选择器；否则引导创建
+	// 就绪状态卡：有归属当前用户的 admin token 则就绪并给出选择器；否则引导创建
 	status := ""
 	if len(adm) > 0 {
-		status = `<div class="flash ok"><strong style="flex:0 0 auto">✓</strong><span>已就绪：当前有 ` +
+		status = `<div class="flash ok"><strong style="flex:0 0 auto">✓</strong><span>已就绪：当前用户 <code>` + html.EscapeString(user) + `</code> 名下共有 ` +
 			strconv.Itoa(len(adm)) + ` 个「高级 Token」可用于 MCP 接入。切换下方选择器，下方命令里的 Token 会同步更新，复制即用。</span></div>` +
-			s.mcpTokenSelector(tokens)
+			s.mcpTokenSelector(tokens, user)
 	} else {
-		status = `<div class="flash err"><strong style="flex:0 0 auto">!</strong><span>未就绪：还没有「高级 Token」。MCP 鉴权要求 admin 角色（高级 Token），请先到「Token 管理」创建一个。</span></div>` +
+		status = `<div class="flash err"><strong style="flex:0 0 auto">!</strong><span>未就绪：当前用户 <code>` + html.EscapeString(user) + `</code> 名下还没有「高级 Token」。MCP 鉴权要求 admin 角色（高级 Token），请先到「Token 管理」创建一个。</span></div>` +
 			`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">去创建高级 Token</a></div>`
 	}
 
