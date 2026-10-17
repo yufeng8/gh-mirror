@@ -18,13 +18,37 @@ import (
 	"time"
 )
 
-const sessionCookie = "ghm_session"
+const adminSessionCookie = "ghm_admin_session"
+const userSessionCookie = "ghm_user_session"
 const sessionMaxAge = 7 * 24 * 3600
+
+// isUserEntry 判断请求是否属于普通用户入口。
+func (s *Server) isUserEntry(r *http.Request) bool {
+	return s.userPath != "" && strings.HasPrefix(r.URL.Path, s.userPath)
+}
+
+// entryBase 返回当前请求所属入口的 base 路径（超管入口返回 adminPath，普通入口返回 userPath）。
+func (s *Server) entryBase(r *http.Request) string {
+	if s.isUserEntry(r) {
+		return s.userPath
+	}
+	return s.adminPath
+}
+
+// sessionCookieFor 根据请求路径选择对应入口的 session cookie（双入口强隔离：cookie 名不同、签名隔离，互换无效）。
+func (s *Server) sessionCookieFor(r *http.Request) string {
+	if s.isUserEntry(r) {
+		return userSessionCookie
+	}
+	return adminSessionCookie
+}
 
 // parseSession 校验会话 Cookie 的签名、过期时间与用户是否仍存在，
 // 返回 (sid, 用户名, 角色, ok)。会话格式：sid.<base64url(user)>.<exp>.<sig>（4 段）。
+// 签名混入 cookie 名（domain separation），超管/普通入口 cookie 不可互换。
 func (s *Server) parseSession(r *http.Request) (sid, user, role string, ok bool) {
-	c, err := r.Cookie(sessionCookie)
+	cookieName := s.sessionCookieFor(r)
+	c, err := r.Cookie(cookieName)
 	if err != nil {
 		return "", "", "", false
 	}
@@ -33,7 +57,7 @@ func (s *Server) parseSession(r *http.Request) (sid, user, role string, ok bool)
 		return "", "", "", false
 	}
 	mac := hmac.New(sha256.New, s.secret)
-	mac.Write([]byte(parts[0] + "." + parts[1] + "." + parts[2]))
+	mac.Write([]byte(cookieName + ":" + parts[0] + "." + parts[1] + "." + parts[2]))
 	sig := hex.EncodeToString(mac.Sum(nil))
 	if subtle.ConstantTimeCompare([]byte(sig), []byte(parts[3])) != 1 {
 		return "", "", "", false
@@ -76,14 +100,15 @@ func (s *Server) requireSuper(r *http.Request) bool {
 }
 
 // signSession 生成带随机 sid、用户名、过期时间与 HMAC 签名的会话值。
-func (s *Server) signSession(user string) string {
+// cookieName 参与签名（domain separation），超管/普通入口的会话值不可互换。
+func (s *Server) signSession(user, cookieName string) string {
 	buf := make([]byte, 16)
 	_, _ = rand.Read(buf)
 	sid := hex.EncodeToString(buf)
 	exp := time.Now().Add(sessionMaxAge * time.Second).Unix()
 	payload := sid + "." + base64.RawURLEncoding.EncodeToString([]byte(user)) + "." + strconv.FormatInt(exp, 10)
 	mac := hmac.New(sha256.New, s.secret)
-	mac.Write([]byte(payload))
+	mac.Write([]byte(cookieName + ":" + payload))
 	return payload + "." + hex.EncodeToString(mac.Sum(nil))
 }
 
@@ -109,7 +134,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case sub == "" || sub == "login":
 		if r.Method == http.MethodPost {
-			s.doLogin(w, r)
+			s.doAdminLogin(w, r)
 			return
 		}
 		if s.isAuthed(r) {
@@ -180,20 +205,20 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		s.doResetUserPass(w, r)
 	case sub == "services":
-		if s.isAuthed(r) {
+		if s.requireSuper(r) {
 			s.renderServicesPage(w, r)
 			return
 		}
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 	case sub == "service":
-		if !s.isAuthed(r) {
+		if !s.requireSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
 		s.doToggleService(w, r)
 	case sub == "cache":
-		// GET 渲染缓存管理页；POST 保存设置（同一路径按方法分发）
-		if !s.isAuthed(r) {
+		// GET 渲染缓存管理页；POST 保存设置（同一路径按方法分发）；仅超管
+		if !s.requireSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
@@ -203,7 +228,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		s.renderCachePage(w, r)
 	case sub == "cache/clear":
-		if !s.isAuthed(r) {
+		if !s.requireSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
@@ -214,50 +239,172 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.doConvertAPI(w, r)
+	case sub == "docker-path":
+		if !s.isAuthed(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doSetUserDockerPath(w, r)
+	case sub == "offline/del":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doOfflineDel(w, r)
+	case sub == "offline/batch-del":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doOfflineBatchDel(w, r)
+	case sub == "offline/repull":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doOfflineRepull(w, r)
+	case sub == "offline/repull-latest":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doOfflineRepullLatest(w, r)
+	case sub == "offline/autopurge":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doOfflineAutoPurge(w, r)
 	default:
 		s.render404(w, r)
 	}
 }
 
-func (s *Server) doLogin(w http.ResponseWriter, r *http.Request) {
+// handleUser 处理普通用户入口路由（/user/*）：概览 / Token / MCP / 链接转换，仅普通视图（无超管功能）。
+func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
+	sub := strings.Trim(strings.TrimPrefix(r.URL.Path, s.userPath), "/")
+	switch {
+	case sub == "" || sub == "login":
+		if r.Method == http.MethodPost {
+			s.doUserLogin(w, r)
+			return
+		}
+		if s.isAuthed(r) {
+			s.renderDashboard(w, r)
+			return
+		}
+		s.renderLogin(w, r, "")
+	case sub == "logout":
+		s.doLogout(w, r)
+	case sub == "add":
+		if !s.isAuthed(r) {
+			http.Redirect(w, r, s.userPath, http.StatusFound)
+			return
+		}
+		s.doAddToken(w, r)
+	case sub == "del":
+		if !s.isAuthed(r) {
+			http.Redirect(w, r, s.userPath, http.StatusFound)
+			return
+		}
+		s.doDelToken(w, r)
+	case sub == "tokens":
+		if s.isAuthed(r) {
+			s.renderTokensPage(w, r)
+			return
+		}
+		http.Redirect(w, r, s.userPath, http.StatusFound)
+	case sub == "tokens/edit":
+		if s.isAuthed(r) {
+			s.doEditToken(w, r)
+			return
+		}
+		http.Redirect(w, r, s.userPath, http.StatusFound)
+	case sub == "mcp":
+		if s.isAuthed(r) {
+			s.renderMCPPage(w, r)
+			return
+		}
+		http.Redirect(w, r, s.userPath, http.StatusFound)
+	case sub == "api/convert":
+		if !s.isAuthed(r) {
+			s.writeJSON(w, http.StatusUnauthorized, convertResp{OK: false, Hint: "未登录或会话已过期"})
+			return
+		}
+		s.doConvertAPI(w, r)
+	case sub == "docker-path":
+		if !s.isAuthed(r) {
+			http.Redirect(w, r, s.userPath, http.StatusFound)
+			return
+		}
+		s.doSetUserDockerPath(w, r)
+	default:
+		s.render404(w, r)
+	}
+}
+
+// doAdminLogin 超管入口登录：仅接受超级管理员角色（普通用户登录被拒）。
+func (s *Server) doAdminLogin(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	user := r.FormValue("user")
 	pass := r.FormValue("pass")
 	if s.users.Verify(user, pass) {
-		http.SetCookie(w, &http.Cookie{
-			Name:     sessionCookie,
-			Value:    s.signSession(user),
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteStrictMode,
-			Secure:   s.cookieSecure,
-			MaxAge:   sessionMaxAge,
-		})
-		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		if u, exists := s.users.Get(user); exists && u.Role == RoleSuper {
+			s.setSessionCookie(w, adminSessionCookie, user)
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.renderLogin(w, r, "此入口仅限超级管理员登录")
 		return
 	}
 	s.renderLogin(w, r, "账号或密码错误")
 }
 
+// doUserLogin 普通入口登录：接受所有用户（super 也可登录体验普通视图）。
+func (s *Server) doUserLogin(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	user := r.FormValue("user")
+	pass := r.FormValue("pass")
+	if s.users.Verify(user, pass) {
+		s.setSessionCookie(w, userSessionCookie, user)
+		http.Redirect(w, r, s.userPath, http.StatusFound)
+		return
+	}
+	s.renderLogin(w, r, "账号或密码错误")
+}
+
+// setSessionCookie 写入指定入口的会话 cookie（cookie 名参与签名，实现双入口会话隔离）。
+func (s *Server) setSessionCookie(w http.ResponseWriter, cookieName, user string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    s.signSession(user, cookieName),
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   s.cookieSecure,
+		MaxAge:   sessionMaxAge,
+	})
+}
+
 func (s *Server) doLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
-		Name:   sessionCookie,
+		Name:   s.sessionCookieFor(r),
 		Value:  "",
 		Path:   "/",
 		MaxAge: -1,
 	})
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	http.Redirect(w, r, s.entryBase(r), http.StatusFound)
 }
 
 func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 	sid, user, _, ok := s.parseSession(r)
 	if !ok {
-		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r), http.StatusFound)
 		return
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r)+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
 	tok := strings.TrimSpace(r.FormValue("token"))
@@ -274,18 +421,18 @@ func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 		s.store.Add(tok, note, role, user)
 	}
 	// 跳回 Token 管理页（该页才是操作上下文），并带上一次性反馈码
-	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
+	http.Redirect(w, r, s.entryBase(r)+"/tokens?ok="+code, http.StatusFound)
 }
 
 func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 	sid, user, role, ok := s.parseSession(r)
 	if !ok {
-		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r), http.StatusFound)
 		return
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r)+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
 	tok := r.FormValue("token")
@@ -297,20 +444,21 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 			code = "token_deleted"
 		}
 	}
-	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
+	http.Redirect(w, r, s.entryBase(r)+"/tokens?ok="+code, http.StatusFound)
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// 只 Sprintf body 片段（loginBody 无 CSS 的 %），再用 pageApp() 全幅包裹（分屏登录）
-	body := fmt.Sprintf(loginBody, s.adminPath, html.EscapeString(errMsg))
+	// 表单提交地址按当前入口（超管 /admin 或普通 /user）自适应
+	body := fmt.Sprintf(loginBody, s.entryBase(r), html.EscapeString(errMsg))
 	_, _ = w.Write([]byte(pageApp("登录 - gh-mirror", "gh-mirror 管理后台登录", body)))
 }
 
 func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	sid, user, role, ok := s.parseSession(r)
 	if !ok {
-		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r), http.StatusFound)
 		return
 	}
 	csrf := s.csrfToken(sid)
@@ -371,6 +519,8 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	badges := svcBadge(true, "GitHub 代理", "已开启", "未开启") +
 		svcBadge(s.dockerEnabled(), "Docker 加速", "已开启", "未开启 · 可配置") +
 		svcBadge(s.hfEnabled(), "HuggingFace", "已开启", "未开启 · 可配置")
+	// Docker 自定义路径设置（受服务状态门控；双入口都显示当前用户自己的路径）
+	dockerPathCard := s.dockerPathCard(csrf, s.entryBase(r), user)
 	// 概览统计卡（网关真实指标，不伪造主机监控）
 	// 概览只放与 token 流量相关的指标；缓存细节在下方「缓存管理」里展示，避免重复
 	stats := statCard("Token 数", fmt.Sprintf("%d", len(tokens)), "个") +
@@ -378,7 +528,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		statCard("总流量", formatBytes(totalBytes), "") +
 		statCard("运行时长", fmtDuration(time.Since(processStart)), "")
 	// 链接转换器：识别与生成统一在服务端 buildAccelURL（与 MCP convert_link 同一实现）
-	conv := `<div id="gmconv" data-api="` + s.adminPath + `/api/convert" data-csrf="` + csrf + `" hidden></div>` +
+	conv := `<div id="gmconv" data-api="` + s.entryBase(r) + `/api/convert" data-csrf="` + csrf + `" hidden></div>` +
 		`<div class="conv-row"><input id="gmconv-in" type="text" autocomplete="off" placeholder="粘贴原始链接或镜像名">` +
 		`<button type="button" class="btn" onclick="gmConvert()">获取加速链接</button></div>` +
 		`<div class="conv-row" style="margin-top:10px"><input id="gmconv-out" type="text" readonly placeholder="加速链接将显示在这里">` +
@@ -390,14 +540,28 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
 	// Token / 服务管理 / 缓存管理均已独立成页，这里只放引导卡
 	tokensGuide := `<p class="muted">Token 的创建、复制、删除与角色管理已独立成页，便于统一维护。</p>` +
-		`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">前往 Token 管理` +
+		`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.entryBase(r) + `/tokens">前往 Token 管理` +
 		`（` + strconv.Itoa(len(tokens)) + `）</a></div>`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, flash, badges, stats, convSel, converter, examples, tokensGuide
+	// verbs: aside, topbarRight, flash, badges, dockerPathCard, stats, convSel, converter, examples, tokensGuide
 	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
-	body := fmt.Sprintf(dashboardBody, aside, topbarRight, flashHTML, badges, stats, convSel, conv, example, tokensGuide)
+	body := fmt.Sprintf(dashboardBody, aside, topbarRight, flashHTML, badges, dockerPathCard, stats, convSel, conv, example, tokensGuide)
 	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
+}
+
+// dockerPathCard 渲染概览页「我的 Docker 自定义路径」设置（受 Docker 服务状态门控）。
+func (s *Server) dockerPathCard(csrf, base, user string) string {
+	if !s.dockerEnabled() {
+		return `<p class="muted" style="margin-top:12px">Docker 加速未开启。如需设置自定义拉取路径，请联系超级管理员开启对应服务。</p>`
+	}
+	cur := html.EscapeString(s.userDockerPath(user))
+	return `<form method="post" action="` + base + `/docker-path" class="row" style="margin-top:12px;align-items:flex-end">
+  <input type="hidden" name="csrf" value="` + csrf + `">
+  <label class="fld">我的 Docker 自定义路径<input name="dockerPath" value="` + cur + `" placeholder="可选，如 team-a"></label>
+  <button type="submit" class="btn">保存</button>
+</form>
+<p class="muted small" style="margin-top:6px">你的 Docker 拉取路径为 <code>域名/` + html.EscapeString(dockerSegment(user)) + `[/自定义路径]</code>；留空则仅用用户名段。仅支持字母、数字、-、_、/（最长 64 字符）。</p>`
 }
 
 // renderServicesPage 渲染服务管理独立页（/admin/services）：GitHub / Docker / HuggingFace 三卡开关。
@@ -447,11 +611,11 @@ func (s *Server) renderServicesPage(w http.ResponseWriter, r *http.Request) {
 			`<p>` + desc + `</p><p><code>` + usage + `</code></p>` +
 			`<div class="svccard-foot">` + foot + `</div></div>`
 	}
-	// Docker 卡片的用法说明：路径固定带 <用户名>[/<自定义路径>]
+	// Docker 卡片的用法说明：路径固定带 <用户名>[/<该用户的自定义路径>]
 	ownerSeg := dockerSegment(user)
 	dockerUsage := "docker pull &lt;域名&gt;/" + html.EscapeString(ownerSeg) +
 		"/library/nginx:1.25（用户名段必带）；/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;image&gt;"
-	if c := s.dockerPath(); c != "" {
+	if c := s.userDockerPath(user); c != "" {
 		dockerUsage = "docker pull &lt;域名&gt;/" + html.EscapeString(ownerSeg) + "/" + html.EscapeString(c) +
 			"/library/nginx:1.25；/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;image&gt;"
 	}
@@ -459,7 +623,7 @@ func (s *Server) renderServicesPage(w http.ResponseWriter, r *http.Request) {
 		svcCard("GH", "GitHub 资源加速", "覆盖 blob / raw、Releases、仓库打包 archive 与短链，支持 Range 断点续传。始终可用。", "/g/&lt;token&gt;/https://github.com/owner/repo", true, "") +
 		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", dockerUsage, s.dockerEnabled(), "docker") +
 		svcCard("HF", "HuggingFace 权重", "加速模型与 LFS 大文件下载，token 模式下需带 token。", "/hf/&lt;token&gt;/owner/repo/resolve/main/file", s.hfEnabled(), "hf") +
-		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.dockerPath(), dockerSegment(user))
+		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.userDockerPath(user), dockerSegment(user))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: aside, topbarRight, flash, services
 	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services)
@@ -468,7 +632,7 @@ func (s *Server) renderServicesPage(w http.ResponseWriter, r *http.Request) {
 
 // renderCachePage 渲染缓存管理独立页（/admin/cache）：已用 / 上限 / 时效热改 + 一键清除。
 func (s *Server) renderCachePage(w http.ResponseWriter, r *http.Request) {
-	sid, _, _, ok := s.parseSession(r)
+	sid, user, _, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
@@ -511,10 +675,167 @@ func (s *Server) renderCachePage(w http.ResponseWriter, r *http.Request) {
   <button type="submit" class="btn outline">清除缓存</button>
 </form>
 <p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。<strong>磁盘可用空间低于 1 GB 时，即使没到总上限也会按最旧优先清理</strong>（缓存是临时的，避免写满磁盘拖垮整机）。时效：到期文件由后台周期任务自动删除。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
+	// 离线包区块：分页参数 + 当前用户（复制下载链接用）
+	page := 1
+	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
+		page = v
+	}
+	size := 10
+	if v, err := strconv.Atoi(r.URL.Query().Get("size")); err == nil && (v == 10 || v == 20 || v == 50) {
+		size = v
+	}
+	offlineSection := s.offlineCacheSection(csrf, base, user, page, size)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, flash, cacheMgmt
-	body := fmt.Sprintf(cacheBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), cacheMgmt)
+	// verbs: aside, topbarRight, flash, cacheMgmt, offlineSection
+	body := fmt.Sprintf(cacheBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), cacheMgmt, offlineSection)
 	_, _ = w.Write([]byte(pageApp("缓存管理 - gh-mirror", "gh-mirror 缓存管理", body)))
+}
+
+// offlineCacheSection 渲染缓存管理页的「离线包缓存」区块：自动清理设置 + 列表 + 多选/反选 + 分页。
+// proxyBase 为代理地址（复制下载链接用）；user 为当前超管（链接带其用户名段与 token）。
+func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size int) string {
+	pkgs := s.offlineCache.List()
+	total := len(pkgs)
+	totalPages := (total + size - 1) / size
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	start := (page - 1) * size
+	end := start + size
+	if end > total {
+		end = total
+	}
+	pagePkgs := pkgs[start:end]
+
+	// 复制下载链接用的 token：当前超管自己的 token（offline 要求 token 归属该用户名段）
+	tok := ""
+	for _, t := range s.store.All() {
+		if t.Owner == user || (t.Owner == "" && user == s.adminUser) {
+			tok = t.Token
+			break
+		}
+	}
+
+	// 自动清理设置
+	autoPurgeChecked := ""
+	if s.offlineAutoPurge {
+		autoPurgeChecked = " checked"
+	}
+	autoPurgeForm := `<form method="post" action="` + s.adminPath + `/offline/autopurge" class="row" style="margin-top:14px;align-items:flex-end">
+  <input type="hidden" name="csrf" value="` + csrf + `">
+  <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="autoPurge" value="1"` + autoPurgeChecked + `> 磁盘满自动清理</label>
+  <label class="fld">磁盘可用低于(GB)<input name="purgeFreeGB" type="number" min="0" value="` + strconv.Itoa(s.offlinePurgeFreeGB) + `"></label>
+  <button type="submit" class="btn">保存</button>
+</form>
+<p class="muted small" style="margin-top:8px">开启后，磁盘可用空间低于阈值时，按<strong>最旧优先</strong>自动删除离线缓存包，直到恢复到阈值以上（默认关闭，避免误删有意保留的包）。</p>`
+
+	// 列表行
+	var rows strings.Builder
+	for _, p := range pagePkgs {
+		stateCls, stateTxt := "badge off", "✕ 失败"
+		switch p.State {
+		case OfflineReady:
+			stateCls, stateTxt = "badge on", "● 已就绪"
+		case OfflineBuilding:
+			stateCls, stateTxt = "badge off", "◐ 打包中"
+		}
+		mtime := "—"
+		if p.Mtime > 0 {
+			mtime = time.Unix(p.Mtime, 0).Format("2006-01-02 15:04")
+		}
+		sizeTxt := formatBytes(p.Size)
+		if p.State != OfflineReady {
+			sizeTxt = "—"
+		}
+		dlLink := ""
+		if tok != "" {
+			dlLink = proxyBase + "/offline/" + dockerSegment(user) + "/" + tok + "/" + p.Image
+		}
+		img := html.EscapeString(p.Image)
+		dg := html.EscapeString(p.Digest)
+		copyBtn := `<button type="button" class="btn outline" title="复制下载链接" onclick="gmCopyText(this, &quot;` + html.EscapeString(dlLink) + `&quot;)"` + func() string { if tok == "" { return " disabled" }; return "" }() + `>复制链接</button>`
+		rows.WriteString(`<tr class="tok-row">` +
+			`<td data-label="选择"><input type="checkbox" name="digest" value="` + dg + `" aria-label="选择 ` + img + `"></td>` +
+			`<td data-label="镜像"><code>` + img + `</code><div class="muted small">` + dg + `</div></td>` +
+			`<td data-label="状态"><span class="` + stateCls + `">` + stateTxt + `</span></td>` +
+			`<td data-label="大小" class="num">` + sizeTxt + `</td>` +
+			`<td data-label="缓存时间">` + mtime + `</td>` +
+			`<td data-label="操作"><span class="ops">` + copyBtn +
+			`<form method="post" action="` + s.adminPath + `/offline/repull" class="del-form"><input type="hidden" name="csrf" value="` + csrf + `"><input type="hidden" name="image" value="` + img + `"><button type="submit" class="btn outline">重新拉取</button></form>` +
+			`<form method="post" action="` + s.adminPath + `/offline/repull-latest" class="del-form"><input type="hidden" name="csrf" value="` + csrf + `"><input type="hidden" name="image" value="` + img + `"><button type="submit" class="btn outline">拉取最新</button></form>` +
+			`<form method="post" action="` + s.adminPath + `/offline/del" class="del-form"><input type="hidden" name="csrf" value="` + csrf + `"><input type="hidden" name="digest" value="` + dg + `"><button type="submit" class="danger" onclick="return confirm('确定删除该离线缓存包？')">删除</button></form>` +
+			`</span></td></tr>`)
+	}
+	if total == 0 {
+		rows.WriteString(`<tr><td colspan="6" class="muted">暂无离线缓存包。用户通过 /offline 下载镜像后会自动缓存，或点击下方「拉取」主动缓存。</td></tr>`)
+	}
+
+	// 分页控件
+	pager := ""
+	if total > 0 {
+		pager = `<div class="row" style="margin-top:14px;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">` +
+			`<div class="row" style="gap:8px;align-items:center">` +
+			`<button type="button" class="btn outline" onclick="var c=document.querySelectorAll('input[name=digest]');for(var i=0;i<c.length;i++)c[i].checked=true">全选</button>` +
+			`<button type="button" class="btn outline" onclick="var c=document.querySelectorAll('input[name=digest]');for(var i=0;i<c.length;i++)c[i].checked=!c[i].checked">反选</button>` +
+			`<button type="submit" class="danger" onclick="return confirm('确定删除选中的离线缓存包？')">删除选中</button>` +
+			`</div>` +
+			`<div class="row" style="gap:8px;align-items:center">` +
+			`<span class="muted small">每页</span>` +
+			`<select class="fld" onchange="var u=new URL(location);u.searchParams.set('size',this.value);u.searchParams.delete('page');location=u">` +
+			selOpt(size, 10) + selOpt(size, 20) + selOpt(size, 50) +
+			`</select>` +
+			`<span class="muted small">第 ` + strconv.Itoa(page) + ` / ` + strconv.Itoa(totalPages) + ` 页（共 ` + strconv.Itoa(total) + ` 个）</span>` +
+			pageLink(s.adminPath+"/cache", page-1, size, totalPages, "上一页") +
+			pageLink(s.adminPath+"/cache", page+1, size, totalPages, "下一页") +
+			`</div></div>`
+	}
+
+	// 拉取新镜像表单（主动缓存）
+	pullForm := `<form method="post" action="` + s.adminPath + `/offline/repull" class="row" style="margin-top:12px">
+  <input type="hidden" name="csrf" value="` + csrf + `">
+  <input name="image" placeholder="镜像名，如 library/nginx:1.25 或 nginx:latest" required>
+  <button type="submit" class="btn">拉取并缓存</button>
+</form>
+<p class="muted small" style="margin-top:6px">主动拉取镜像到离线缓存（后台异步打包，稍后刷新可见）；用户下载时也会自动缓存。</p>`
+
+	return `<section class="card">
+  <div class="card-head"><h2>离线包缓存</h2><span class="muted small">内容寻址（manifest digest）· 全局共享 · 仅超管管理</span></div>
+  <div class="stats">` +
+		statCard("离线包数", strconv.Itoa(total), "个") +
+		statCard("占用", formatBytes(s.offlineCache.TotalBytes()), "全局共享") +
+		statCard("磁盘可用", formatBytes(diskFree(s.cfg.CacheDir)), "") +
+		`</div>` +
+		autoPurgeForm +
+		`<h2 style="margin-top:22px">已缓存离线包</h2>` +
+		`<form method="post" action="` + s.adminPath + `/offline/batch-del">` +
+		`<input type="hidden" name="csrf" value="` + csrf + `">` +
+		`<div class="table-wrap"><table class="tok-table">` +
+		`<thead><tr><th><input type="checkbox" onclick="var c=document.querySelectorAll('input[name=digest]');for(var i=0;i<c.length;i++)c[i].checked=this.checked" aria-label="全选"></th><th>镜像</th><th>状态</th><th class="num">大小</th><th>缓存时间</th><th>操作</th></tr></thead>` +
+		`<tbody>` + rows.String() + `</tbody></table></div>` +
+		pager +
+		`</form>` +
+		pullForm +
+		`</section>`
+}
+
+// selOpt 生成分页「每页条数」下拉的选项（含选中态）。
+func selOpt(cur, v int) string {
+	sel := ""
+	if cur == v {
+		sel = " selected"
+	}
+	return `<option value="` + strconv.Itoa(v) + `"` + sel + `>` + strconv.Itoa(v) + `</option>`
+}
+
+// pageLink 生成分页链接（禁用态输出占位）。
+func pageLink(base string, page, size, totalPages int, label string) string {
+	if page < 1 || page > totalPages {
+		return `<span class="btn outline" style="opacity:.4;pointer-events:none">` + label + `</span>`
+	}
+	return `<a class="btn outline" href="` + base + `?page=` + strconv.Itoa(page) + `&size=` + strconv.Itoa(size) + `">` + label + `</a>`
 }
 
 // tokSlot 把示例里的 token 包成可被前端替换的片段（切换 Token 选择器时更新）。
@@ -558,7 +879,7 @@ func (s *Server) tokenSelector(tokens []*Token, label string) string {
 
 // tokenRows 渲染 Token 表格行（复制 / 编辑 / 删除）。
 // 每个 td 带 data-label，窄屏下由 CSS 切换为卡片式布局；每行后跟一条隐藏的编辑行（行内表单）。
-func (s *Server) tokenRows(tokens []*Token, csrf string) string {
+func (s *Server) tokenRows(tokens []*Token, csrf, base string) string {
 	var rows strings.Builder
 	for _, t := range tokens {
 		lastUsed := "—"
@@ -606,8 +927,8 @@ func (s *Server) tokenRows(tokens []*Token, csrf string) string {
 			esc, shown, esc, html.EscapeString(t.Note), roleCls, roleTxt,
 			time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"),
 			t.Hits, formatBytes(t.Bytes), lastUsed,
-			s.adminPath, csrf, esc,
-			s.adminPath, csrf, esc, html.EscapeString(t.Note),
+			base, csrf, esc,
+			base, csrf, esc, html.EscapeString(t.Note),
 			selAttr(normRole(t.Role) == RoleUser), selAttr(normRole(t.Role) == RoleAdmin)))
 	}
 	if len(tokens) == 0 {
@@ -625,8 +946,8 @@ func selAttr(sel bool) string {
 }
 
 // tokenAddForm Token 新增表单（角色选择供 MCP 使用）。
-func (s *Server) tokenAddForm(csrf string) string {
-	return `<form method="post" action="` + s.adminPath + `/add" class="row">` +
+func (s *Server) tokenAddForm(csrf, base string) string {
+	return `<form method="post" action="` + base + `/add" class="row">` +
 		`<input type="hidden" name="csrf" value="` + csrf + `">` +
 		`<input name="token" placeholder="留空则自动生成">` +
 		`<input name="note" placeholder="备注（可选）">` +
@@ -637,8 +958,8 @@ func (s *Server) tokenAddForm(csrf string) string {
 }
 
 // tokenFoot Token 页面页脚链接（各带适配图标，便于快速识别）。
-func (s *Server) tokenFoot() string {
-	return `<a href="` + s.adminPath + `/logout">` + logoutSVG + `退出登录</a>` +
+func (s *Server) tokenFoot(base string) string {
+	return `<a href="` + base + `/logout">` + logoutSVG + `退出登录</a>` +
 		`<span class="foot-sep">·</span>` +
 		`<a href="/">` + homeSVG + `返回首页</a>` +
 		`<span class="foot-sep">·</span>` +
@@ -649,15 +970,16 @@ func (s *Server) tokenFoot() string {
 func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 	sid, user, role, ok := s.parseSession(r)
 	if !ok {
-		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r), http.StatusFound)
 		return
 	}
 	csrf := s.csrfToken(sid)
 	tokens := s.tokensForUser(s.store.All(), user, role)
+	entry := s.entryBase(r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: aside, topbarRight, flash, rows, addForm, foot
 	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.tokenRows(tokens, csrf), s.tokenAddForm(csrf), s.tokenFoot())
+		s.tokenRows(tokens, csrf, entry), s.tokenAddForm(csrf, entry), s.tokenFoot(entry))
 	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
 }
 
@@ -746,7 +1068,7 @@ func mcpToolsTable() string {
 func (s *Server) renderMCPPage(w http.ResponseWriter, r *http.Request) {
 	sid, user, role, ok := s.parseSession(r)
 	if !ok {
-		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r), http.StatusFound)
 		return
 	}
 	_ = sid
@@ -766,7 +1088,7 @@ func (s *Server) renderMCPPage(w http.ResponseWriter, r *http.Request) {
 			s.mcpTokenSelector(tokens)
 	} else {
 		status = `<div class="flash err"><strong style="flex:0 0 auto">!</strong><span>未就绪：当前用户 <code>` + html.EscapeString(user) + `</code> 名下还没有「高级 Token」。MCP 鉴权要求 admin 角色（高级 Token），请先到「Token 管理」创建一个。</span></div>` +
-			`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">去创建高级 Token</a></div>`
+			`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.entryBase(r) + `/tokens">去创建高级 Token</a></div>`
 	}
 
 	// 两种接入方式的示例命令（token 段为 .tslot，随选择器联动）
@@ -961,6 +1283,8 @@ func (s *Server) doResetUserPass(w http.ResponseWriter, r *http.Request) {
 func (s *Server) consoleAside(r *http.Request) string {
 	// Token 计数按当前用户可见范围（super 全量、normal 仅自己）
 	_, user, role, _ := s.parseSession(r)
+	base := s.entryBase(r)
+	isAdmin := !s.isUserEntry(r)
 	n := len(s.tokensForUser(s.store.All(), user, role))
 	tokensNav := "Token 管理"
 	if n > 0 {
@@ -980,24 +1304,27 @@ func (s *Server) consoleAside(r *http.Request) string {
 	case strings.HasSuffix(r.URL.Path, "/cache"):
 		overviewActive, cacheActive = "", " active"
 	}
-	// 「用户管理」仅超级管理员可见
-	usersNav := ""
-	if role == RoleSuper {
-		usersNav = `<a class="navitem` + usersActive + `" href="` + s.adminPath + `/users"><span class="ic">👥</span>用户管理</a>`
+	// 超管专属导航项（服务管理 / 用户管理 / 缓存管理）：仅超管入口 + super 角色可见
+	// 「用户管理」「缓存管理」文字右侧加盾牌符号标识超管专属
+	svcNav, cacheNav, usersNav := "", "", ""
+	if isAdmin && role == RoleSuper {
+		svcNav = `<a class="navitem` + svcActive + `" href="` + base + `/services"><span class="ic">⚙️</span>服务管理</a>`
+		usersNav = `<a class="navitem` + usersActive + `" href="` + base + `/users"><span class="ic">👥</span>用户管理<span class="priv" title="仅超级管理员可见">🛡️</span></a>`
+		cacheNav = `<a class="navitem` + cacheActive + `" href="` + base + `/cache"><span class="ic">💾</span>缓存管理<span class="priv" title="仅超级管理员可见">🛡️</span></a>`
 	}
 	return `<aside id="gmNav">` +
 		`<a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>` +
 		`<nav class="nav">` +
-		`<a class="navitem` + overviewActive + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
-		`<a class="navitem` + svcActive + `" href="` + s.adminPath + `/services"><span class="ic">⚙️</span>服务管理</a>` +
-		`<a class="navitem` + cacheActive + `" href="` + s.adminPath + `/cache"><span class="ic">💾</span>缓存管理</a>` +
-		`<a class="navitem` + tokensActive + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
-		`<a class="navitem` + mcpActive + `" href="` + s.adminPath + `/mcp"><span class="ic">🤖</span>MCP 接入</a>` +
+		`<a class="navitem` + overviewActive + `" href="` + base + `"><span class="ic">▦</span>概览</a>` +
+		svcNav +
+		`<a class="navitem` + tokensActive + `" href="` + base + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
+		`<a class="navitem` + mcpActive + `" href="` + base + `/mcp"><span class="ic">🤖</span>MCP 接入</a>` +
 		usersNav +
+		cacheNav +
 		`<span class="navsep"></span>` +
 		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
 		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">` + githubSVG + `</span>GitHub</a>` +
-		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">` + logoutSVG + `</span>退出登录</a>` +
+		`<a class="navitem" href="` + base + `/logout"><span class="ic">` + logoutSVG + `</span>退出登录</a>` +
 		`</nav>` + s.asideFoot() + `</aside>` +
 		`<button class="nav-mask" type="button" aria-label="关闭导航菜单" onclick="toggleNav()"></button>`
 }
@@ -1016,12 +1343,12 @@ func (s *Server) asideFoot() string {
 func (s *Server) doEditToken(w http.ResponseWriter, r *http.Request) {
 	sid, user, userRole, ok := s.parseSession(r)
 	if !ok {
-		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r), http.StatusFound)
 		return
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r)+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
 	tok := strings.TrimSpace(r.FormValue("token"))
@@ -1029,15 +1356,15 @@ func (s *Server) doEditToken(w http.ResponseWriter, r *http.Request) {
 	tokenRole := normRole(r.FormValue("role"))
 	// 归属校验：normal 只能编辑自己的；无权时按不存在处理，不泄露他人 token
 	if t, exists := s.store.Get(tok); !exists || !s.tokenVisible(t, user, userRole) {
-		http.Redirect(w, r, s.adminPath+"/tokens?err=token_missing", http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r)+"/tokens?err=token_missing", http.StatusFound)
 		return
 	}
 	if !s.store.Update(tok, note, tokenRole) {
-		http.Redirect(w, r, s.adminPath+"/tokens?err=token_missing", http.StatusFound)
+		http.Redirect(w, r, s.entryBase(r)+"/tokens?err=token_missing", http.StatusFound)
 		return
 	}
 	log.Printf("Token 已更新: 类型=%s", tokenRole)
-	http.Redirect(w, r, s.adminPath+"/tokens?ok=token_updated", http.StatusFound)
+	http.Redirect(w, r, s.entryBase(r)+"/tokens?ok=token_updated", http.StatusFound)
 }
 
 // flashOK / flashErr 把 POST 后重定向携带的 ok / err 码翻译成可读文案。
@@ -1054,6 +1381,10 @@ var flashOK = map[string]string{
 	"user_deleted":  "用户已删除",
 	"user_role":     "用户角色已更新",
 	"user_pass":     "用户密码已重置",
+	"docker_path":   "你的 Docker 自定义路径已保存",
+	"offline_deleted":    "离线缓存包已删除",
+	"offline_repulling":  "已开始后台重新拉取，稍后刷新页面查看进度",
+	"offline_purge_saved": "离线包自动清理设置已保存",
 }
 
 var flashErr = map[string]string{
@@ -1066,6 +1397,7 @@ var flashErr = map[string]string{
 	"user_add_failed": "创建用户失败（用户名需 2-32 位字母数字 . _ -，密码至少 4 位，且用户名不可重复）",
 	"user_del_failed": "不能删除最后一个超级管理员",
 	"user_role_failed": "不能降级最后一个超级管理员",
+	"svc_off":       "Docker 加速未开启，请联系超级管理员开启对应服务后再设置",
 }
 
 // flashHTML 渲染一次性操作反馈条（保存 / 创建 / 开关等操作后的即时提示）。
@@ -1150,7 +1482,7 @@ func baseOf(r *http.Request) string {
 
 // doToggleService 运行时切换 Docker / HuggingFace 开关（登录 + CSRF，即时生效并持久化）。
 func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
-	sid, _, _, ok := s.parseSession(r)
+	sid, user, _, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
@@ -1166,18 +1498,18 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	on := r.FormValue("on") == "1" || strings.EqualFold(r.FormValue("on"), "true") || strings.EqualFold(r.FormValue("on"), "on")
-	// 表单里存在 dockerPath 才更新自定义路径（只有 Docker 的开关表单会带该字段）
+	// 表单里存在 dockerPath 才更新自定义路径（只有 Docker 的开关表单会带该字段）；按当前用户存储
 	if name == "docker" {
 		if vals, ok := r.PostForm["dockerPath"]; ok {
 			p := ""
 			if len(vals) > 0 {
 				p = vals[0]
 			}
-			if err := s.setDockerPath(p); err != nil {
+			if err := s.users.SetDockerPath(user, p); err != nil {
 				http.Redirect(w, r, s.adminPath+"/services?err=path_invalid", http.StatusFound)
 				return
 			}
-			log.Printf("Docker 自定义路径已更新: %q", s.dockerPath())
+			log.Printf("Docker 自定义路径已更新（用户 %s）: %q", user, s.userDockerPath(user))
 		}
 	}
 	if err := s.setService(name, on); err != nil {
@@ -1190,6 +1522,142 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 		code = "service_on"
 	}
 	http.Redirect(w, r, s.adminPath+"/services?ok="+code, http.StatusFound)
+}
+
+// doSetUserDockerPath 设置当前用户自己的 Docker 自定义路径（Docker 服务开启才可设，否则提示联系超管）。
+func (s *Server) doSetUserDockerPath(w http.ResponseWriter, r *http.Request) {
+	sid, user, _, ok := s.parseSession(r)
+	if !ok {
+		http.Redirect(w, r, s.entryBase(r), http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.entryBase(r)+"?err=csrf", http.StatusFound)
+		return
+	}
+	// 门控：Docker 加速开启才可设置自己的路径
+	if !s.dockerEnabled() {
+		http.Redirect(w, r, s.entryBase(r)+"?err=svc_off", http.StatusFound)
+		return
+	}
+	p := strings.TrimSpace(r.FormValue("dockerPath"))
+	if err := s.users.SetDockerPath(user, p); err != nil {
+		http.Redirect(w, r, s.entryBase(r)+"?err=path_invalid", http.StatusFound)
+		return
+	}
+	log.Printf("用户 %s 已更新自己的 Docker 自定义路径: %q", user, s.userDockerPath(user))
+	http.Redirect(w, r, s.entryBase(r)+"?ok=docker_path", http.StatusFound)
+}
+
+// imageLatest 把镜像名（含或不含 tag）替换为 latest tag。
+func imageLatest(image string) string {
+	_, repo, _ := parseImageRef(image)
+	return repo + ":latest"
+}
+
+// doOfflineDel 删除单个离线缓存包（仅超管）。
+func (s *Server) doOfflineDel(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/cache?err=csrf", http.StatusFound)
+		return
+	}
+	if digest := strings.TrimSpace(r.FormValue("digest")); digest != "" {
+		_ = s.offlineCache.Remove(digest)
+		log.Printf("离线缓存包已删除: %s", digest)
+	}
+	http.Redirect(w, r, s.adminPath+"/cache?ok=offline_deleted", http.StatusFound)
+}
+
+// doOfflineBatchDel 批量删除离线缓存包（仅超管；多选）。
+func (s *Server) doOfflineBatchDel(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/cache?err=csrf", http.StatusFound)
+		return
+	}
+	for _, d := range r.PostForm["digest"] {
+		if d = strings.TrimSpace(d); d != "" {
+			_ = s.offlineCache.Remove(d)
+		}
+	}
+	log.Printf("离线缓存包批量删除: %d 个", len(r.PostForm["digest"]))
+	http.Redirect(w, r, s.adminPath+"/cache?ok=offline_deleted", http.StatusFound)
+}
+
+// doOfflineRepull 后台重新拉取指定版本（仅超管）。
+func (s *Server) doOfflineRepull(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/cache?err=csrf", http.StatusFound)
+		return
+	}
+	image := strings.TrimSpace(r.FormValue("image"))
+	if image == "" {
+		http.Redirect(w, r, s.adminPath+"/cache?err=bad_input", http.StatusFound)
+		return
+	}
+	s.repullOffline(image)
+	http.Redirect(w, r, s.adminPath+"/cache?ok=offline_repulling", http.StatusFound)
+}
+
+// doOfflineRepullLatest 后台拉取最新版本（仅超管；强制 latest tag）。
+func (s *Server) doOfflineRepullLatest(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/cache?err=csrf", http.StatusFound)
+		return
+	}
+	image := strings.TrimSpace(r.FormValue("image"))
+	if image == "" {
+		http.Redirect(w, r, s.adminPath+"/cache?err=bad_input", http.StatusFound)
+		return
+	}
+	s.repullOffline(imageLatest(image))
+	http.Redirect(w, r, s.adminPath+"/cache?ok=offline_repulling", http.StatusFound)
+}
+
+// doOfflineAutoPurge 保存离线包磁盘满自动清理开关与阈值（仅超管）。
+func (s *Server) doOfflineAutoPurge(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/cache?err=csrf", http.StatusFound)
+		return
+	}
+	autoPurge := r.FormValue("autoPurge") == "1" || strings.EqualFold(r.FormValue("autoPurge"), "true") || strings.EqualFold(r.FormValue("autoPurge"), "on")
+	purgeFreeGB := 0
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("purgeFreeGB"))); err == nil {
+		purgeFreeGB = v
+	}
+	s.setOfflinePurge(autoPurge, purgeFreeGB)
+	log.Printf("离线包自动清理设置: autoPurge=%v purgeFreeGB=%d", autoPurge, purgeFreeGB)
+	http.Redirect(w, r, s.adminPath+"/cache?ok=offline_purge_saved", http.StatusFound)
 }
 
 // doSetCache 运行时调整缓存参数（单文件上限 / 总上限 / 时效），即时生效并持久化。

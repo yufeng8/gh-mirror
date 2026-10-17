@@ -5,6 +5,8 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -21,9 +22,6 @@ import (
 // 经典 docker-save 格式的 tar，供 `docker load` 使用。
 // 说明：classic 格式要求 layer.tar 为未压缩 tar（与 config.rootfs.diff_id 对应），
 // 因此这里把上游 gzip 层解压到临时文件后再写入 tar。建议用真实 docker load 校验。
-
-// offlineInflight 同镜像并发防抖：已在打包则直接返回 429，避免重复打包风暴。
-var offlineInflight sync.Map
 
 type ociDescriptor struct {
 	MediaType string `json:"mediaType"`
@@ -157,13 +155,15 @@ func (s *Server) getRegistryToken(r *http.Request, m registryMapping, repo strin
 	return tr.Token, nil
 }
 
-func (s *Server) fetchManifest(r *http.Request, m registryMapping, repo, ref, token string) ([]byte, error) {
+// fetchManifest 拉取 manifest，返回 (body, digest)。digest 优先取响应头 Docker-Content-Digest，
+// 缺失时对 body 计算 sha256 兜底（作为内容寻址缓存的键）。
+func (s *Server) fetchManifest(r *http.Request, m registryMapping, repo, ref, token string) ([]byte, string, error) {
 	target := "https://" + m.upstream + "/v2/" + repo + "/manifests/" + ref
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	req.Header.Set("Accept", manifestAccept)
 	req.Header.Set("User-Agent", "github-mirror/1.0")
@@ -172,18 +172,60 @@ func (s *Server) fetchManifest(r *http.Request, m registryMapping, repo, ref, to
 	}
 	resp, err := dockerClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("上游返回 %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("上游返回 %d", resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, "", err
+	}
+	digest := resp.Header.Get("Docker-Content-Digest")
+	if digest == "" {
+		sum := sha256.Sum256(body)
+		digest = "sha256:" + hex.EncodeToString(sum[:])
+	}
+	return body, digest, nil
 }
 
-// handleOffline /offline/<用户名>/<token>/<镜像> 打包镜像为 docker-load 可用 tar 并流式下载。
-// 多用户隔离：第一段是用户名段（必须对应真实用户），第二段是 token（必须归属该用户）。
-// 缺失或无效一律按 404 处理，避免网关暴露后被白嫖带宽。
+// resolveManifest 解析镜像 → 平台选定后的 manifest digest 与具体 manifest（内容寻址缓存键）。
+// 多架构 index 会挑选一个平台并取其具体 manifest。供实时下载与后台异步重拉复用。
+func (s *Server) resolveManifest(req *http.Request, m registryMapping, repo, ref, token string) (string, ociManifest, error) {
+	manifestBytes, digest, err := s.fetchManifest(req, m, repo, ref, token)
+	if err != nil {
+		return "", ociManifest{}, fmt.Errorf("获取 manifest 失败: %w", err)
+	}
+	var mf ociManifest
+	if err := json.Unmarshal(manifestBytes, &mf); err != nil {
+		return "", ociManifest{}, fmt.Errorf("解析 manifest 失败: %w", err)
+	}
+	// 多架构 index：挑选一个平台后取其具体 manifest（digest 改为平台 manifest 的 digest）
+	if len(mf.Manifests) > 0 {
+		pick := pickPlatform(mf.Manifests)
+		if pick == "" {
+			return "", ociManifest{}, fmt.Errorf("未找到可用平台镜像")
+		}
+		digest = pick
+		manifestBytes, _, err = s.fetchManifest(req, m, repo, pick, token)
+		if err != nil {
+			return "", ociManifest{}, fmt.Errorf("获取平台 manifest 失败: %w", err)
+		}
+		mf = ociManifest{}
+		if err := json.Unmarshal(manifestBytes, &mf); err != nil {
+			return "", ociManifest{}, fmt.Errorf("解析平台 manifest 失败: %w", err)
+		}
+	}
+	if mf.Config.Digest == "" || len(mf.Layers) == 0 {
+		return "", ociManifest{}, fmt.Errorf("manifest 缺少 config 或 layers")
+	}
+	return digest, mf, nil
+}
+
+// handleOffline /offline/<用户名>/<token>/<镜像> 打包镜像为 docker-load 可用 tar 并下载。
+// 内容寻址缓存：以平台选定后的 manifest digest 为键，命中直接返回缓存 tar；未命中回源打包并落盘。
+// 多用户隔离：第一段用户名段（对应真实用户），第二段 token（归属该用户），缺失或无效 404。
 // 也兼容 /offline/<用户名>/<token>?image=<镜像名> 的查询串写法。
 func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/offline/"))
@@ -219,71 +261,165 @@ func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "镜像访问被限制: "+reason, http.StatusForbidden)
 		return
 	}
-	if _, running := offlineInflight.LoadOrStore(image, struct{}{}); running {
-		http.Error(w, "该镜像正在打包中，请稍候重试", http.StatusTooManyRequests)
-		return
-	}
-	defer offlineInflight.Delete(image)
 
 	token, err := s.getRegistryToken(r, m, repo)
 	if err != nil {
 		http.Error(w, "获取认证失败: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	manifestBytes, err := s.fetchManifest(r, m, repo, ref, token)
+	// 解析 manifest → 得到平台选定后的 manifest digest（内容寻址缓存键）
+	digest, mf, err := s.resolveManifest(r, m, repo, ref, token)
 	if err != nil {
-		http.Error(w, "获取 manifest 失败: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	var mf ociManifest
-	if err := json.Unmarshal(manifestBytes, &mf); err != nil {
-		http.Error(w, "解析 manifest 失败", http.StatusBadGateway)
-		return
-	}
-	// 多架构 index：挑选一个平台后取其具体 manifest
-	if len(mf.Manifests) > 0 {
-		pick := pickPlatform(mf.Manifests)
-		if pick == "" {
-			http.Error(w, "未找到可用平台镜像", http.StatusBadGateway)
-			return
-		}
-		manifestBytes, err = s.fetchManifest(r, m, repo, pick, token)
-		if err != nil {
-			http.Error(w, "获取平台 manifest 失败", http.StatusBadGateway)
-			return
-		}
-		mf = ociManifest{}
-		if err := json.Unmarshal(manifestBytes, &mf); err != nil {
-			http.Error(w, "解析平台 manifest 失败", http.StatusBadGateway)
-			return
-		}
-	}
-	if mf.Config.Digest == "" || len(mf.Layers) == 0 {
-		http.Error(w, "manifest 缺少 config 或 layers", http.StatusBadGateway)
-		return
-	}
+	repoTag := repoTagName(m, repo, ref)
 
-	// 先取 config（写头之前完成，避免半途失败）
+	// 内容寻址缓存：命中（ready 且 tar 文件存在）直接返回缓存文件
+	l := s.offlineCache.LockFor(digest)
+	l.RLock()
+	if p, ok := s.offlineCache.Get(digest); ok && p.State == OfflineReady {
+		if _, statErr := os.Stat(s.offlineCache.TarPath(digest)); statErr == nil {
+			l.RUnlock()
+			s.serveOfflineTar(w, r, s.offlineCache.TarPath(digest), repoTag)
+			return
+		}
+	}
+	l.RUnlock()
+
+	// 未命中：回源打包 + tee 落盘（写锁避免同一 digest 并发重复打包）
+	l.Lock()
+	defer l.Unlock()
+	// 双重检查：等锁期间可能已被其它请求打包完成
+	if p, ok := s.offlineCache.Get(digest); ok && p.State == OfflineReady {
+		if _, statErr := os.Stat(s.offlineCache.TarPath(digest)); statErr == nil {
+			s.serveOfflineTar(w, r, s.offlineCache.TarPath(digest), repoTag)
+			return
+		}
+	}
+	s.offlineCache.MarkBuilding(digest, image, ref)
+
+	// 先取 config（写头与落盘之前完成，避免半途失败）
 	cfgBytes, err := s.fetchBlob(r, m, repo, mf.Config.Digest, token)
 	if err != nil {
+		s.offlineCache.MarkFailed(digest)
 		http.Error(w, "获取镜像 config 失败", http.StatusBadGateway)
 		return
 	}
 
-	repoTag := repoTagName(m, repo, ref)
+	tmpPath := s.offlineCache.TarPath(digest) + ".tmp"
+	tmp, err := os.Create(tmpPath)
+	if err != nil {
+		s.offlineCache.MarkFailed(digest)
+		http.Error(w, "创建缓存文件失败", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeName(repoTag)+`.tar"`)
 	w.WriteHeader(http.StatusOK)
+	// 同时写响应与缓存临时文件
+	if err := s.buildOfflineTar(io.MultiWriter(w, tmp), r, m, repo, ref, token, mf, cfgBytes); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpPath)
+		s.offlineCache.MarkFailed(digest)
+		log.Printf("offline: 打包 %s 失败: %v", image, err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		s.offlineCache.MarkFailed(digest)
+		return
+	}
+	// 原子替换为正式缓存文件并记录清单
+	if fi, statErr := os.Stat(tmpPath); statErr == nil {
+		_ = os.Rename(tmpPath, s.offlineCache.TarPath(digest))
+		s.offlineCache.MarkReady(digest, fi.Size())
+	}
+}
 
+// serveOfflineTar 返回缓存好的 tar 文件（响应头与实时打包一致）。
+func (s *Server) serveOfflineTar(w http.ResponseWriter, r *http.Request, path, repoTag string) {
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeName(repoTag)+`.tar"`)
+	http.ServeFile(w, r, path)
+}
+
+// repullOffline 后台异步重新打包镜像（含 tag）到离线缓存，由超管在缓存管理页触发。
+// 重新回源解析 manifest 得到 digest；digest 变则新增缓存、不变则覆盖（内容寻址自然语义）。
+func (s *Server) repullOffline(image string) {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://offline-internal", nil)
+		m, repo, ref := parseImageRef(image)
+		if ok, reason := s.acl.CheckRepo(repo); !ok {
+			log.Printf("offline: 重拉被拒绝 %s: %s", image, reason)
+			return
+		}
+		token, err := s.getRegistryToken(req, m, repo)
+		if err != nil {
+			log.Printf("offline: 重拉 %s 获取认证失败: %v", image, err)
+			return
+		}
+		digest, mf, err := s.resolveManifest(req, m, repo, ref, token)
+		if err != nil {
+			log.Printf("offline: 重拉 %s 解析失败: %v", image, err)
+			return
+		}
+		s.offlineCache.StartTask(digest, image, OfflineTaskBuilding)
+		l := s.offlineCache.LockFor(digest)
+		l.Lock()
+		defer l.Unlock()
+		s.offlineCache.MarkBuilding(digest, image, ref)
+		cfgBytes, err := s.fetchBlob(req, m, repo, mf.Config.Digest, token)
+		if err != nil {
+			s.offlineCache.MarkFailed(digest)
+			s.offlineCache.FinishTask(digest, OfflineTaskFailed, err.Error())
+			return
+		}
+		tmpPath := s.offlineCache.TarPath(digest) + ".tmp"
+		tmp, err := os.Create(tmpPath)
+		if err != nil {
+			s.offlineCache.MarkFailed(digest)
+			s.offlineCache.FinishTask(digest, OfflineTaskFailed, err.Error())
+			return
+		}
+		if err := s.buildOfflineTar(tmp, req, m, repo, ref, token, mf, cfgBytes); err != nil {
+			tmp.Close()
+			_ = os.Remove(tmpPath)
+			s.offlineCache.MarkFailed(digest)
+			s.offlineCache.FinishTask(digest, OfflineTaskFailed, err.Error())
+			return
+		}
+		if err := tmp.Close(); err != nil {
+			_ = os.Remove(tmpPath)
+			s.offlineCache.MarkFailed(digest)
+			s.offlineCache.FinishTask(digest, OfflineTaskFailed, err.Error())
+			return
+		}
+		if fi, statErr := os.Stat(tmpPath); statErr == nil {
+			_ = os.Rename(tmpPath, s.offlineCache.TarPath(digest))
+			s.offlineCache.MarkReady(digest, fi.Size())
+		}
+		s.offlineCache.FinishTask(digest, OfflineTaskDone, "")
+		log.Printf("offline: 后台重拉完成 %s -> %s", image, digest)
+	}()
+}
+
+// buildOfflineTar 把 manifest（config + layers）打包成 docker-save 格式的 tar 写入 w。
+func (s *Server) buildOfflineTar(w io.Writer, r *http.Request, m registryMapping, repo, ref, token string, mf ociManifest, cfgBytes []byte) error {
+	repoTag := repoTagName(m, repo, ref)
 	tw := tar.NewWriter(w)
 	if err := writeTarBytes(tw, hexOf(mf.Config.Digest)+".json", cfgBytes); err != nil {
-		log.Printf("offline: 写 config 失败: %v", err)
-		return
+		return err
 	}
 	for _, l := range mf.Layers {
 		if err := s.writeLayerTar(tw, r, m, repo, l.Digest, token); err != nil {
-			log.Printf("offline: 写 layer %s 失败: %v", l.Digest, err)
-			return
+			return err
 		}
 	}
 	// manifest.json（Layers 顺序即 manifest layers 顺序）
@@ -298,10 +434,9 @@ func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
 	}
 	mj, _ := json.Marshal([]mjEntry{{Config: hexOf(mf.Config.Digest) + ".json", RepoTags: []string{repoTag}, Layers: layers}})
 	if err := writeTarBytes(tw, "manifest.json", mj); err != nil {
-		log.Printf("offline: 写 manifest.json 失败: %v", err)
-		return
+		return err
 	}
-	_ = tw.Close()
+	return tw.Close()
 }
 
 func (s *Server) fetchBlob(r *http.Request, m registryMapping, repo, digest, token string) ([]byte, error) {

@@ -307,6 +307,7 @@ const pageStyle = `
   .navitem:hover{background:var(--muted);color:var(--foreground);text-decoration:none}
   .navitem .ic{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 auto}
   .navitem .ic svg{display:block}
+  .navitem .priv{margin-left:auto;opacity:.7;font-size:11px;flex:0 0 auto;filter:grayscale(.2)}
   .navitem.active{background:var(--muted);color:var(--foreground);font-weight:650}
   .navitem .ic{width:18px;text-align:center;flex:0 0 auto}
   .console .main{flex:1;min-width:0;padding:22px 26px 56px}
@@ -870,6 +871,7 @@ var dashboardBody = `
     <section class="card" id="overview">
       <h2>服务状态</h2>
       <div class="row">%s</div>
+      %s
       <h2 style="margin-top:22px">概览</h2>
       <div class="stats">%s</div>
     </section>
@@ -908,7 +910,7 @@ var servicesBody = `
 </div>`
 
 // cacheBody 是缓存管理独立页面的 body 片段（/admin/cache）。
-// 动词：aside / topbarRight / flash / cacheMgmt
+// 动词：aside / topbarRight / flash / cacheMgmt / offlineSection
 var cacheBody = `
 <div class="console" id="top">
   %s
@@ -923,6 +925,7 @@ var cacheBody = `
       <h2>缓存管理</h2>
       %s
     </section>
+    %s
   </div>
 </div>`
 

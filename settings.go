@@ -27,6 +27,10 @@ type settings struct {
 		MaxTotalMB int `json:"maxTotalMB"` // 缓存总上限（MB），0 = 不限制
 		TTLMinutes int `json:"ttlMinutes"` // 缓存时效（分钟），0 = 永不过期
 	} `json:"cache"`
+	Offline struct {
+		AutoPurge   bool `json:"autoPurge"`   // 离线包磁盘满自动清理开关（默认关）
+		PurgeFreeGB int  `json:"purgeFreeGB"` // 触发阈值：磁盘可用低于该 GB 数时清理
+	} `json:"offline"`
 }
 
 // normDockerPath 规范化 Docker 自定义路径：去首尾与重复斜杠，只允许 [A-Za-z0-9-_/]，最长 64 字符。
@@ -81,11 +85,27 @@ func loadSettings(s *Server, cfg *config.Config) {
 		log.Printf("settings.json 的 dockerPath 不合法，已忽略: %q", st.DockerPath)
 		st.DockerPath = ""
 	}
+	// 旧全局 dockerPath 迁移：多用户化后自定义路径按用户存储，旧全局值继承给默认管理员（避免 /v2 路径失效）
+	migrated := false
+	if st.DockerPath != "" && s.adminUser != "" {
+		if u, ok := s.users.Get(s.adminUser); ok && u.DockerPath == "" {
+			if err := s.users.SetDockerPath(s.adminUser, st.DockerPath); err == nil {
+				log.Printf("已将旧全局 dockerPath %q 迁移给默认管理员 %s", st.DockerPath, s.adminUser)
+				migrated = true
+			}
+		}
+		st.DockerPath = ""
+	}
 	s.svcMu.Lock()
 	s.dockerOn = st.Docker
 	s.hfOn = st.HF
 	s.dockerPrefix = st.DockerPath
+	s.offlineAutoPurge = st.Offline.AutoPurge
+	s.offlinePurgeFreeGB = st.Offline.PurgeFreeGB
 	s.svcMu.Unlock()
+	if migrated {
+		s.saveSettings()
+	}
 	s.cache.SetMaxFileMB(st.Cache.MaxFileMB)
 	s.cache.SetMaxTotalMB(st.Cache.MaxTotalMB)
 	s.cache.SetTTLMinutes(st.Cache.TTLMinutes)
@@ -110,6 +130,8 @@ func saveSettings(path string, st settings) error {
 func (s *Server) currentSettings() settings {
 	s.svcMu.RLock()
 	st := settings{Docker: s.dockerOn, HF: s.hfOn, DockerPath: s.dockerPrefix}
+	st.Offline.AutoPurge = s.offlineAutoPurge
+	st.Offline.PurgeFreeGB = s.offlinePurgeFreeGB
 	s.svcMu.RUnlock()
 	st.Cache.MaxFileMB = int(s.cache.MaxBytes() / (1024 * 1024))
 	st.Cache.MaxTotalMB = int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -141,11 +163,12 @@ func (s *Server) setService(name string, on bool) error {
 	return nil
 }
 
-// dockerPath 返回用户填写的「自定义路径」（不含用户名段；空表示只用用户名段）。
-func (s *Server) dockerPath() string {
-	s.svcMu.RLock()
-	defer s.svcMu.RUnlock()
-	return s.dockerPrefix
+// userDockerPath 返回某用户自己的 Docker 自定义路径（空表示只用用户名段；多用户隔离）。
+func (s *Server) userDockerPath(user string) string {
+	if u, ok := s.users.Get(user); ok {
+		return u.DockerPath
+	}
+	return ""
 }
 
 // dockerSegment 把用户名规范化为 Docker 路径段：小写化 + 非法字符替换为 -（Docker 仓库路径必须小写）。
@@ -176,11 +199,11 @@ func (s *Server) userByDockerSegment(seg string) (string, bool) {
 	return "", false
 }
 
-// dockerV2PrefixFor 返回某用户的 /v2 **完整**路径前缀：<用户名段>[/<自定义路径>]。
-// 用户名段强制存在、不可省略——这样每个用户天然拥有独立路径。自定义路径全局共享（所有用户同一后缀）。
+// dockerV2PrefixFor 返回某用户的 /v2 **完整**路径前缀：<用户名段>[/<该用户的自定义路径>]。
+// 用户名段强制存在、不可省略——每个用户天然拥有独立路径；自定义路径按用户隔离。
 func (s *Server) dockerV2PrefixFor(user string) string {
 	owner := dockerSegment(user)
-	custom := s.dockerPath()
+	custom := s.userDockerPath(user)
 	// 兼容历史数据：若自定义路径里已包含用户名段，剥掉避免出现 <owner>/<owner>/...
 	if strings.HasPrefix(custom, owner+"/") {
 		custom = strings.TrimPrefix(custom, owner+"/")
@@ -194,17 +217,26 @@ func (s *Server) dockerV2PrefixFor(user string) string {
 	return owner
 }
 
-// setDockerPath 设置 /v2 的自定义路径前缀（持锁改内存 + 持久化）。空串表示不启用前缀。
-func (s *Server) setDockerPath(p string) error {
-	np, ok := normDockerPath(p)
-	if !ok {
-		return fmt.Errorf("自定义路径不合法（仅支持字母、数字、-、_、/，最长 64 字符）")
-	}
+// setOfflinePurge 设置离线包磁盘满自动清理开关与阈值（热生效 + 持久化）。
+func (s *Server) setOfflinePurge(autoPurge bool, purgeFreeGB int) {
 	s.svcMu.Lock()
-	s.dockerPrefix = np
+	s.offlineAutoPurge = autoPurge
+	if purgeFreeGB < 0 {
+		purgeFreeGB = 0
+	}
+	s.offlinePurgeFreeGB = purgeFreeGB
 	s.svcMu.Unlock()
 	s.saveSettings()
-	return nil
+}
+
+// offlinePurgeBytes 返回离线包自动清理阈值（字节；0 表示未启用）。
+func (s *Server) offlinePurgeBytes() int64 {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	if !s.offlineAutoPurge || s.offlinePurgeFreeGB <= 0 {
+		return 0
+	}
+	return int64(s.offlinePurgeFreeGB) * 1024 * 1024 * 1024
 }
 
 // setCacheLimits 运行时调整缓存参数（热生效 + 持久化）。

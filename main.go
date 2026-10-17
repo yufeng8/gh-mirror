@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -22,10 +23,12 @@ import (
 type Server struct {
 	cfg          *config.Config
 	cache        *Cache
+	offlineCache *OfflineCache
 	timeout      time.Duration
 	store        *Store
 	users        *UserStore
 	adminPath    string
+	userPath     string // 普通用户入口路径（默认 /user），与 adminPath 强隔离
 	adminUser    string // 初始超级管理员用户名（启动种子；运行态当前用户从 session 取）
 	secret       []byte
 	cookieSecure bool
@@ -36,6 +39,8 @@ type Server struct {
 	dockerOn     bool
 	hfOn         bool
 	dockerPrefix string // /v2 自定义路径前缀（空=未启用），持 svcMu 保护；读取用 dockerPath()
+	offlineAutoPurge   bool // 离线包磁盘满自动清理开关
+	offlinePurgeFreeGB int  // 触发阈值（磁盘可用低于该 GB 数时按最旧优先清理）
 }
 
 // processStart 记录进程启动时间，用于后台展示运行时长。
@@ -72,6 +77,17 @@ func main() {
 	if adminPath == "/" {
 		adminPath = "/admin"
 	}
+	userPath := cfg.Admin.UserPath
+	if !strings.HasPrefix(userPath, "/") {
+		userPath = "/" + userPath
+	}
+	if userPath == "/" {
+		userPath = "/user"
+	}
+	// 双入口路径冲突校验：入口地址不能撞已有代理/接口路径，也不能互相冲突
+	if err := validateEntryPaths(adminPath, userPath); err != nil {
+		log.Fatalf("入口路径配置冲突: %v", err)
+	}
 	adminUser := cfg.Admin.User
 	adminPass := cfg.Admin.Pass
 	secretStr := cfg.Admin.Secret
@@ -99,6 +115,8 @@ func main() {
 		}
 	}
 	cache := NewCache(cfg.CacheDir, time.Duration(cfg.CacheTTLMinutes)*time.Minute, cfg.MaxCacheMB)
+	// 离线镜像 tar 内容寻址缓存（与普通响应缓存独立：不纳入响应缓存的自动清理）
+	offlineCache := NewOfflineCache(filepath.Join(cfg.CacheDir, "offline-cache"))
 	useJsdelivr = cfg.UseJsdelivr
 
 	// P4：访问控制、限流、SOCKS5 出站（默认关闭，由 config.toml 开启）
@@ -119,10 +137,12 @@ func main() {
 	s := &Server{
 		cfg:          cfg,
 		cache:        cache,
+		offlineCache: offlineCache,
 		timeout:      time.Duration(cfg.UpstreamTimeoutSec) * time.Second,
 		store:        store,
 		users:        users,
 		adminPath:    adminPath,
+		userPath:     userPath,
 		adminUser:    adminUser,
 		secret:       secret,
 		cookieSecure: cfg.Admin.CookieSecure,
@@ -149,6 +169,13 @@ func main() {
 				log.Printf("缓存自动失效: 过期 %d 个、超限 %d 个、磁盘余量 %d 个，当前占用 %s（磁盘可用 %s）",
 					expired, over, low, formatBytes(cache.UsageBytes()), formatBytes(cache.DiskFree()))
 			}
+			// 离线包磁盘满自动清理（开关 + 阈值由超管在缓存管理页设置，独立于普通响应缓存）
+			if b := s.offlinePurgeBytes(); b > 0 {
+				if n := s.offlineCache.PurgeUntil(b); n > 0 {
+					log.Printf("离线包磁盘满自动清理: 删除 %d 个，当前占用 %s（磁盘可用 %s）",
+						n, formatBytes(s.offlineCache.TotalBytes()), formatBytes(diskFree(cfg.CacheDir)))
+				}
+			}
 		}
 	}()
 
@@ -163,6 +190,41 @@ func main() {
 	}()
 	// 直接以处理函数作为 Handler，避免 net/http.ServeMux 对 // 路径做规范化重定向
 	log.Fatal(http.ListenAndServe(cfg.Listen, http.HandlerFunc(s.handle)))
+}
+
+// reservedPaths 是已被代理/接口占用的顶层路径，入口地址（ADMIN_PATH/USER_PATH）不得与其冲突。
+var reservedPaths = []string{
+	"/healthz",
+	"/search",
+	"/tags",
+	"/api",
+	"/v2",
+	"/token",
+	"/offline",
+	"/hf",
+	"/g",
+	"/mcp",
+}
+
+// validateEntryPaths 校验超管/普通入口路径：不能互相冲突，也不能撞已有代理/接口路径。
+// 冲突（含前缀重叠）会导致请求被错误路由到后台，fail-fast 避免部署后才发现。
+func validateEntryPaths(adminPath, userPath string) error {
+	if pathConflicts(adminPath, userPath) {
+		return fmt.Errorf("ADMIN_PATH(%s) 与 USER_PATH(%s) 冲突，请使用不同且无前缀关系的路径", adminPath, userPath)
+	}
+	for _, p := range []string{adminPath, userPath} {
+		for _, r := range reservedPaths {
+			if pathConflicts(p, r) {
+				return fmt.Errorf("入口路径 %s 与保留路径 %s 冲突，请改用其它入口路径", p, r)
+			}
+		}
+	}
+	return nil
+}
+
+// pathConflicts 判断两个路径是否存在前缀重叠（含相等）。
+func pathConflicts(a, b string) bool {
+	return strings.HasPrefix(a, b) || strings.HasPrefix(b, a)
 }
 
 // genSecret 生成随机会话签名密钥。
@@ -180,8 +242,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if i := strings.IndexByte(path, '?'); i >= 0 {
 		path = path[:i]
 	}
-	// P4 入口中间件：限流 + IP 访问控制（健康检查/首页/后台豁免）
-	if !(path == "/healthz" || path == "/" || strings.HasPrefix(path, s.adminPath)) {
+	// P4 入口中间件：限流 + IP 访问控制（健康检查/首页/后台/普通入口豁免）
+	if !(path == "/healthz" || path == "/" || strings.HasPrefix(path, s.adminPath) || strings.HasPrefix(path, s.userPath)) {
 		if s.limiter != nil && !s.limiter.Allow(ClientIP(r)) {
 			http.Error(w, "请求频率过快，请稍后重试", http.StatusTooManyRequests)
 			return
@@ -199,6 +261,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.renderHome(w, r)
 	case strings.HasPrefix(path, s.adminPath):
 		s.handleAdmin(w, r)
+	case strings.HasPrefix(path, s.userPath):
+		s.handleUser(w, r)
 	case path == "/search":
 		s.handleSearchPage(w, r)
 	case path == "/tags":
