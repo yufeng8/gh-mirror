@@ -989,11 +989,11 @@ func (s *Server) consoleAside(r *http.Request) string {
 		`<a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>` +
 		`<nav class="nav">` +
 		`<a class="navitem` + overviewActive + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
+		`<a class="navitem` + svcActive + `" href="` + s.adminPath + `/services"><span class="ic">⚙️</span>服务管理</a>` +
+		`<a class="navitem` + cacheActive + `" href="` + s.adminPath + `/cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<a class="navitem` + tokensActive + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
 		`<a class="navitem` + mcpActive + `" href="` + s.adminPath + `/mcp"><span class="ic">🤖</span>MCP 接入</a>` +
 		usersNav +
-		`<a class="navitem` + svcActive + `" href="` + s.adminPath + `/services"><span class="ic">⚙️</span>服务管理</a>` +
-		`<a class="navitem` + cacheActive + `" href="` + s.adminPath + `/cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<span class="navsep"></span>` +
 		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
 		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">` + githubSVG + `</span>GitHub</a>` +

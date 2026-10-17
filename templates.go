@@ -322,7 +322,10 @@ const pageStyle = `
   .stat .v.sm{font-size:.98rem;font-weight:650;line-height:1.4;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace}
   .stat .s{color:var(--muted-foreground);font-size:.76rem;margin:3px 0 0}
   .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;background:var(--muted);color:var(--muted-foreground);font-size:.8rem;font-weight:600;white-space:nowrap}
-  .badge.on{background:rgba(34,197,94,.15);color:#15803d}
+  .badge.on{background:rgba(34,197,94,.15);color:#15803d;animation:gmBreath 2.4s ease-in-out infinite}
+  /* 「已开启」绿色徽标的呼吸光晕：光圈周期性扩散淡出（深浅色通用）；尊重系统减弱动效偏好 */
+  @keyframes gmBreath{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.35)}55%{box-shadow:0 0 0 7px rgba(34,197,94,0)}}
+  @media (prefers-reduced-motion:reduce){.badge.on{animation:none}}
   .badge.warn{background:#fffbeb;color:#b45309}
   html.dark .badge.warn{background:rgba(245,158,11,.18);color:#fbbf24}
   .badge.off{background:rgba(245,158,11,.18);color:#b45309}
@@ -666,10 +669,10 @@ func (s *Server) agentPrompt() string {
 	return agentPromptDefault
 }
 
-// homeHTML 生成首页（宣传/介绍页）；host 取请求实际域名，避免写死示例域名。
+// homeHTML 生成首页（宣传/介绍页）。示例地址统一用「<你的域名>」占位文字，与访问实例无关。
 // 提示词中的 <你的域名> 保持通用占位符（由使用者替换为实际部署域名），仅做 HTML 转义注入。
 func (s *Server) homeHTML(host string) string {
-	// 示例地址统一用「部署域名或IP」占位文字：首页是公开宣传页，与访问实例无关，
+	// 示例地址统一用「&lt;你的域名&gt;」占位文字：首页是公开宣传页，与访问实例无关，
 	// 不注入真实访问地址（host 参数仅为兼容调用方保留）。
 	_ = host
 	body := strings.ReplaceAll(homeTmpl, "{{AGENT_PROMPT}}", html.EscapeString(s.agentPrompt()))
@@ -731,17 +734,17 @@ const homeTmpl = `
     <div class="svc">
       ` + tagGH + `<h3>GitHub 资源</h3>
       <p>域名后拼接 <code>/g/&lt;token&gt;/</code> 再加完整 GitHub 地址。</p>
-      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o file "部署域名或IP/g/&lt;token&gt;/https://github.com<wbr>/owner<wbr>/repo<wbr>/releases<wbr>/download<wbr>/v1.0<wbr>/app.zip"</code></pre></div>
+      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o file "&lt;你的域名&gt;/g/&lt;token&gt;/https://github.com<wbr>/owner<wbr>/repo<wbr>/releases<wbr>/download<wbr>/v1.0<wbr>/app.zip"</code></pre></div>
     </div>
     <div class="svc">
       ` + tagHF + `<h3>HuggingFace 权重</h3>
       <p>拼接 <code>/hf/&lt;token&gt;/</code> 与 owner/repo 路径（token 模式需带 token）。</p>
-      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o config.json "部署域名或IP/hf/&lt;token&gt;/openai-community<wbr>/gpt2<wbr>/resolve<wbr>/main<wbr>/config.json"</code></pre></div>
+      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o config.json "&lt;你的域名&gt;/hf/&lt;token&gt;/openai-community<wbr>/gpt2<wbr>/resolve<wbr>/main<wbr>/config.json"</code></pre></div>
     </div>
     <div class="svc">
       ` + tagDK + `<h3>Docker 镜像</h3>
       <p>registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>（无需 token，路径必须带用户名段，后台可再加自定义路径）；离线 tar 走 <code>/offline/&lt;token&gt;/&lt;镜像&gt;</code> 供 <code>docker load</code>。</p>
-      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>docker pull 部署域名或IP/&lt;用户名&gt;/library/nginx:1.25</code></pre></div>
+      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>docker pull &lt;你的域名&gt;/&lt;用户名&gt;/library/nginx:1.25</code></pre></div>
     </div>
   </div>
   <p class="muted" style="margin-top:14px">镜像搜索：内置强大的搜索能力，<code>/search?q=nginx</code> 与 <code>/tags?repo=library/nginx</code> 页面及 JSON API 均可用，也能通过 MCP 交给 AI Agent 直接调用。</p>
