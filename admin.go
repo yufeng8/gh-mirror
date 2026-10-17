@@ -264,14 +264,10 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	dockerEx := "Docker 加速未开启（可在「服务管理」开启）"
 	if s.dockerEnabled() {
-		regHint := `daemon.json 加 "registry-mirrors": ["` + base + `"] 后 systemctl restart docker`
-		if p := s.dockerPath(); p != "" {
-			// 设置了自定义路径后，registry-mirrors 不再生效，改为带前缀的 pull-through
-			regHint = "已设置自定义路径，改用 <code>docker pull " + base + "/" + html.EscapeString(p) +
-				"/library/nginx:1.25</code>（此时 registry-mirrors 不再生效）"
-		}
+		// 拉取路径固定为 <用户名>[/<自定义路径>]，因此 registry-mirrors 不再适用，统一用带路径的 pull
 		dockerEx = "离线 tar（需 token）：" + base + "/offline/" + tokSlot(tk) + "/library/nginx:1.25" +
-			" ；registry 加速（无需 token，Docker 客户端直连 /v2）：" + regHint
+			" ；registry 加速（无需 token，按带路径方式 pull）：<code>docker pull " + base + "/" +
+			html.EscapeString(s.dockerV2Prefix()) + "/library/nginx:1.25</code>"
 	}
 	var ex strings.Builder
 	ex.WriteString(`<div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">`)
@@ -352,16 +348,19 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 			`<p>` + desc + `</p><p><code>` + usage + `</code></p>` +
 			`<div class="svccard-foot">` + foot + `</div></div>`
 	}
-	// Docker 卡片的用法说明会随「自定义路径」变化
-	dockerUsage := "daemon.json → registry-mirrors（/v2，无需 token）；/offline/&lt;token&gt;/&lt;image&gt;"
-	if p := s.dockerPath(); p != "" {
-		dockerUsage = "docker pull &lt;域名&gt;/" + html.EscapeString(p) + "/library/nginx:1.25（自定义路径）；/offline/&lt;token&gt;/&lt;image&gt;"
+	// Docker 卡片的用法说明：路径固定带 <用户名>[/<自定义路径>]
+	ownerSeg := s.dockerUserSegment()
+	dockerUsage := "docker pull &lt;域名&gt;/" + html.EscapeString(ownerSeg) +
+		"/library/nginx:1.25（用户名段必带）；/offline/&lt;token&gt;/&lt;image&gt;"
+	if c := s.dockerPath(); c != "" {
+		dockerUsage = "docker pull &lt;域名&gt;/" + html.EscapeString(ownerSeg) + "/" + html.EscapeString(c) +
+			"/library/nginx:1.25；/offline/&lt;token&gt;/&lt;image&gt;"
 	}
 	services := `<div class="svcgrid">` +
 		svcCard("GH", "GitHub 资源加速", "覆盖 blob / raw、Releases、仓库打包 archive 与短链，支持 Range 断点续传。始终可用。", "/g/&lt;token&gt;/https://github.com/owner/repo", true, "") +
 		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", dockerUsage, s.dockerEnabled(), "docker") +
 		svcCard("HF", "HuggingFace 权重", "加速模型与 LFS 大文件下载，token 模式下需带 token。", "/hf/&lt;token&gt;/owner/repo/resolve/main/file", s.hfEnabled(), "hf") +
-		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.dockerPath())
+		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.dockerPath(), s.dockerUserSegment())
 	// 缓存管理：已用总量 / 单文件上限 / 总上限 / 时效，均热改；超限与过期自动清理；可一键清除
 	maxFileMB := int(s.cache.MaxBytes() / (1024 * 1024))
 	maxTotalMB := int(s.cache.MaxTotalBytes() / (1024 * 1024))

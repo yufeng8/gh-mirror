@@ -137,10 +137,12 @@ Docker 加速有两个端点，鉴权方式不同：
 
 | 端点 | 用途 | Token 鉴权 |
 |------|------|-----------|
-| `/v2/...` | registry-mirror 加速（`daemon.json` 的 `registry-mirrors`） | **不支持**：Docker Registry 协议无法携带我们的 `/g/<token>/`，且 docker daemon 不支持带路径前缀的 mirror |
+| `/v2/<用户名>[/<自定义路径>]/…` | registry 加速（带路径 pull-through） | **不支持 Token**：Docker Registry 协议无法携带我们的 `/g/<token>/`；改用**强制路径前缀**（用户名段必带 + 可选自定义路径）作为保护位 |
 | `/offline/<token>/<镜像名>` | 离线 tar（`docker load` 可用） | **必须带 Token**：地址缺 token 或 token 无效一律返回 404 |
 
-**风险**：`DOCKER_ENABLED=true` 且网关公网可达时，**任何人都能**用你的 `/v2` 镜像加速（该端点只能靠 `DOCKER_ENABLED` 开关 + 「限流 / IP ACL」中间件控制），耗费你的上游带宽与配额。离线包 `/offline` 已强制 token，不会被人白嫖。
+> `/v2` 的路径前缀**固定为 `<用户名>[/<自定义路径>]`**：用户名段取 `ADMIN_USER`（小写化），不可省略；自定义路径在管理后台可填。`GET /v2/` 探测端点会放行（由上游返回 401 挑战），否则 docker 客户端会判定该 registry 不支持 v2。
+
+**风险**：`DOCKER_ENABLED=true` 且网关公网可达时，知道完整路径的人仍可使用你的 `/v2` 镜像加速（路径属"混淆"而非鉴权），耗费你的上游带宽与配额。离线包 `/offline` 已强制 token，不会被人白嫖。
 
 **为什么 CDN 下 IP ACL 靠不住**：源站只看到 CDN 回源 IP；`ClientIP` 取 `X-Forwarded-For` 首段**可被伪造**，取 `RemoteAddr` 又是 CDN＝放行所有人。所以 `[acl] ip_allow` 在 CDN 后**无法按真实客户端 IP 限制**。
 
@@ -148,11 +150,14 @@ Docker 加速有两个端点，鉴权方式不同：
 1. **不需要公网 Docker 加速** → `DOCKER_ENABLED=false`（最省心；GitHub/HF/搜索仍 token 保护，可正常公网）。
 2. **开放当公共 mirror + 边缘防滥用** → registry-mirror 用公网 `https://<域名>`；在 CDN（EdgeOne 看得到真实客户端 IP）对 `/v2` 配**速率限制、并发/带宽封顶、IP 黑名单、地域限制**；并盯 `gm-cache` 体积与上游出网账单。
 3. **远程机器有固定公网 IP（推荐生产自用）** → 用**不走 CDN 的难猜子域名**（如 `m7f3k9mirror.<域名>`，A 记录直连源站），源站 nginx 给该域名反代到 `gh-mirror:8080`（`merge_slashes off` + `proxy_pass ...$request_uri`），云**安全组只放行那几台机器公网 IP** 访问源站 80；registry-mirror 指向该子域名。
-4. **给 /v2 加「自定义路径」（推荐，管理后台可配）** → 在后台开启 Docker 的弹窗里填写**自定义路径**（如 `team-a/9f3k2`），之后 `/v2` 必须带该前缀才可用：
+4. **给 /v2 加「用户名 + 自定义路径」前缀（推荐，管理后台可配）** → `/v2` 的路径**固定为 `<用户名>[/<自定义路径>]`**：用户名段取 `ADMIN_USER`（自动小写），**强制带上、不可省略**；自定义路径在后台开启 Docker 的弹窗里可选填写（如 `team-a/9f3k2`）：
    ```bash
-   docker pull <域名>/team-a/9f3k2/library/nginx:1.25
+   # 只用用户名段
+   docker pull <域名>/<用户名>/library/nginx:1.25
+   # 用户名段 + 自定义路径
+   docker pull <域名>/<用户名>/team-a/9f3k2/library/nginx:1.25
    ```
-   未带前缀或前缀不匹配一律 404（不暴露端点是否存在）。**注意**：设置前缀后 `registry-mirrors` 不再生效（docker daemon 不支持带路径的 mirror），需改用上面这种带前缀的 pull 方式；前缀可含 `/`、最长 64 字符，仅支持字母、数字、`-`、`_`、`/`，可随时在后台修改（多用户场景下可为每个用户分配不同前缀）。
+   未带前缀或前缀不匹配一律 404（不暴露端点是否存在）。**注意**：路径带前缀后 `registry-mirrors` 不再生效（docker daemon 不支持带路径的 mirror），必须改用上面的 pull 方式；自定义路径可含 `/`、最长 64 字符，仅支持字母、数字、`-`、`_`、`/`，可随时在后台修改。用户名段的存在让每个用户天然拥有独立路径，便于后续多用户扩展。
 5. **离线包只给可信用户** → `/offline` 已强制 token（`/offline/<token>/<镜像名>`）：为不同使用者签发不同 token，可随时在后台删除以吊销；需要更细的控制再叠加反代 IP 白名单或 CDN 速率限制。
    ```bash
    # 离线包示例（token 来自管理后台「Token 管理」）

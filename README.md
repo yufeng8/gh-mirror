@@ -160,19 +160,16 @@ curl -L -o app.zip "https://mirror.example.com/g/<token>/https://github.com/owne
 
 响应头 `X-Cache: HIT` 命中缓存，`MISS` 回源。
 
-### Docker 镜像加速（`/v2/`、`/token`）
+### Docker 镜像加速（`/v2/<用户名>[/<自定义路径>]/…`、`/token`）
 
-开启 `[docker] enabled=true`（或 `DOCKER_ENABLED=true`）后，在 Docker 守护进程配置镜像加速器：
-
-```json
-// /etc/docker/daemon.json
-{ "registry-mirrors": ["https://mirror.example.com"] }
-```
+开启 `[docker] enabled=true`（或 `DOCKER_ENABLED=true`）后，`/v2` 的拉取路径**固定带用户名段**（管理后台可再填一段自定义路径）：
 
 ```bash
-sudo systemctl restart docker
-docker pull nginx:latest   # 自动走加速器
+# 用户名段 = 后台登录用户名；自定义路径在「服务管理 → Docker 镜像加速」里可选填写
+docker pull mirror.example.com/admin/library/nginx:1.25
 ```
+
+> 因为路径带前缀，`registry-mirrors` **不再适用**（docker daemon 不支持带路径的 mirror）。这种「用户名 + 自定义路径」的写法则相当于给 `/v2` 加了一道只有知道路径才能用的保护，也为多用户各自独立路径预留了规则。
 
 多 Registry（GHCR/Quay/GCR/k8s 等）用域名前缀形式：
 

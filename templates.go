@@ -65,7 +65,7 @@ func svcTagHTML(code string) string {
 
 // dockerModalHTML 生成开启 Docker 加速前的安全确认弹窗（原先常驻后台顶部，改为按需弹出）。
 // cur 是当前已保存的自定义路径（/v2 前缀），用于回填输入框；确认按钮由 gmOpenModal 决定是否显示。
-func dockerModalHTML(cur string) string {
+func dockerModalHTML(cur, owner string) string {
 	return `
 <div class="modal" id="gmDockerModal" hidden>
   <div class="modal-mask" onclick="gmCloseModal()"></div>
@@ -73,11 +73,17 @@ func dockerModalHTML(cur string) string {
     <div class="modal-head"><span class="badge warn">⚠️ 安全说明</span><h3 id="gmDockerModalTitle">开启 Docker 加速前请先确认风险</h3></div>
     <div class="modal-body">
       <div class="modal-field">
-        <label for="gmDockerPath">自定义路径（可选，建议填一段只有你知道的串）</label>
-        <input id="gmDockerPath" name="dockerPath" form="gmSvcForm-docker" value="` + html.EscapeString(cur) + `" placeholder="如 team-a/9f3k2" maxlength="64" autocomplete="off" spellcheck="false">
-        <p class="muted small">填了之后，Docker 拉取地址要带上该前缀：<code>docker pull &lt;本服务域名&gt;/&lt;自定义路径&gt;/library/nginx:1.25</code>；此时 <code>registry-mirrors</code> 不再生效。留空则按传统 registry-mirrors 方式（无前缀）。仅支持字母、数字、<code>-</code>、<code>_</code>、<code>/</code>，最长 64 字符。</p>
+        <label for="gmDockerPath">拉取路径（用户名段固定，自定义路径可选）</label>
+        <div class="path-edit">
+          <span class="path-fixed" title="当前登录用户名，不可省略">` + html.EscapeString(owner) + `</span>
+          <span class="path-sep">/</span>
+          <input id="gmDockerPath" name="dockerPath" form="gmSvcForm-docker" value="` + html.EscapeString(cur) + `" data-owner="` + html.EscapeString(owner) + `" data-saved="` + html.EscapeString(cur) + `" placeholder="可选，如 team-a / 9f3k2" maxlength="64" autocomplete="off" spellcheck="false" oninput="gmDockerPathPreview(this.value)">
+        </div>
+        <p class="muted small" style="margin-top:8px">拉取路径固定为 <code>/v2/&lt;用户名&gt;/&lt;自定义路径&gt;/…</code>：<strong>用户名段（<code>` + html.EscapeString(owner) + `</code>）强制带上、不能省略</strong>，自定义路径留空则只用用户名段。这样每个用户天然有独立路径，也方便后续扩展多用户。</p>
+        <p class="muted small">当前预览：<code id="gmDockerPathPreview">docker pull &lt;本服务域名&gt;/` + html.EscapeString(owner) + `/library/nginx:1.25</code></p>
+        <p class="muted small">自定义路径仅支持字母、数字、<code>-</code>、<code>_</code>、<code>/</code>，最长 64 字符。<strong>注意：这种方式下 <code>registry-mirrors</code> 不再生效</strong>，必须按上面的带路径方式拉取。</p>
       </div>
-      端点 <code>/v2</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token），自定义路径就是给它的「秘密前缀」式保护；<code>/offline</code> 离线包<strong>必须带 Token</strong>（<code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code>，缺失或无效一律 404）。
+      端点 <code>/v2</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token），<code>&lt;用户名&gt;/&lt;自定义路径&gt;</code> 就是给它的「秘密前缀」式保护；<code>/offline</code> 离线包<strong>必须带 Token</strong>（<code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code>，缺失或无效一律 404）。
       <ul>
         <li>若网关经<strong>公网 / CDN 暴露</strong>，任何人都能使用你的镜像加速、拉取离线 tar，<strong>耗费上游带宽</strong>。</li>
         <li>置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只看到 CDN 回源 IP，X-Forwarded-For 可伪造）。</li>
@@ -416,6 +422,12 @@ const pageStyle = `
     background:var(--background);color:var(--foreground);font-size:.9rem}
   .modal-field input:focus{outline:none;border-color:var(--ring);box-shadow:0 0 0 3px rgba(22,163,74,.16)}
   .modal-field p{margin:8px 0 0}
+  /* 拉取路径编辑：固定的用户名段 + 自定义路径输入框 */
+  .path-edit{display:flex;align-items:center;gap:6px}
+  .path-fixed{flex:0 0 auto;padding:9px 12px;border-radius:10px;background:var(--muted);border:1px dashed var(--border);
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.88rem;color:var(--foreground);font-weight:650}
+  .path-sep{flex:0 0 auto;color:var(--muted-foreground);font-weight:700}
+  .path-edit input{flex:1 1 auto;min-width:0}
   .modal-body ol{margin:10px 0 0;padding-left:20px}
   .modal-body li{margin:6px 0}
   .modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);flex-wrap:wrap}
@@ -503,9 +515,13 @@ const pageStyle = `
   /* Token 表在窄屏切换为卡片式：隐藏表头，每行变一张卡，字段名由 data-label 提供 */
   @media (max-width:760px){
     /* 小屏 Hero：logo / 项目名 / 一句话定位 / MCP 徽标 / 按钮组居中（正文段落保持左对齐更好读） */
-    .hero#top{flex-direction:column;align-items:center;gap:14px;padding:30px 0 6px;text-align:center}
-    /* 重置桌面端为「齐平」而设的伸缩，否则 logo 会被顶到左边不居中 */
-    .hero#top .mark{width:88px;height:88px;align-self:center;max-height:none}
+    .hero#top{flex-direction:column;align-items:center;gap:12px;padding:22px 0 0;text-align:center}
+    /* 关键：桌面给文案块设的 flex-basis(420px) 在纵向布局下会变成「高度基准」并撑满剩余空间，
+       造成 logo 下方大片空白 —— 这里必须重置为不伸缩 */
+    .hero#top>div{flex:0 0 auto;width:100%}
+    /* 重置桌面为「与文案齐平」而设的拉伸；margin:auto 兜底保证 logo 一定水平居中 */
+    .hero#top .mark{width:88px;height:88px;max-height:none;align-self:center;flex:0 0 auto;
+      aspect-ratio:1/1;margin:0 auto;border-radius:20px}
     .hero#top .lede{margin:6px 0 2px}
     .hero#top .row{justify-content:center}
     .hero#top .sub{text-align:left}
@@ -557,13 +573,16 @@ function gmCopyText(btn,txt){var done=function(){var o=btn.textContent;btn.textC
 function gmApplyToken(tk){try{localStorage.setItem('gm_tok',tk||'')}catch(e){}var sels=document.querySelectorAll('.gmtok');for(var i=0;i<sels.length;i++){if(sels[i].value!==tk)sels[i].value=tk}var s=document.querySelectorAll('.tslot');for(var j=0;j<s.length;j++){s[j].textContent=tk||'token'}}
 function gmToggleEdit(btn){var tr=btn.closest('tr');if(!tr)return;var row=tr.classList.contains('edit-row')?tr.previousElementSibling:tr;if(!row)return;var er=row.nextElementSibling;if(!er||!er.classList.contains('edit-row'))return;var open=er.hasAttribute('hidden');if(open){er.removeAttribute('hidden')}else{er.setAttribute('hidden','')}var t=row.querySelector('.edit-toggle');if(t){t.textContent=open?'取消':'编辑';t.setAttribute('aria-expanded',open?'true':'false')}if(open){var f=er.querySelector('input[name=note]');if(f)try{f.focus()}catch(e){}}}
 function gmDismissFlash(){var f=document.getElementById('gmFlash');if(f)f.remove()}
+/* Docker 自定义路径预览：用户名段固定，自定义路径实时拼接 */
+function gmDockerPathPreview(v){var i=document.getElementById('gmDockerPath'),p=document.getElementById('gmDockerPathPreview');if(!p)return;var o=(i&&i.getAttribute('data-owner'))||'';v=(v||'').replace(/^\/+|\/+$/g,'');p.textContent='docker pull <本服务域名>/'+o+(v?'/'+v:'')+'/library/nginx:1.25'}
 /* 反馈条：清掉 URL 上的 ok/err 参数避免刷新重复提示，并 4 秒后自动淡出 */
 (function(){var f=document.getElementById('gmFlash');if(!f)return;try{var u=new URL(location.href);if(u.searchParams.has('ok')||u.searchParams.has('err')){u.searchParams.delete('ok');u.searchParams.delete('err');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}setTimeout(function(){f.classList.add('out');setTimeout(function(){if(f.parentNode)f.remove()},400)},4000)})();
 /* 弹窗：formId 为空时只作提示（隐藏确认按钮）；有 formId 时确认即提交对应表单 */
 var gmPendingForm=null,gmOkDefault='';
-function gmOpenModal(id,formId,okLabel){var m=document.getElementById(id);if(!m)return;gmPendingForm=formId?document.getElementById(formId):null;var ok=m.querySelector('[data-modal-ok]');if(ok){if(!gmOkDefault)gmOkDefault=ok.textContent;ok.hidden=!gmPendingForm;ok.textContent=okLabel||gmOkDefault}m.removeAttribute('hidden');try{var b=(ok&&!ok.hidden)?ok:m.querySelector('[data-modal-cancel]');if(b)b.focus()}catch(e){}}
-function gmCloseModal(){var ms=document.querySelectorAll('.modal');for(var i=0;i<ms.length;i++)ms[i].setAttribute('hidden','');gmPendingForm=null}
-function gmConfirmModal(){var f=gmPendingForm;gmCloseModal();if(f)if(typeof f.requestSubmit==='function'){f.requestSubmit()}else{f.submit()}}
+function gmOpenModal(id,formId,okLabel){var m=document.getElementById(id);if(!m)return;gmPendingForm=formId?document.getElementById(formId):null;var ok=m.querySelector('[data-modal-ok]');if(ok){if(!gmOkDefault)gmOkDefault=ok.textContent;ok.hidden=!gmPendingForm;ok.textContent=okLabel||gmOkDefault}if(id==='gmDockerModal'){var pi=document.getElementById('gmDockerPath');if(pi)gmDockerPathPreview(pi.value)}m.removeAttribute('hidden');try{var b=(ok&&!ok.hidden)?ok:m.querySelector('[data-modal-cancel]');if(b)b.focus()}catch(e){}}
+/* reset=false 用于「确认提交」路径：提交前不能回滚输入值 */
+function gmCloseModal(reset){var ms=document.querySelectorAll('.modal');for(var i=0;i<ms.length;i++)ms[i].setAttribute('hidden','');gmPendingForm=null;if(reset!==false){var di=document.getElementById('gmDockerPath');if(di){var sv=di.getAttribute('data-saved')||'';di.value=sv;gmDockerPathPreview(sv)}}}
+function gmConfirmModal(){var f=gmPendingForm;gmCloseModal(false);if(f)if(typeof f.requestSubmit==='function'){f.requestSubmit()}else{f.submit()}}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')gmCloseModal()});
 (function(){try{var t=localStorage.getItem('gm_tok');var sels=document.querySelectorAll('.gmtok');if(!sels.length)return;if(!t){return}var hit=false;for(var i=0;i<sels.length;i++){for(var j=0;j<sels[i].options.length;j++){if(sels[i].options[j].value===t){hit=true;break}}if(hit){break}}if(hit){gmApplyToken(t)}else{try{localStorage.removeItem('gm_tok')}catch(e){}}}catch(e){}})();
 function togglePromptExpand(){var t=document.getElementById('agentPromptTerm');var b=document.querySelector('#agentPromptTerm .fold-btn');if(!t||!b)return;var folded=t.classList.toggle('folded');b.textContent=folded?'展开全部':'收起';if(!folded){t.scrollIntoView({behavior:'smooth',block:'nearest'})}}
@@ -669,16 +688,11 @@ const homeTmpl = `
   </div>
 </header>
 
-<div class="alert" style="margin-top:26px">
-  <strong>这是什么？</strong> 在国内或受限网络中拉取 GitHub / Docker Hub / HuggingFace 常常很慢、超时、CI 频繁失败？把 gh-mirror 部署在能顺畅访问这些服务的节点上，对内提供高速回源与本地缓存，浏览器与命令行（curl/wget/docker）通用。
-</div>
-
-<div class="alert" style="margin-top:12px">
-  <strong>它也是 AI Agent 友好型服务</strong>：内置 MCP 服务端，Agent（CodeBuddy / Cursor / Claude 等）可用标准协议直接管理 Token、开关 Docker/HF 加速、调整缓存、转换链接与搜索镜像，无需再手工拼接口。
-</div>
-
 <section class="section" id="features">
   <div class="sec-head"><span class="sec-num">01</span><div><span class="sec-en">Features</span><h2>通用特性</h2></div></div>
+  <div class="alert" style="margin:0 0 18px">
+    <strong>这是什么？</strong> 在国内或受限网络中拉取 GitHub / Docker Hub / HuggingFace 常常很慢、超时、CI 频繁失败？把 gh-mirror 部署在能顺畅访问这些服务的节点上，对内提供高速回源与本地缓存，浏览器与命令行（curl/wget/docker）通用。
+  </div>
   <div class="grid-features">
     <div class="feature">` + tagGH + `<h3>GitHub 全场景加速</h3><p>覆盖 blob/raw、Releases、仓库打包 archive、短链 gh/，支持 Range 断点续传。</p></div>
     <div class="feature">` + tagHF + `<h3>HuggingFace 权重</h3><p>加速模型 / LFS 大文件下载，config.toml 一键开启。</p></div>
@@ -705,7 +719,7 @@ const homeTmpl = `
     </div>
     <div class="svc">
       ` + tagDK + `<h3>Docker 镜像</h3>
-      <p>registry 加速走 <code>/v2</code>（直连，无需 token）；离线 tar 走 <code>/offline/&lt;token&gt;/&lt;镜像&gt;</code> 供 <code>docker load</code>。</p>
+      <p>registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>（无需 token，路径必须带用户名段，后台可再加自定义路径）；离线 tar 走 <code>/offline/&lt;token&gt;/&lt;镜像&gt;</code> 供 <code>docker load</code>。</p>
       <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">/etc/docker/daemon.json</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{ "registry-mirrors": ["{{HOST}}"] }</code></pre></div>
     </div>
   </div>
@@ -733,6 +747,9 @@ curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
 
 <section class="section" id="agent">
   <div class="sec-head"><span class="sec-num">05</span><div><span class="sec-en">AI Agent</span><h2>一键交给 AI Agent 部署</h2></div></div>
+  <div class="alert" style="margin:0 0 16px">
+    <strong>它也是 AI Agent 友好型服务</strong>：内置 MCP 服务端，Agent（CodeBuddy / Cursor / Claude 等）可用标准协议直接管理 Token、开关 Docker/HF 加速、调整缓存、转换链接与搜索镜像，无需再手工拼接口。
+  </div>
   <p class="muted">把下面这段提示词整体复制，交给你的 AI Agent（CodeBuddy / Cursor / Claude 等），它就能照着仓库文档自动完成部署与验证。提示词中的 <code>&lt;你的域名&gt;</code> 是通用占位符，<strong>请先替换为你要部署的实际域名</strong>（或让 Agent 先向你确认）：</p>
   <div class="term folded" id="agentPromptTerm"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">prompt · 默认折叠，展开可见全文</span><button type="button" class="fold-btn" onclick="togglePromptExpand()">展开全部</button><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{{AGENT_PROMPT}}</code></pre></div>
   <p class="muted" style="margin-top:12px">本服务同时支持 <strong>MCP 接入</strong>：AI Agent 可通过标准 MCP 协议直接管理 Token、服务开关与缓存，无需再猜接口。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。提示词内容与仓库 <code>docs/agent-prompt.md</code> 保持一致，随版本更新。</p>
