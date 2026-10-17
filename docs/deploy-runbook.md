@@ -1,6 +1,6 @@
 # gh-mirror 目标机部署 Runbook（EdgeOne 前置 · 最终验证版）
 
-> 目标：把 `yufeng8/gh-mirror`（`feat/hubproxy`）部署为多服务加速网关（Docker 镜像加速 / GitHub 代理 / HuggingFace 权重 / 离线 tar / 镜像搜索）。
+> 目标：把 `yufeng8/gh-mirror` 部署为多服务加速网关（Docker 镜像加速 / GitHub 代理 / HuggingFace 权重 / 离线 tar / 镜像搜索）。
 > 本文按**已验证通过的架构**编写，命令均可直接复制。示例域名用 `git.yufeng.site`，换成你的即可。
 
 ## 架构（重要：域名前置腾讯 EdgeOne）
