@@ -34,17 +34,17 @@ func TestUserStoreDuplicateAndRoles(t *testing.T) {
 	if err := us.Add("alice", "other", RoleNormal); err == nil {
 		t.Fatal("重复用户名应报错")
 	}
-	if err := us.Add("bob", "secret123", ""); err != nil {
+	if err := us.Add("bobby", "secret123", ""); err != nil {
 		t.Fatal(err)
 	}
-	u, _ := us.Get("bob")
+	u, _ := us.Get("bobby")
 	if u.Role != RoleNormal {
 		t.Fatalf("空角色应归一化为 normal，实际 %q", u.Role)
 	}
-	if err := us.UpdateRole("bob", RoleSuper); err != nil {
+	if err := us.UpdateRole("bobby", RoleSuper); err != nil {
 		t.Fatal(err)
 	}
-	if u2, _ := us.Get("bob"); u2.Role != RoleSuper {
+	if u2, _ := us.Get("bobby"); u2.Role != RoleSuper {
 		t.Fatalf("改角色失败，实际 %q", u2.Role)
 	}
 }
@@ -54,7 +54,7 @@ func TestUserStoreDeleteLastSuper(t *testing.T) {
 	if err := us.Add("root", "secret123", RoleSuper); err != nil {
 		t.Fatal(err)
 	}
-	if err := us.Add("bob", "secret123", RoleNormal); err != nil {
+	if err := us.Add("bobby", "secret123", RoleNormal); err != nil {
 		t.Fatal(err)
 	}
 	if err := us.Delete("root"); err == nil {
@@ -77,6 +77,8 @@ func TestValidUsername(t *testing.T) {
 		"admin":        true,
 		"team.a-1":     true,
 		"a":            false, // 太短
+		"ab":           false, // 太短（<4）
+		"abc":          false, // 太短（<4）
 		"":             false,
 		"has space":    false,
 		"中文":           false,

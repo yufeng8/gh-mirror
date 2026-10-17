@@ -58,7 +58,6 @@
   &nbsp;&nbsp;&nbsp;&nbsp;
   <img src="docs/images/mobile-tokens.png" alt="移动端 Token 管理" height="520">
 </p>
-<p align="center"><sub>移动端（393px）：抽屉式导航、Token 卡片式列表、点击「编辑」就地展开表单</sub></p>
 
 ---
 
@@ -79,7 +78,7 @@
 - 🔒 **访问可控**：Token 鉴权（默认开启）+ IP（CIDR）/ 仓库（通配符）黑白名单 + 令牌桶限流（IPv6 按 `/64` 归并）。
 - 💾 **真磁盘缓存**：Layer / 文件落盘，命中直接返回 `X-Cache: HIT`；缓存总量、单文件上限、TTL 都能在后台热改，超限与磁盘余量不足自动按最旧优先清理。
 - 🤖 **AI Agent 友好**：内置 MCP 服务端（`POST /mcp` 与 `gh-mirror mcp` stdio），12 个工具覆盖 Token、服务开关、缓存、链接转换、镜像搜索。
-- 🎛️ **后台可视化**：服务状态、统计、链接转换、Token 管理、MCP 接入、缓存管理全在网页里，开关即时生效并持久化到 `gm-data/settings.json`。
+- 🎛️ **后台可视化**：服务状态、统计、链接转换、Token 管理、MCP 接入、缓存管理全在网页里，开关即时生效并持久化到 `gm-data/settings.json`；适配移动端（393px）——抽屉式导航、Token 卡片式列表、点击「编辑」就地展开表单。
 
 ---
 
