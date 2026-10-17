@@ -34,6 +34,9 @@ type settings struct {
 	ContactEmail string     `json:"contactEmail"` // 超管联系邮箱（忘记密码引导 / 用户紧急联系）
 	SMTP         smtpConfig `json:"smtp"`         // SMTP 发信配置（注册/找回密码验证码）
 	RegOpen      bool       `json:"regOpen"`      // 用户自主注册开关
+	UserCaptcha  bool       `json:"userCaptcha"`  // 用户入口（登录+注册）图形验证码开关
+	AdminCaptcha bool       `json:"adminCaptcha"` // 管理入口登录图形验证码开关
+	InviteOnly   bool       `json:"inviteOnly"`   // 仅邀请码注册开关
 }
 
 // normDockerPath 规范化 Docker 自定义路径：去首尾与重复斜杠，只允许 [A-Za-z0-9-_/]，最长 64 字符。
@@ -108,6 +111,9 @@ func loadSettings(s *Server, cfg *config.Config) {
 	s.contactEmailStr = st.ContactEmail
 	s.smtpCfg = st.SMTP
 	s.regOpen = st.RegOpen
+	s.userCaptcha = st.UserCaptcha
+	s.adminCaptcha = st.AdminCaptcha
+	s.inviteOnly = st.InviteOnly
 	s.svcMu.Unlock()
 	if migrated {
 		s.saveSettings()
@@ -141,6 +147,9 @@ func (s *Server) currentSettings() settings {
 	st.ContactEmail = s.contactEmailStr
 	st.SMTP = s.smtpCfg
 	st.RegOpen = s.regOpen
+	st.UserCaptcha = s.userCaptcha
+	st.AdminCaptcha = s.adminCaptcha
+	st.InviteOnly = s.inviteOnly
 	s.svcMu.RUnlock()
 	st.Cache.MaxFileMB = int(s.cache.MaxBytes() / (1024 * 1024))
 	st.Cache.MaxTotalMB = int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -238,14 +247,38 @@ func (s *Server) setOfflinePurge(autoPurge bool, purgeFreeGB int) {
 	s.saveSettings()
 }
 
-// setPortalSettings 保存 SMTP 配置、注册开关与联系邮箱（热生效 + 持久化）。
-func (s *Server) setPortalSettings(cfg smtpConfig, regOpen bool, contactEmail string) {
+// setPortalSettings 保存 SMTP 配置、注册开关、联系邮箱与图形验证码/邀请码开关（热生效 + 持久化）。
+func (s *Server) setPortalSettings(cfg smtpConfig, regOpen bool, contactEmail string, userCaptcha, adminCaptcha, inviteOnly bool) {
 	s.svcMu.Lock()
 	s.smtpCfg = cfg
 	s.regOpen = regOpen
 	s.contactEmailStr = strings.TrimSpace(contactEmail)
+	s.userCaptcha = userCaptcha
+	s.adminCaptcha = adminCaptcha
+	s.inviteOnly = inviteOnly
 	s.svcMu.Unlock()
 	s.saveSettings()
+}
+
+// userCaptchaEnabled 返回用户入口图形验证码开关状态。
+func (s *Server) userCaptchaEnabled() bool {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.userCaptcha
+}
+
+// adminCaptchaEnabled 返回管理入口图形验证码开关状态。
+func (s *Server) adminCaptchaEnabled() bool {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.adminCaptcha
+}
+
+// inviteOnlyEnabled 返回仅邀请码注册开关状态。
+func (s *Server) inviteOnlyEnabled() bool {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.inviteOnly
 }
 
 // smtpSettings 返回当前 SMTP 配置。

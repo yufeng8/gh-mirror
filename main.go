@@ -44,7 +44,12 @@ type Server struct {
 	contactEmailStr    string // 超管联系邮箱（忘记密码引导 / 用户紧急联系展示）
 	smtpCfg            smtpConfig // SMTP 发信配置（持 svcMu）
 	regOpen            bool       // 用户自主注册开关（持 svcMu）
-	codes              *CodeStore // 邮箱验证码存储（内存）
+	userCaptcha        bool       // 用户入口图形验证码开关（持 svcMu）
+	adminCaptcha       bool       // 管理入口图形验证码开关（持 svcMu）
+	inviteOnly         bool       // 仅邀请码注册开关（持 svcMu）
+	codes              *CodeStore    // 邮箱验证码存储（内存）
+	captcha            *CaptchaStore // 图形验证码存储（内存）
+	invites            *InviteStore  // 邀请码存储（invites.json）
 }
 
 // processStart 记录进程启动时间，用于后台展示运行时长。
@@ -111,6 +116,7 @@ func main() {
 	// 用户表与 tokens.json 同目录：ADMIN_USER/ADMIN_PASS 作为「初始超级管理员」种子迁移进用户表，
 	// 之后账号管理完全走 users.json（ADMIN_PASS 只在首次启动时用于创建种子账号）。
 	users := NewUserStore(filepath.Join(filepath.Dir(cfg.TokensFile), "users.json"))
+	invites := NewInviteStore(filepath.Join(filepath.Dir(cfg.TokensFile), "invites.json"))
 	if !users.Has(adminUser) {
 		if err := users.Add(adminUser, adminPass, RoleSuper); err != nil {
 			log.Printf("⚠️ 初始化超级管理员账号失败: %v（ADMIN_USER 需 4-32 位字母数字._-）", err)
@@ -156,6 +162,8 @@ func main() {
 		dockerOn:     cfg.Docker.Enabled,
 		hfOn:         cfg.HF.Enabled,
 		codes:        NewCodeStore(),
+		captcha:      NewCaptchaStore(),
+		invites:      invites,
 	}
 	// 运行时设置（gm-data/settings.json）优先级最高：覆盖 config.toml / 环境变量的开关与缓存参数
 	loadSettings(s, cfg)
@@ -262,6 +270,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	case path == "/healthz":
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
+	case path == "/captcha":
+		s.handleCaptcha(w, r)
+	case path == "/captcha/new":
+		s.handleCaptchaNew(w, r)
 	case path == "/":
 		s.renderHome(w, r)
 	case strings.HasPrefix(path, s.adminPath):

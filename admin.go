@@ -290,6 +290,30 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.doSetPortalSettings(w, r)
+	case sub == "invite/generate":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doInviteGenerate(w, r)
+	case sub == "invite/add":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doInviteAddCustom(w, r)
+	case sub == "invite/batch":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doInviteBatch(w, r)
+	case sub == "invite/export":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doInviteExport(w, r)
 	default:
 		s.render404(w, r)
 	}
@@ -375,6 +399,10 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 // doAdminLogin 超管入口登录：仅接受超级管理员角色（普通用户登录被拒）。
 func (s *Server) doAdminLogin(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
+	if s.adminCaptchaEnabled() && !s.captcha.Verify(r.FormValue("captchaId"), r.FormValue("captcha")) {
+		s.renderLogin(w, r, "图形验证码错误或已过期")
+		return
+	}
 	user := r.FormValue("user")
 	pass := r.FormValue("pass")
 	if s.users.Verify(user, pass) {
@@ -392,6 +420,10 @@ func (s *Server) doAdminLogin(w http.ResponseWriter, r *http.Request) {
 // doUserLogin 普通入口登录：接受所有用户（super 也可登录体验普通视图）。
 func (s *Server) doUserLogin(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
+	if s.userCaptchaEnabled() && !s.captcha.Verify(r.FormValue("captchaId"), r.FormValue("captcha")) {
+		s.renderLogin(w, r, "图形验证码错误或已过期")
+		return
+	}
 	user := r.FormValue("user")
 	pass := r.FormValue("pass")
 	if s.users.Verify(user, pass) {
@@ -489,9 +521,14 @@ func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg stri
 	if isUser && s.regEnabled() {
 		regEntry = `<p class="muted note">还没有账号？<a href="` + s.userPath + `/register">注册新账号</a></p>`
 	}
+	// 图形验证码：按入口开关显隐（用户入口 userCaptcha / 管理入口 adminCaptcha）
+	captchaBlock := ""
+	if (isUser && s.userCaptchaEnabled()) || (!isUser && s.adminCaptchaEnabled()) {
+		captchaBlock = s.captchaHTML()
+	}
 	// 只 Sprintf body 片段（loginBody 无 CSS 的 %），再用 pageApp() 全幅包裹（分屏登录）
-	// 动词顺序：sub（身份） / action（入口地址） / err / forgot（忘记密码块） / regEntry（注册入口）
-	body := fmt.Sprintf(loginBody, sub, s.entryBase(r), html.EscapeString(errMsg), forgot, regEntry)
+	// 动词顺序：sub（身份） / action（入口地址） / err / captcha / forgot（忘记密码块） / regEntry（注册入口）
+	body := fmt.Sprintf(loginBody, sub, s.entryBase(r), html.EscapeString(errMsg), captchaBlock, forgot, regEntry)
 	_, _ = w.Write([]byte(pageApp("登录 - gh-mirror", desc, body)))
 }
 
@@ -539,7 +576,16 @@ func userForgotHTML(userPath, contactEmail string) string {
 // renderRegisterPage 渲染用户自主注册页（/user/register，注册开关开启时可达）。
 func (s *Server) renderRegisterPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	body := fmt.Sprintf(registerBody, s.flashHTML(r), s.userPath, s.userPath, s.userPath)
+	captchaBlock := ""
+	if s.userCaptchaEnabled() {
+		captchaBlock = s.captchaHTML()
+	}
+	inviteBlock := ""
+	if s.inviteOnlyEnabled() {
+		inviteBlock = `<label for="invite">邀请码</label>` +
+			`<input id="invite" name="invite" placeholder="请输入邀请码（注册必填）" required autocomplete="off">`
+	}
+	body := fmt.Sprintf(registerBody, s.flashHTML(r), s.userPath, inviteBlock, s.userPath, captchaBlock, s.userPath)
 	_, _ = w.Write([]byte(pageApp("注册 - gh-mirror", "注册 gh-mirror 用户后台", body)))
 }
 
@@ -1225,29 +1271,41 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 	users := s.users.All()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	body := fmt.Sprintf(usersBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.userRows(users, csrf, user), s.userAddForm(csrf), s.portalSettingsHTML(csrf))
+		s.userRows(users, csrf, user), s.userAddForm(csrf), s.portalSettingsHTML(csrf), s.inviteSectionHTML(csrf))
 	_, _ = w.Write([]byte(pageApp("用户管理 - gh-mirror", "gh-mirror 用户管理", body)))
 }
 
 // portalSettingsHTML 渲染用户管理页下方的「用户注册与邮箱」设置区（SMTP + 注册开关 + 联系邮箱，仅超管）。
 func (s *Server) portalSettingsHTML(csrf string) string {
 	cfg := s.smtpSettings()
-	tlsChecked, regChecked := "", ""
+	tlsChecked, regChecked, inviteChecked, userCapChecked, adminCapChecked := "", "", "", "", ""
 	if cfg.TLS {
 		tlsChecked = " checked"
 	}
 	if s.regEnabled() {
 		regChecked = " checked"
 	}
+	if s.inviteOnlyEnabled() {
+		inviteChecked = " checked"
+	}
+	if s.userCaptchaEnabled() {
+		userCapChecked = " checked"
+	}
+	if s.adminCaptchaEnabled() {
+		adminCapChecked = " checked"
+	}
 	port := ""
 	if cfg.Port > 0 {
 		port = strconv.Itoa(cfg.Port)
 	}
 	return `<section class="card">
-  <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">开启后用户可邮箱验证码自主注册、找回密码</span></div>
+  <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">注册开关 / 图形验证码 / 联系邮箱</span></div>
   <form method="post" action="` + s.adminPath + `/portal-settings" class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap;gap:12px">
     <input type="hidden" name="csrf" value="` + csrf + `">
     <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="regOpen" value="1"` + regChecked + `> 开启用户注册</label>
+    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="inviteOnly" value="1"` + inviteChecked + `> 仅邀请码注册</label>
+    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="userCaptcha" value="1"` + userCapChecked + `> 用户入口图形验证码</label>
+    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="adminCaptcha" value="1"` + adminCapChecked + `> 管理入口图形验证码</label>
     <label class="fld">联系邮箱<input name="contactEmail" type="email" value="` + html.EscapeString(s.contactEmail()) + `" placeholder="用于用户紧急联系与找回密码引导"></label>
     <button type="submit" class="btn">保存</button>
   </form>
@@ -1263,6 +1321,81 @@ func (s *Server) portalSettingsHTML(csrf string) string {
     <button type="submit" class="btn">保存邮箱设置</button>
   </form>
   <p class="muted small" style="margin-top:10px">SMTP 凭据保存在 <code>gm-data/settings.json</code>（文件权限 0600）。开启注册后用户可凭邮箱验证码自主注册普通账号；关闭后注册入口隐藏，但已有账号与找回密码不受影响。超级管理员密码无法通过邮箱找回。</p>
+</section>`
+}
+
+// inviteSectionHTML 渲染用户管理页下方的「邀请码管理」区（仅超管）：生成/自定义/导出/删除/备注/有效期 + 使用追踪。
+func (s *Server) inviteSectionHTML(csrf string) string {
+	invites := s.invites.List()
+	var rows strings.Builder
+	for _, inv := range invites {
+		expireTxt := "永久"
+		if inv.ExpireAt > 0 {
+			expireTxt = time.Unix(inv.ExpireAt, 0).Format("2006-01-02 15:04")
+		}
+		stateCls, stateTxt, usedTxt := "badge on", "● 未使用", "—"
+		if inv.Used {
+			stateCls, stateTxt = "badge off", "○ 已使用"
+			usedTxt = html.EscapeString(inv.UsedBy) + " · " + time.Unix(inv.UsedAt, 0).Format("2006-01-02 15:04")
+		}
+		note := inv.Note
+		if note == "" {
+			note = "—"
+		}
+		rows.WriteString(`<tr class="tok-row">` +
+			`<td data-label="选择"><input type="checkbox" name="code" value="` + html.EscapeString(inv.Code) + `" aria-label="选择邀请码"></td>` +
+			`<td data-label="邀请码"><code>` + html.EscapeString(inv.Code) + `</code></td>` +
+			`<td data-label="备注">` + html.EscapeString(note) + `</td>` +
+			`<td data-label="有效期">` + expireTxt + `</td>` +
+			`<td data-label="状态"><span class="` + stateCls + `">` + stateTxt + `</span></td>` +
+			`<td data-label="使用者/激活时间">` + usedTxt + `</td>` +
+			`<td data-label="创建时间">` + time.Unix(inv.CreatedAt, 0).Format("2006-01-02 15:04") + `</td></tr>`)
+	}
+	if len(invites) == 0 {
+		rows.WriteString(`<tr><td colspan="7" class="muted">暂无邀请码</td></tr>`)
+	}
+	return `<section class="card">
+  <div class="card-head"><h2>邀请码管理</h2><span class="muted small">批量生成 / 自定义 / 导出 / 备注 / 有效期</span></div>
+  <div class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap;gap:12px">
+    <form method="post" action="` + s.adminPath + `/invite/generate" class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <input type="hidden" name="csrf" value="` + csrf + `">
+      <label class="fld">数量<input name="count" type="number" min="1" max="10000" value="10" style="width:80px"></label>
+      <label class="fld">备注<input name="note" placeholder="批量备注（可选）"></label>
+      <label class="fld">有效期(天,0=永久)<input name="days" type="number" min="0" value="0" style="width:80px"></label>
+      <label class="fld">导出格式<input name="format" value="{code}" style="width:130px"></label>
+      <button type="submit" class="btn">批量生成并下载</button>
+    </form>
+    <form method="post" action="` + s.adminPath + `/invite/add" class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <input type="hidden" name="csrf" value="` + csrf + `">
+      <label class="fld">自定义邀请码<input name="code" placeholder="6-64 位字母数字"></label>
+      <label class="fld">备注<input name="note" placeholder="备注（可选）"></label>
+      <label class="fld">有效期(天,0=永久)<input name="days" type="number" min="0" value="0" style="width:80px"></label>
+      <button type="submit" class="btn outline">添加</button>
+    </form>
+  </div>
+  <form method="post" action="` + s.adminPath + `/invite/batch" style="margin-top:16px">
+    <input type="hidden" name="csrf" value="` + csrf + `">
+    <div class="table-wrap"><table class="tok-table">
+      <thead><tr><th><input type="checkbox" onclick="var c=document.querySelectorAll('input[name=code]');for(var i=0;i<c.length;i++)c[i].checked=this.checked" aria-label="全选"></th><th>邀请码</th><th>备注</th><th>有效期</th><th>状态</th><th>使用者/激活时间</th><th>创建时间</th></tr></thead>
+      <tbody>` + rows.String() + `</tbody>
+    </table></div>
+    <div class="row" style="margin-top:12px;gap:8px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="btn outline" onclick="var c=document.querySelectorAll('input[name=code]');for(var i=0;i<c.length;i++)c[i].checked=true">全选</button>
+      <button type="button" class="btn outline" onclick="var c=document.querySelectorAll('input[name=code]');for(var i=0;i<c.length;i++)c[i].checked=!c[i].checked">反选</button>
+      <button type="submit" class="danger" name="op" value="delete" onclick="return confirm('确定删除选中的邀请码？')">删除选中</button>
+      <input name="note" placeholder="给选中批量打备注">
+      <button type="submit" class="btn outline" name="op" value="note">批量备注</button>
+      <input name="days" type="number" min="0" placeholder="有效期(天,0=永久)" style="width:130px">
+      <button type="submit" class="btn outline" name="op" value="expire">批量设有效期</button>
+    </div>
+  </form>
+  <form method="post" action="` + s.adminPath + `/invite/export" class="row" style="margin-top:14px;gap:8px;align-items:flex-end;flex-wrap:wrap">
+    <input type="hidden" name="csrf" value="` + csrf + `">
+    <label class="fld" style="flex:1;min-width:260px">导出格式<input name="format" value="{code}" placeholder="占位符：{code} {note} {expire} {used} {used_by} {used_at} {created_at}"></label>
+    <label class="fld">导出时批量打备注<input name="note" placeholder="可选（应用到全部）"></label>
+    <button type="submit" class="btn">导出全部为文本</button>
+  </form>
+  <p class="muted small" style="margin-top:10px">邀请码为一次性：用户注册使用后标记为「已使用」并记录使用者与激活时间。导出格式支持占位符 <code>{code}</code> <code>{note}</code> <code>{expire}</code> <code>{used}</code> <code>{used_by}</code> <code>{used_at}</code> <code>{created_at}</code>；填写「导出时批量打备注」会先给选中码统一打备注再导出。</p>
 </section>`
 }
 
@@ -1519,6 +1652,10 @@ var flashOK = map[string]string{
 	"offline_purge_saved": "离线包自动清理设置已保存",
 	"portal_saved":       "注册与邮箱设置已保存",
 	"password_reset":     "密码已重置，请用新密码登录",
+	"invite_added":       "自定义邀请码已添加",
+	"invite_deleted":     "邀请码已删除",
+	"invite_noted":       "邀请码备注已更新",
+	"invite_expired":     "邀请码有效期已更新",
 }
 
 var flashErr = map[string]string{
@@ -1533,6 +1670,7 @@ var flashErr = map[string]string{
 	"user_role_failed": "不能降级最后一个超级管理员",
 	"svc_off":       "Docker 加速未开启，请联系超级管理员开启对应服务后再设置",
 	"bad_code":        "验证码错误或已过期",
+	"bad_captcha":     "图形验证码错误或已过期",
 	"reset_super":     "超级管理员密码无法通过邮箱重置，只能由服务器后台修改",
 	"reset_failed":    "重置失败，请检查邮箱是否正确",
 	"reg_closed":      "注册未开放",
@@ -1540,6 +1678,9 @@ var flashErr = map[string]string{
 	"username_taken":  "用户名已被占用，请换一个",
 	"email_taken":     "该邮箱已被注册",
 	"register_failed": "注册失败，请稍后重试",
+	"invite_gen_failed":   "批量生成失败（数量需在 1-10000 之间）",
+	"invite_add_failed":   "添加邀请码失败（需 6-64 位字母数字且不重复）",
+	"invite_invalid":      "邀请码无效、已使用或已过期",
 }
 
 // flashHTML 渲染一次性操作反馈条（保存 / 创建 / 开关等操作后的即时提示）。
@@ -1828,9 +1969,150 @@ func (s *Server) doSetPortalSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	regOpen := r.FormValue("regOpen") == "1" || strings.EqualFold(r.FormValue("regOpen"), "true") || strings.EqualFold(r.FormValue("regOpen"), "on")
 	contactEmail := r.FormValue("contactEmail")
-	s.setPortalSettings(cfg, regOpen, contactEmail)
-	log.Printf("门户设置已保存: regOpen=%v contactEmail=%q smtp=%s:%d tls=%v", regOpen, contactEmail, cfg.Host, cfg.Port, cfg.TLS)
+	userCaptcha := r.FormValue("userCaptcha") == "1" || strings.EqualFold(r.FormValue("userCaptcha"), "true") || strings.EqualFold(r.FormValue("userCaptcha"), "on")
+	adminCaptcha := r.FormValue("adminCaptcha") == "1" || strings.EqualFold(r.FormValue("adminCaptcha"), "true") || strings.EqualFold(r.FormValue("adminCaptcha"), "on")
+	inviteOnly := r.FormValue("inviteOnly") == "1" || strings.EqualFold(r.FormValue("inviteOnly"), "true") || strings.EqualFold(r.FormValue("inviteOnly"), "on")
+	s.setPortalSettings(cfg, regOpen, contactEmail, userCaptcha, adminCaptcha, inviteOnly)
+	log.Printf("门户设置已保存: regOpen=%v userCaptcha=%v adminCaptcha=%v inviteOnly=%v contactEmail=%q smtp=%s:%d tls=%v",
+		regOpen, userCaptcha, adminCaptcha, inviteOnly, contactEmail, cfg.Host, cfg.Port, cfg.TLS)
 	http.Redirect(w, r, s.adminPath+"/users?ok=portal_saved", http.StatusFound)
+}
+
+// daysToExpire 把「有效期天数」转 unix 时间戳（<=0 返回 0 = 永久）。
+func daysToExpire(days int) int64 {
+	if days <= 0 {
+		return 0
+	}
+	return time.Now().AddDate(0, 0, days).Unix()
+}
+
+// doInviteGenerate 批量生成邀请码并直接下载（按格式导出），仅超管。
+func (s *Server) doInviteGenerate(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	count := 10
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("count"))); err == nil && v > 0 && v <= 10000 {
+		count = v
+	}
+	note := strings.TrimSpace(r.FormValue("note"))
+	days := 0
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("days"))); err == nil {
+		days = v
+	}
+	format := strings.TrimSpace(r.FormValue("format"))
+	if format == "" {
+		format = "{code}"
+	}
+	codes, err := s.invites.Generate(count, note, daysToExpire(days))
+	if err != nil {
+		http.Redirect(w, r, s.adminPath+"/users?err=invite_gen_failed", http.StatusFound)
+		return
+	}
+	log.Printf("批量生成邀请码 %d 条（备注=%q 有效期=%d天）", count, note, days)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="invite-codes.txt"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(s.invites.Export(codes, format)))
+}
+
+// doInviteAddCustom 添加自定义邀请码，仅超管。
+func (s *Server) doInviteAddCustom(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("code"))
+	note := strings.TrimSpace(r.FormValue("note"))
+	days := 0
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("days"))); err == nil {
+		days = v
+	}
+	if err := s.invites.AddCustom(code, note, daysToExpire(days)); err != nil {
+		http.Redirect(w, r, s.adminPath+"/users?err=invite_add_failed", http.StatusFound)
+		return
+	}
+	log.Printf("已添加自定义邀请码: %s", code)
+	http.Redirect(w, r, s.adminPath+"/users?ok=invite_added", http.StatusFound)
+}
+
+// doInviteBatch 批量操作（delete/note/expire），仅超管。
+func (s *Server) doInviteBatch(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	op := r.FormValue("op")
+	codes := r.PostForm["code"]
+	switch op {
+	case "delete":
+		s.invites.Delete(codes)
+		http.Redirect(w, r, s.adminPath+"/users?ok=invite_deleted", http.StatusFound)
+	case "note":
+		s.invites.SetNote(codes, strings.TrimSpace(r.FormValue("note")))
+		http.Redirect(w, r, s.adminPath+"/users?ok=invite_noted", http.StatusFound)
+	case "expire":
+		days := 0
+		if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("days"))); err == nil {
+			days = v
+		}
+		s.invites.SetExpire(codes, daysToExpire(days))
+		http.Redirect(w, r, s.adminPath+"/users?ok=invite_expired", http.StatusFound)
+	default:
+		http.Redirect(w, r, s.adminPath+"/users?err=bad_input", http.StatusFound)
+	}
+}
+
+// doInviteExport 导出邀请码（未指定 code 时导出全部；可选批量打备注），仅超管。
+func (s *Server) doInviteExport(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	format := strings.TrimSpace(r.FormValue("format"))
+	if format == "" {
+		format = "{code}"
+	}
+	note := strings.TrimSpace(r.FormValue("note"))
+	codes := r.PostForm["code"]
+	if len(codes) == 0 {
+		for _, inv := range s.invites.List() {
+			codes = append(codes, inv.Code)
+		}
+	}
+	if note != "" {
+		s.invites.SetNote(codes, note)
+	}
+	out := s.invites.Export(codes, format)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="invite-codes.txt"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(out))
 }
 
 // jsonResp 通用 JSON 响应（验证码发送等 AJAX 接口）。
@@ -1887,6 +2169,10 @@ func (s *Server) doRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
+	if s.userCaptchaEnabled() && !s.captcha.Verify(r.FormValue("captchaId"), r.FormValue("captcha")) {
+		http.Redirect(w, r, s.userPath+"/register?err=bad_captcha", http.StatusFound)
+		return
+	}
 	username := strings.TrimSpace(r.FormValue("username"))
 	email := strings.TrimSpace(r.FormValue("email"))
 	code := strings.TrimSpace(r.FormValue("code"))
@@ -1908,6 +2194,14 @@ func (s *Server) doRegister(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, s.userPath+"/register?err=register_failed", http.StatusFound)
 		}
 		return
+	}
+	// 仅邀请码模式：注册后消耗邀请码（失败则回滚删除刚创建的用户）
+	if s.inviteOnlyEnabled() {
+		if !s.invites.Claim(r.FormValue("invite"), username) {
+			_ = s.users.Delete(username)
+			http.Redirect(w, r, s.userPath+"/register?err=invite_invalid", http.StatusFound)
+			return
+		}
 	}
 	s.setSessionCookie(w, userSessionCookie, username)
 	log.Printf("用户注册成功: %s (%s)", username, email)
