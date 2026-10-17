@@ -55,10 +55,11 @@
 </table>
 
 <p align="center">
-  <img src="docs/images/mobile-home.png" alt="移动端首页" width="31%" style="vertical-align:top">
-  <img src="docs/images/mobile-tokens.png" alt="移动端 Token 管理" width="31%" style="vertical-align:top">
+  <img src="docs/images/mobile-home.png" alt="移动端首页" height="520">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/images/mobile-tokens.png" alt="移动端 Token 管理" height="520">
 </p>
-<p align="center"><sub>移动端（393px）：抽屉式导航、Token 卡片式列表、点击编辑就地展开表单</sub></p>
+<p align="center"><sub>移动端（393px）：抽屉式导航、Token 卡片式列表、点击「编辑」就地展开表单</sub></p>
 
 ---
 
