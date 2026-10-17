@@ -297,13 +297,36 @@ func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.offlineCache.MarkBuilding(digest, image, ref)
+	// 离线包单文件上限：按 manifest（config + layers）预估大小，超限则不落盘缓存（仅实时流式下载）
+	estSize := mf.Config.Size
+	for _, ly := range mf.Layers {
+		estSize += ly.Size
+	}
+	cacheIt := s.offlineMaxFileBytes() <= 0 || estSize <= s.offlineMaxFileBytes()
+	if cacheIt {
+		s.offlineCache.MarkBuilding(digest, image, ref)
+	}
 
 	// 先取 config（写头与落盘之前完成，避免半途失败）
 	cfgBytes, err := s.fetchBlob(r, m, repo, mf.Config.Digest, token)
 	if err != nil {
-		s.offlineCache.MarkFailed(digest)
+		if cacheIt {
+			s.offlineCache.MarkFailed(digest)
+		}
 		http.Error(w, "获取镜像 config 失败", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeName(repoTag)+`.tar"`)
+	w.WriteHeader(http.StatusOK)
+
+	if !cacheIt {
+		// 超过单文件上限：仅实时流式下载，不写缓存
+		log.Printf("offline: %s 预估大小 %s 超过单文件上限，不缓存", image, formatBytes(estSize))
+		if err := s.buildOfflineTar(w, r, m, repo, ref, token, mf, cfgBytes); err != nil {
+			log.Printf("offline: 打包 %s 失败: %v", image, err)
+		}
 		return
 	}
 
@@ -314,9 +337,6 @@ func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "创建缓存文件失败", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/x-tar")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeName(repoTag)+`.tar"`)
-	w.WriteHeader(http.StatusOK)
 	// 同时写响应与缓存临时文件
 	if err := s.buildOfflineTar(io.MultiWriter(w, tmp), r, m, repo, ref, token, mf, cfgBytes); err != nil {
 		tmp.Close()

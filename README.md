@@ -354,7 +354,9 @@ curl -L -o app.zip "https://mirror.example.com/g/<用户名>/<token>/https://git
 docker pull mirror.example.com/admin/library/nginx:1.25
 ```
 
-> 因为路径带前缀，`registry-mirrors` **不再适用**（docker daemon 不支持带路径的 mirror）。这种「用户名 + 自定义路径」的写法则相当于给 `/v2` 加了一道只有知道路径才能用的保护，也为多用户各自独立路径预留了规则。
+> 因为路径带前缀，`registry-mirrors` **不再适用**（docker daemon 不支持带路径的 mirror）。`docker pull` 命令里**不用手写 `/v2/`**（客户端自动补全），服务端完整路径为 `/v2/<用户名>[/<自定义路径>]/…`。
+>
+> **鉴权模型**：registry 拉取走 Docker 协议透传，**不校验 Token**——「用户名段 + 自定义路径」本身就是凭证（只有知道路径才能用）；只有 **`/offline` 离线包**才做 `<用户名>/<token>` 双重校验。
 
 多 Registry（GHCR/Quay/GCR/k8s 等）用域名前缀形式（用户名段在最前）：
 

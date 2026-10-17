@@ -30,6 +30,7 @@ type settings struct {
 	Offline struct {
 		AutoPurge   bool `json:"autoPurge"`   // 离线包磁盘满自动清理开关（默认关）
 		PurgeFreeGB int  `json:"purgeFreeGB"` // 触发阈值：磁盘可用低于该 GB 数时清理
+		MaxFileMB   int  `json:"maxFileMB"`   // 离线包单文件上限（MB），超过则不落盘缓存（仅实时下载），0 = 不限
 	} `json:"offline"`
 	ContactEmail string     `json:"contactEmail"` // 超管联系邮箱（忘记密码引导 / 用户紧急联系）
 	SMTP         smtpConfig `json:"smtp"`         // SMTP 发信配置（注册/找回密码验证码）
@@ -108,6 +109,7 @@ func loadSettings(s *Server, cfg *config.Config) {
 	s.dockerPrefix = st.DockerPath
 	s.offlineAutoPurge = st.Offline.AutoPurge
 	s.offlinePurgeFreeGB = st.Offline.PurgeFreeGB
+	s.offlineMaxFileMB = st.Offline.MaxFileMB
 	s.contactEmailStr = st.ContactEmail
 	s.smtpCfg = st.SMTP
 	s.regOpen = st.RegOpen
@@ -144,6 +146,7 @@ func (s *Server) currentSettings() settings {
 	st := settings{Docker: s.dockerOn, HF: s.hfOn, DockerPath: s.dockerPrefix}
 	st.Offline.AutoPurge = s.offlineAutoPurge
 	st.Offline.PurgeFreeGB = s.offlinePurgeFreeGB
+	st.Offline.MaxFileMB = s.offlineMaxFileMB
 	st.ContactEmail = s.contactEmailStr
 	st.SMTP = s.smtpCfg
 	st.RegOpen = s.regOpen
@@ -235,16 +238,30 @@ func (s *Server) dockerV2PrefixFor(user string) string {
 	return owner
 }
 
-// setOfflinePurge 设置离线包磁盘满自动清理开关与阈值（热生效 + 持久化）。
-func (s *Server) setOfflinePurge(autoPurge bool, purgeFreeGB int) {
+// setOfflinePurge 设置离线包磁盘满自动清理开关、阈值与单文件上限（热生效 + 持久化）。
+func (s *Server) setOfflinePurge(autoPurge bool, purgeFreeGB, maxFileMB int) {
 	s.svcMu.Lock()
 	s.offlineAutoPurge = autoPurge
 	if purgeFreeGB < 0 {
 		purgeFreeGB = 0
 	}
 	s.offlinePurgeFreeGB = purgeFreeGB
+	if maxFileMB < 0 {
+		maxFileMB = 0
+	}
+	s.offlineMaxFileMB = maxFileMB
 	s.svcMu.Unlock()
 	s.saveSettings()
+}
+
+// offlineMaxFileBytes 返回离线包单文件上限（字节；0 表示不限制）。
+func (s *Server) offlineMaxFileBytes() int64 {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	if s.offlineMaxFileMB <= 0 {
+		return 0
+	}
+	return int64(s.offlineMaxFileMB) * 1024 * 1024
 }
 
 // setPortalSettings 保存 SMTP 配置、注册开关、联系邮箱与图形验证码/邀请码开关（热生效 + 持久化）。
