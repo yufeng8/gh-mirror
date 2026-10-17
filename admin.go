@@ -52,17 +52,17 @@ func (s *Server) parseSession(r *http.Request) (sid, user, role string, ok bool)
 	if err != nil {
 		return "", "", "", false
 	}
-	parts := strings.SplitN(c.Value, ".", 4)
-	if len(parts) != 4 {
+	parts := strings.SplitN(c.Value, ".", 5)
+	if len(parts) != 5 {
 		return "", "", "", false
 	}
 	mac := hmac.New(sha256.New, s.secret)
-	mac.Write([]byte(cookieName + ":" + parts[0] + "." + parts[1] + "." + parts[2]))
+	mac.Write([]byte(cookieName + ":" + parts[0] + "." + parts[1] + "." + parts[2] + "." + parts[3]))
 	sig := hex.EncodeToString(mac.Sum(nil))
-	if subtle.ConstantTimeCompare([]byte(sig), []byte(parts[3])) != 1 {
+	if subtle.ConstantTimeCompare([]byte(sig), []byte(parts[4])) != 1 {
 		return "", "", "", false
 	}
-	exp, err := strconv.ParseInt(parts[2], 10, 64)
+	exp, err := strconv.ParseInt(parts[3], 10, 64)
 	if err != nil {
 		return "", "", "", false
 	}
@@ -76,6 +76,10 @@ func (s *Server) parseSession(r *http.Request) (sid, user, role string, ok bool)
 	username := string(ub)
 	u, exists := s.users.Get(username)
 	if !exists {
+		return "", "", "", false
+	}
+	// 密码版本校验：改密后旧会话全部失效（找回密码 / 重置密码后强制重新登录）
+	if len(u.PassHash) < 8 || subtle.ConstantTimeCompare([]byte(u.PassHash[:8]), []byte(parts[2])) != 1 {
 		return "", "", "", false
 	}
 	return parts[0], username, u.Role, true
@@ -99,14 +103,19 @@ func (s *Server) requireSuper(r *http.Request) bool {
 	return ok && role == RoleSuper
 }
 
-// signSession 生成带随机 sid、用户名、过期时间与 HMAC 签名的会话值。
+// signSession 生成带随机 sid、用户名、密码版本、过期时间与 HMAC 签名的会话值。
 // cookieName 参与签名（domain separation），超管/普通入口的会话值不可互换。
+// 密码版本（PassHash 前 8 位）使改密后旧会话全部失效。
 func (s *Server) signSession(user, cookieName string) string {
 	buf := make([]byte, 16)
 	_, _ = rand.Read(buf)
 	sid := hex.EncodeToString(buf)
 	exp := time.Now().Add(sessionMaxAge * time.Second).Unix()
-	payload := sid + "." + base64.RawURLEncoding.EncodeToString([]byte(user)) + "." + strconv.FormatInt(exp, 10)
+	passVer := ""
+	if u, ok := s.users.Get(user); ok && len(u.PassHash) >= 8 {
+		passVer = u.PassHash[:8]
+	}
+	payload := sid + "." + base64.RawURLEncoding.EncodeToString([]byte(user)) + "." + passVer + "." + strconv.FormatInt(exp, 10)
 	mac := hmac.New(sha256.New, s.secret)
 	mac.Write([]byte(cookieName + ":" + payload))
 	return payload + "." + hex.EncodeToString(mac.Sum(nil))
@@ -275,6 +284,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.doOfflineAutoPurge(w, r)
+	case sub == "portal-settings":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doSetPortalSettings(w, r)
 	default:
 		s.render404(w, r)
 	}
@@ -294,6 +309,20 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.renderLogin(w, r, "")
+	case sub == "register":
+		if r.Method == http.MethodPost {
+			s.doRegister(w, r)
+			return
+		}
+		if s.isAuthed(r) {
+			http.Redirect(w, r, s.userPath, http.StatusFound)
+			return
+		}
+		s.renderRegisterPage(w, r)
+	case sub == "send-code":
+		s.doSendCode(w, r)
+	case sub == "reset-password":
+		s.doResetPassword(w, r)
 	case sub == "logout":
 		s.doLogout(w, r)
 	case sub == "add":
@@ -449,10 +478,76 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// 登录页身份按入口区分：/user 面向普通用户（用户后台），/admin 面向超管（管理后台）
+	isUser := s.isUserEntry(r)
+	sub, desc, forgot := "登录 gh-mirror 管理后台", "gh-mirror 管理后台登录", adminForgotHTML()
+	if isUser {
+		sub, desc, forgot = "登录 gh-mirror 用户后台", "gh-mirror 用户后台登录", userForgotHTML(s.userPath, s.contactEmail())
+	}
+	// 注册入口：仅普通入口且注册开关开启时显示
+	regEntry := ""
+	if isUser && s.regEnabled() {
+		regEntry = `<p class="muted note">还没有账号？<a href="` + s.userPath + `/register">注册新账号</a></p>`
+	}
 	// 只 Sprintf body 片段（loginBody 无 CSS 的 %），再用 pageApp() 全幅包裹（分屏登录）
-	// 表单提交地址按当前入口（超管 /admin 或普通 /user）自适应
-	body := fmt.Sprintf(loginBody, s.entryBase(r), html.EscapeString(errMsg))
-	_, _ = w.Write([]byte(pageApp("登录 - gh-mirror", "gh-mirror 管理后台登录", body)))
+	// 动词顺序：sub（身份） / action（入口地址） / err / forgot（忘记密码块） / regEntry（注册入口）
+	body := fmt.Sprintf(loginBody, sub, s.entryBase(r), html.EscapeString(errMsg), forgot, regEntry)
+	_, _ = w.Write([]byte(pageApp("登录 - gh-mirror", desc, body)))
+}
+
+// adminForgotHTML 超管入口的忘记密码说明：超管密码只能服务器后台修改（不提供邮箱重置）。
+func adminForgotHTML() string {
+	return `<details class="forgot">
+        <summary>忘记密码？</summary>
+        <div class="forgot-body">
+          <p class="forgot-title">在服务器上重置密码</p>
+          <p class="muted small">超级管理员密码是部署时设置的 <code>ADMIN_PASS</code>（环境变量 / <code>.env</code>），只能在服务器后台修改，无法在线找回：</p>
+          <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code># docker run 部署：以新密码重建容器（token / 缓存在 gm-data、gm-cache 卷，不丢）
+docker rm -f gh-mirror
+docker run -d --name gh-mirror -e ADMIN_PASS='新密码' -e ADMIN_SECRET='你的密钥' -p 127.0.0.1:8080:8080 -v gm-data:/var/lib/gh-mirror ghcr.io/yufeng8/gh-mirror:latest
+
+# docker compose 部署：改 .env 后重建
+sed -i 's#^ADMIN_PASS=.*#ADMIN_PASS=新密码#' .env &amp;&amp; docker compose up -d</code></pre></div>
+          <p class="muted small">镜像 tag 请用 <strong>:latest</strong>（或你当前在用的版本）。重置仅影响登录，不影响已创建的 Token 与缓存。</p>
+        </div>
+      </details>`
+}
+
+// userForgotHTML 普通入口的忘记密码：邮箱验证码自主重置（仅普通用户）+ 联系超管（展示联系邮箱）。
+func userForgotHTML(userPath, contactEmail string) string {
+	return `<details class="forgot">
+        <summary>忘记密码？</summary>
+        <div class="forgot-body">
+          <p class="forgot-title">通过邮箱找回（仅普通用户）</p>
+          <form method="post" action="` + userPath + `/reset-password" autocomplete="off">
+            <label for="resetEmail">注册邮箱</label>
+            <input id="resetEmail" name="email" type="email" required>
+            <div class="pw" style="margin-top:8px">
+              <input name="code" placeholder="6 位验证码" required>
+              <button type="button" class="btn outline" onclick="gmSendCode('` + userPath + `/send-code','reset','resetEmail')">发送验证码</button>
+            </div>
+            <label for="resetPass" style="margin-top:8px">新密码</label>
+            <input id="resetPass" name="pass" type="password" placeholder="至少 4 位" required>
+            <button type="submit" class="btn btn-login" style="margin-top:12px">重置密码</button>
+          </form>
+          <p class="muted small" style="margin-top:12px">或联系超级管理员重置：<strong>` + html.EscapeString(contactEmail) + `</strong></p>
+          <p class="muted small">超级管理员密码无法在线找回，只能由服务器后台修改。</p>
+        </div>
+      </details>`
+}
+
+// renderRegisterPage 渲染用户自主注册页（/user/register，注册开关开启时可达）。
+func (s *Server) renderRegisterPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	body := fmt.Sprintf(registerBody, s.flashHTML(r), s.userPath, s.userPath, s.userPath)
+	_, _ = w.Write([]byte(pageApp("注册 - gh-mirror", "注册 gh-mirror 用户后台", body)))
+}
+
+// contactEmail 返回超管配置的联系邮箱（未配置返回空）。
+func (s *Server) contactEmail() string {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.contactEmailStr
 }
 
 func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
@@ -481,9 +576,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		hfEx = base + "/hf/" + tokSlot(tk) + "/openai-community/gpt2/resolve/main/config.json"
 	}
 	if !s.hfEnabled() {
-		hfEx = "HuggingFace 加速未开启（可在「服务管理」开启）"
+		hfEx = "HuggingFace 加速未开启（须超级管理员在「服务管理」开启）"
 	}
-	dockerEx := "Docker 加速未开启（可在「服务管理」开启）"
+	dockerEx := "Docker 加速未开启（须超级管理员在「服务管理」开启）"
 	if s.dockerEnabled() {
 		// 离线包必须带 token：没有 token 时给引导文案，不能拼出字面 "token" 占位（否则像是已经固定好了）
 		offlineEx := "请先到「Token 管理」创建一个 token（离线包必须带 token）"
@@ -1130,8 +1225,45 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 	users := s.users.All()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	body := fmt.Sprintf(usersBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.userRows(users, csrf, user), s.userAddForm(csrf))
+		s.userRows(users, csrf, user), s.userAddForm(csrf), s.portalSettingsHTML(csrf))
 	_, _ = w.Write([]byte(pageApp("用户管理 - gh-mirror", "gh-mirror 用户管理", body)))
+}
+
+// portalSettingsHTML 渲染用户管理页下方的「用户注册与邮箱」设置区（SMTP + 注册开关 + 联系邮箱，仅超管）。
+func (s *Server) portalSettingsHTML(csrf string) string {
+	cfg := s.smtpSettings()
+	tlsChecked, regChecked := "", ""
+	if cfg.TLS {
+		tlsChecked = " checked"
+	}
+	if s.regEnabled() {
+		regChecked = " checked"
+	}
+	port := ""
+	if cfg.Port > 0 {
+		port = strconv.Itoa(cfg.Port)
+	}
+	return `<section class="card">
+  <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">开启后用户可邮箱验证码自主注册、找回密码</span></div>
+  <form method="post" action="` + s.adminPath + `/portal-settings" class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap;gap:12px">
+    <input type="hidden" name="csrf" value="` + csrf + `">
+    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="regOpen" value="1"` + regChecked + `> 开启用户注册</label>
+    <label class="fld">联系邮箱<input name="contactEmail" type="email" value="` + html.EscapeString(s.contactEmail()) + `" placeholder="用于用户紧急联系与找回密码引导"></label>
+    <button type="submit" class="btn">保存</button>
+  </form>
+  <h3 style="margin-top:18px">SMTP 发信设置</h3>
+  <form method="post" action="` + s.adminPath + `/portal-settings" class="row" style="margin-top:10px;align-items:flex-end;flex-wrap:wrap;gap:12px">
+    <input type="hidden" name="csrf" value="` + csrf + `">
+    <label class="fld">SMTP 主机<input name="smtpHost" value="` + html.EscapeString(cfg.Host) + `" placeholder="smtp.example.com"></label>
+    <label class="fld">端口<input name="smtpPort" type="number" min="1" value="` + port + `" placeholder="465"></label>
+    <label class="fld">账号<input name="smtpUser" value="` + html.EscapeString(cfg.Username) + `" autocomplete="off"></label>
+    <label class="fld">密码<input name="smtpPass" type="password" value="` + html.EscapeString(cfg.Password) + `" autocomplete="new-password"></label>
+    <label class="fld">发件人<input name="smtpFrom" type="email" value="` + html.EscapeString(cfg.From) + `" placeholder="no-reply@example.com"></label>
+    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="smtpTLS" value="1"` + tlsChecked + `> 使用 TLS</label>
+    <button type="submit" class="btn">保存邮箱设置</button>
+  </form>
+  <p class="muted small" style="margin-top:10px">SMTP 凭据保存在 <code>gm-data/settings.json</code>（文件权限 0600）。开启注册后用户可凭邮箱验证码自主注册普通账号；关闭后注册入口隐藏，但已有账号与找回密码不受影响。超级管理员密码无法通过邮箱找回。</p>
+</section>`
 }
 
 // toggleRole 返回与当前角色相反的角色（用于「设为管理员/设为普通」切换按钮）。
@@ -1182,7 +1314,7 @@ func (s *Server) userRows(users []*User, csrf, current string) string {
 func (s *Server) userAddForm(csrf string) string {
 	return `<form method="post" action="` + s.adminPath + `/users/add" class="row">` +
 		`<input type="hidden" name="csrf" value="` + csrf + `">` +
-		`<input type="text" name="username" placeholder="用户名（2-32 位字母数字 . _ -）" required>` +
+		`<input type="text" name="username" placeholder="用户名（4-32 位字母数字 . _ -）" required>` +
 		`<input type="password" name="pass" placeholder="密码（至少 4 位）" required>` +
 		`<select name="role" aria-label="角色"><option value="normal">普通用户</option><option value="super">超级管理员</option></select>` +
 		`<button type="submit" class="btn">创建用户</button></form>`
@@ -1385,6 +1517,8 @@ var flashOK = map[string]string{
 	"offline_deleted":    "离线缓存包已删除",
 	"offline_repulling":  "已开始后台重新拉取，稍后刷新页面查看进度",
 	"offline_purge_saved": "离线包自动清理设置已保存",
+	"portal_saved":       "注册与邮箱设置已保存",
+	"password_reset":     "密码已重置，请用新密码登录",
 }
 
 var flashErr = map[string]string{
@@ -1394,10 +1528,18 @@ var flashErr = map[string]string{
 	"svc_unknown":     "未知服务，仅支持 Docker / HuggingFace",
 	"svc_failed":      "服务开关调整失败，请查看日志",
 	"path_invalid":    "自定义路径不合法（仅支持字母、数字、-、_、/，最长 64 字符）",
-	"user_add_failed": "创建用户失败（用户名需 2-32 位字母数字 . _ -，密码至少 4 位，且用户名不可重复）",
+	"user_add_failed": "创建用户失败（用户名需 4-32 位字母数字 . _ -，密码至少 4 位，且用户名不可重复）",
 	"user_del_failed": "不能删除最后一个超级管理员",
 	"user_role_failed": "不能降级最后一个超级管理员",
 	"svc_off":       "Docker 加速未开启，请联系超级管理员开启对应服务后再设置",
+	"bad_code":        "验证码错误或已过期",
+	"reset_super":     "超级管理员密码无法通过邮箱重置，只能由服务器后台修改",
+	"reset_failed":    "重置失败，请检查邮箱是否正确",
+	"reg_closed":      "注册未开放",
+	"username_invalid": "用户名不合法（4-32 位字母数字 . _ -，且不能使用保留字）",
+	"username_taken":  "用户名已被占用，请换一个",
+	"email_taken":     "该邮箱已被注册",
+	"register_failed": "注册失败，请稍后重试",
 }
 
 // flashHTML 渲染一次性操作反馈条（保存 / 创建 / 开关等操作后的即时提示）。
@@ -1658,6 +1800,145 @@ func (s *Server) doOfflineAutoPurge(w http.ResponseWriter, r *http.Request) {
 	s.setOfflinePurge(autoPurge, purgeFreeGB)
 	log.Printf("离线包自动清理设置: autoPurge=%v purgeFreeGB=%d", autoPurge, purgeFreeGB)
 	http.Redirect(w, r, s.adminPath+"/cache?ok=offline_purge_saved", http.StatusFound)
+}
+
+// doSetPortalSettings 保存 SMTP 配置、注册开关与联系邮箱（仅超管）。
+func (s *Server) doSetPortalSettings(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	port := 0
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("smtpPort"))); err == nil {
+		port = v
+	}
+	cfg := smtpConfig{
+		Host:     strings.TrimSpace(r.FormValue("smtpHost")),
+		Port:     port,
+		Username: strings.TrimSpace(r.FormValue("smtpUser")),
+		Password: r.FormValue("smtpPass"),
+		From:     strings.TrimSpace(r.FormValue("smtpFrom")),
+		TLS:      r.FormValue("smtpTLS") == "1",
+	}
+	regOpen := r.FormValue("regOpen") == "1" || strings.EqualFold(r.FormValue("regOpen"), "true") || strings.EqualFold(r.FormValue("regOpen"), "on")
+	contactEmail := r.FormValue("contactEmail")
+	s.setPortalSettings(cfg, regOpen, contactEmail)
+	log.Printf("门户设置已保存: regOpen=%v contactEmail=%q smtp=%s:%d tls=%v", regOpen, contactEmail, cfg.Host, cfg.Port, cfg.TLS)
+	http.Redirect(w, r, s.adminPath+"/users?ok=portal_saved", http.StatusFound)
+}
+
+// jsonResp 通用 JSON 响应（验证码发送等 AJAX 接口）。
+type jsonResp struct {
+	OK  bool   `json:"ok"`
+	Err string `json:"err,omitempty"`
+}
+
+// doSendCode 发送邮箱验证码（注册 register / 找回密码 reset；未登录可访问，受 SMTP 与开关门控）。
+func (s *Server) doSendCode(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	email := strings.TrimSpace(r.FormValue("email"))
+	purpose := r.FormValue("purpose")
+	cfg := s.smtpSettings()
+	if !cfg.ready() {
+		s.writeJSON(w, http.StatusOK, jsonResp{OK: false, Err: "SMTP 未配置，请联系超级管理员"})
+		return
+	}
+	if !validEmail(email) {
+		s.writeJSON(w, http.StatusOK, jsonResp{OK: false, Err: "邮箱格式不正确"})
+		return
+	}
+	if purpose == "register" && !s.regEnabled() {
+		s.writeJSON(w, http.StatusOK, jsonResp{OK: false, Err: "注册未开放"})
+		return
+	}
+	if purpose == "reset" {
+		u, ok := s.users.ByEmail(email)
+		if !ok || u.Role == RoleSuper {
+			// 不泄露邮箱是否已注册
+			s.writeJSON(w, http.StatusOK, jsonResp{OK: false, Err: "该邮箱无法自助找回，请联系超级管理员"})
+			return
+		}
+	}
+	code, ok := s.codes.Issue(purpose + ":" + email)
+	if !ok {
+		s.writeJSON(w, http.StatusOK, jsonResp{OK: false, Err: "发送过于频繁，请 60 秒后再试"})
+		return
+	}
+	subject := "gh-mirror 验证码"
+	body := "您的验证码是 " + code + "，10 分钟内有效。若非本人操作请忽略本邮件。"
+	if err := sendMail(cfg, email, subject, body); err != nil {
+		log.Printf("发送验证码邮件失败（%s）: %v", email, err)
+		s.writeJSON(w, http.StatusOK, jsonResp{OK: false, Err: "邮件发送失败，请稍后再试或联系超级管理员"})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, jsonResp{OK: true})
+}
+
+// doRegister 处理用户自主注册（受注册开关与 SMTP 门控；验证码校验后创建 normal 账号并直接登录）。
+func (s *Server) doRegister(w http.ResponseWriter, r *http.Request) {
+	if !s.regEnabled() {
+		http.Redirect(w, r, s.userPath+"/register?err=reg_closed", http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	username := strings.TrimSpace(r.FormValue("username"))
+	email := strings.TrimSpace(r.FormValue("email"))
+	code := strings.TrimSpace(r.FormValue("code"))
+	pass := r.FormValue("pass")
+	if !s.codes.Verify("register:"+email, code) {
+		http.Redirect(w, r, s.userPath+"/register?err=bad_code", http.StatusFound)
+		return
+	}
+	if err := s.users.Register(username, email, pass); err != nil {
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "保留字"), strings.Contains(msg, "不合法"):
+			http.Redirect(w, r, s.userPath+"/register?err=username_invalid", http.StatusFound)
+		case strings.Contains(msg, "用户名已存在"):
+			http.Redirect(w, r, s.userPath+"/register?err=username_taken", http.StatusFound)
+		case strings.Contains(msg, "邮箱已被注册"):
+			http.Redirect(w, r, s.userPath+"/register?err=email_taken", http.StatusFound)
+		default:
+			http.Redirect(w, r, s.userPath+"/register?err=register_failed", http.StatusFound)
+		}
+		return
+	}
+	s.setSessionCookie(w, userSessionCookie, username)
+	log.Printf("用户注册成功: %s (%s)", username, email)
+	http.Redirect(w, r, s.userPath, http.StatusFound)
+}
+
+// doResetPassword 处理邮箱验证码重置密码（仅普通用户；super 账号拒绝）。
+func (s *Server) doResetPassword(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	email := strings.TrimSpace(r.FormValue("email"))
+	code := strings.TrimSpace(r.FormValue("code"))
+	pass := r.FormValue("pass")
+	if !s.codes.Verify("reset:"+email, code) {
+		http.Redirect(w, r, s.userPath+"?err=bad_code", http.StatusFound)
+		return
+	}
+	u, ok := s.users.ByEmail(email)
+	if !ok {
+		http.Redirect(w, r, s.userPath+"?err=reset_failed", http.StatusFound)
+		return
+	}
+	if u.Role == RoleSuper {
+		http.Redirect(w, r, s.userPath+"?err=reset_super", http.StatusFound)
+		return
+	}
+	if err := s.users.ResetPassword(u.Username, pass); err != nil {
+		http.Redirect(w, r, s.userPath+"?err=reset_failed", http.StatusFound)
+		return
+	}
+	log.Printf("用户通过邮箱重置密码: %s", u.Username)
+	http.Redirect(w, r, s.userPath+"?ok=password_reset", http.StatusFound)
 }
 
 // doSetCache 运行时调整缓存参数（单文件上限 / 总上限 / 时效），即时生效并持久化。

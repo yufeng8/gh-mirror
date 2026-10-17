@@ -41,6 +41,10 @@ type Server struct {
 	dockerPrefix string // /v2 自定义路径前缀（空=未启用），持 svcMu 保护；读取用 dockerPath()
 	offlineAutoPurge   bool // 离线包磁盘满自动清理开关
 	offlinePurgeFreeGB int  // 触发阈值（磁盘可用低于该 GB 数时按最旧优先清理）
+	contactEmailStr    string // 超管联系邮箱（忘记密码引导 / 用户紧急联系展示）
+	smtpCfg            smtpConfig // SMTP 发信配置（持 svcMu）
+	regOpen            bool       // 用户自主注册开关（持 svcMu）
+	codes              *CodeStore // 邮箱验证码存储（内存）
 }
 
 // processStart 记录进程启动时间，用于后台展示运行时长。
@@ -109,7 +113,7 @@ func main() {
 	users := NewUserStore(filepath.Join(filepath.Dir(cfg.TokensFile), "users.json"))
 	if !users.Has(adminUser) {
 		if err := users.Add(adminUser, adminPass, RoleSuper); err != nil {
-			log.Printf("⚠️ 初始化超级管理员账号失败: %v（ADMIN_USER 需 2-32 位字母数字._-）", err)
+			log.Printf("⚠️ 初始化超级管理员账号失败: %v（ADMIN_USER 需 4-32 位字母数字._-）", err)
 		} else {
 			log.Printf("已初始化超级管理员账号: %s（来自 ADMIN_USER；后续可在「用户管理」中增删）", adminUser)
 		}
@@ -151,6 +155,7 @@ func main() {
 		dial:         dial,
 		dockerOn:     cfg.Docker.Enabled,
 		hfOn:         cfg.HF.Enabled,
+		codes:        NewCodeStore(),
 	}
 	// 运行时设置（gm-data/settings.json）优先级最高：覆盖 config.toml / 环境变量的开关与缓存参数
 	loadSettings(s, cfg)

@@ -451,6 +451,15 @@ const pageStyle = `
   .nav-mask.show{display:block}
   .nav-toggle{display:none;align-items:center;justify-content:center;width:40px;height:40px;padding:0;font-size:1.15rem;flex:0 0 auto}
   @media (max-width:820px){.nav-toggle{display:inline-flex}}
+  /* 首页导航抽屉（小屏）：默认收起 nav 与操作区，点汉堡展开为纵向 */
+  @media (max-width:820px){
+    .topnav{flex-wrap:wrap}
+    .topnav #homeNav,.topnav #homeActions{display:none;width:100%}
+    .topnav #homeNav{flex-direction:column;gap:2px;padding-top:4px}
+    .topnav #homeNav a{padding:8px 10px;border-radius:8px}
+    .topnav #homeActions{flex-direction:column;align-items:stretch;gap:8px;padding-top:10px;margin-left:0}
+    .topnav.open #homeNav,.topnav.open #homeActions{display:flex}
+  }
   .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px}
   .card-head h2{margin:0}
   /* 侧栏底部信息区：Star 引导 + 当前版本 + Releases（贴底） */
@@ -592,7 +601,10 @@ function gmCopyConv(){var u=gmConvURL();if(!u)return;var b=document.getElementBy
 function gmDownloadConv(){var u=gmConvURL();if(!u)return;var a=document.createElement('a');a.href=u;a.download='';document.body.appendChild(a);a.click();a.remove()}
 function gmOpenConv(){var u=gmConvURL();if(!u)return;window.open(u,'_blank','noopener')}
 function toggleNav(force){var a=document.getElementById('gmNav');var m=document.querySelector('.nav-mask');if(!a)return;var open=(typeof force==='boolean')?force:!a.classList.contains('open');a.classList.toggle('open',open);if(m)m.classList.toggle('show',open);var b=document.querySelector('.nav-toggle');if(b)b.setAttribute('aria-expanded',open?'true':'false')}
+function toggleHomeNav(){var tn=document.querySelector('.topnav');if(!tn)return;var open=tn.classList.toggle('open');var b=tn.querySelector('.nav-toggle');if(b)b.setAttribute('aria-expanded',open?'true':'false')}
 function gmCopyText(btn,txt){var done=function(){var o=btn.textContent;btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent=o},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
+/* 发送邮箱验证码（注册 register / 找回密码 reset）；emailId 指定邮箱输入框，默认 email */
+function gmSendCode(url,purpose,emailId){var email=document.getElementById(emailId||'email');if(!email||!email.value){alert('请先填写邮箱');return}var btn=document.getElementById('sendCodeBtn');var orig=btn?btn.textContent:'发送验证码';var done=function(){if(btn){btn.disabled=false;btn.textContent=orig}};if(btn){btn.disabled=true;btn.textContent='发送中...'}var fd=new URLSearchParams();fd.set('email',email.value);fd.set('purpose',purpose);fetch(url,{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(j){if(j&&j.ok){if(btn){btn.textContent='已发送 ✓'}else{alert('验证码已发送')}}else{alert((j&&j.err)||'发送失败')}}).catch(function(){alert('网络错误，请稍后再试')}).finally(function(){setTimeout(done,3000)})}
 function gmApplyToken(tk){try{localStorage.setItem('gm_tok',tk||'')}catch(e){}var sels=document.querySelectorAll('.gmtok');for(var i=0;i<sels.length;i++){if(sels[i].value!==tk)sels[i].value=tk}var s=document.querySelectorAll('.tslot');for(var j=0;j<s.length;j++){/* 空值/失效 token 时回退到服务端渲染的原值，绝不显示字面 "token" */var v=tk||s[j].getAttribute('data-orig')||'';s[j].textContent=v}}
 function gmToggleEdit(btn){var tr=btn.closest('tr');if(!tr)return;var row=tr.classList.contains('edit-row')?tr.previousElementSibling:tr;if(!row)return;var er=row.nextElementSibling;if(!er||!er.classList.contains('edit-row'))return;var open=er.hasAttribute('hidden');if(open){er.removeAttribute('hidden')}else{er.setAttribute('hidden','')}var t=row.querySelector('.edit-toggle');if(t){t.textContent=open?'取消':'编辑';t.setAttribute('aria-expanded',open?'true':'false')}if(open){var f=er.querySelector('input[name=note]');if(f)try{f.focus()}catch(e){}}}
 function gmDismissFlash(){var f=document.getElementById('gmFlash');if(f)f.remove()}
@@ -677,20 +689,33 @@ func (s *Server) homeHTML(host string) string {
 	// 不注入真实访问地址（host 参数仅为兼容调用方保留）。
 	_ = host
 	body := strings.ReplaceAll(homeTmpl, "{{AGENT_PROMPT}}", html.EscapeString(s.agentPrompt()))
+	// 导航右侧登录/注册入口（注册按开关显隐，指向普通用户入口）
+	body = strings.ReplaceAll(body, "{{NAV_ACTIONS}}", s.navActionsHTML())
 	return page("gh-mirror · 多服务加速网关", "自托管的多服务加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。Token 鉴权、磁盘缓存、私有化部署，并支持 MCP 接入让 AI Agent 直接调用。", body)
+}
+
+// navActionsHTML 渲染首页导航右侧的登录/注册入口（登录始终显示，注册按开关显隐）。
+func (s *Server) navActionsHTML() string {
+	out := `<a class="btn" href="` + s.userPath + `">登录</a>`
+	if s.regEnabled() {
+		out += `<a class="btn outline" href="` + s.userPath + `/register">注册</a>`
+	}
+	return out
 }
 
 const homeTmpl = `
 <div class="topnav">
   <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
-  <nav>
+  <button class="nav-toggle" type="button" onclick="toggleHomeNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+  <nav id="homeNav">
     <a href="#features">特性</a>
     <a href="#usage">使用</a>
     <a href="#deploy">部署</a>
     <a href="#updates">更新</a>
     <a href="#agent">Agent</a>
   </nav>
-  <div class="spacer">
+  <div class="spacer" id="homeActions">
+    {{NAV_ACTIONS}}
     <a class="btn outline gh" href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + `<span>GitHub</span></a>
     <button id="themeToggle" class="btn outline" type="button" onclick="toggleTheme()" aria-label="切换深色 / 浅色模式">🌙 深色</button>
   </div>
@@ -822,7 +847,7 @@ var loginBody = `
     <div class="box">
       <a class="brand" href="/" title="返回首页">` + logoSVGAlt + `<span>gh-mirror</span></a>
       <h1>欢迎回来</h1>
-      <p class="sub">登录 gh-mirror 管理后台</p>
+      <p class="sub">%s</p>
       <form method="post" action="%s">
         <label for="user">账号</label>
         <input id="user" name="user" placeholder="请输入账号" required autofocus>
@@ -834,22 +859,53 @@ var loginBody = `
         <p class="err">%s</p>
         <button type="submit" class="btn btn-login">登录</button>
       </form>
-      <details class="forgot">
-        <summary>忘记密码？</summary>
-        <div class="forgot-body">
-          <p class="forgot-title">在服务器上重置密码</p>
-          <p class="muted small">gh-mirror 的登录密码是部署时设置的 <code>ADMIN_PASS</code>（环境变量 / <code>.env</code>）。忘记时可在服务器上重置：</p>
-          <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code># docker run 部署：以新密码重建容器（token / 缓存在 gm-data、gm-cache 卷，不丢）
-docker rm -f gh-mirror
-docker run -d --name gh-mirror -e ADMIN_PASS='新密码' -e ADMIN_SECRET='你的密钥' -p 127.0.0.1:8080:8080 -v gm-data:/var/lib/gh-mirror ghcr.io/yufeng8/gh-mirror:latest
-
-# docker compose 部署：改 .env 后重建
-sed -i 's#^ADMIN_PASS=.*#ADMIN_PASS=新密码#' .env &amp;&amp; docker compose up -d</code></pre></div>
-          <p class="muted small">镜像 tag 请用 <strong>:latest</strong>（或你当前在用的版本）。重置仅影响登录，不影响已创建的 Token 与缓存；重置后重新登录即可。</p>
-        </div>
-      </details>
+      %s
+      %s
       <p class="muted note">🔒 登录会话通过安全的 HttpOnly Cookie 保存。</p>
       <p class="muted back"><a href="/">返回首页</a></p>
+    </div>
+  </div>
+</div>`
+
+// registerBody 是用户自主注册页（/user/register，注册开关开启时可达）。
+// 动词：flash / action（注册提交地址）/ back（返回登录地址）
+var registerBody = `
+<div class="auth">
+  <div class="hero">
+    <span class="deco a" aria-hidden="true"></span>
+    <span class="deco b" aria-hidden="true"></span>
+    <div>
+      <a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>
+      <h2>多服务加速网关</h2>
+      <p>Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速，浏览器与命令行通用</p>
+      <ul class="pts">
+        <li>注册后即可创建 Token、接入 MCP</li>
+        <li>Token 鉴权，访问可控、可审计</li>
+        <li>私有化部署，零第三方依赖单二进制</li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="box">
+      <a class="brand" href="/" title="返回首页">` + logoSVGAlt + `<span>gh-mirror</span></a>
+      <h1>注册账号</h1>
+      <p class="sub">注册 gh-mirror 用户后台</p>
+      %s
+      <form method="post" action="%s/register" autocomplete="off">
+        <label for="username">用户名</label>
+        <input id="username" name="username" placeholder="4-32 位字母数字 . _ -（不能用保留字）" required autofocus>
+        <label for="email">邮箱</label>
+        <input id="email" name="email" type="email" placeholder="用于找回密码" required>
+        <label for="code">验证码</label>
+        <div class="pw">
+          <input id="code" name="code" placeholder="6 位验证码" required>
+          <button type="button" id="sendCodeBtn" class="btn outline" onclick="gmSendCode('%s/send-code','register')">发送验证码</button>
+        </div>
+        <label for="pass">密码</label>
+        <input id="pass" name="pass" type="password" placeholder="至少 4 位" required>
+        <button type="submit" class="btn btn-login">注册</button>
+      </form>
+      <p class="muted back"><a href="%s">返回登录</a> · <a href="/">返回首页</a></p>
     </div>
   </div>
 </div>`
@@ -1011,5 +1067,6 @@ var usersBody = `
       <h2 style="margin-top:22px">新增用户</h2>
       %s
     </section>
+    %s
   </div>
 </div>`

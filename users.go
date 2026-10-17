@@ -31,8 +31,10 @@ const (
 
 // User 代表一个后台登录账号。PassHash/Salt 为 hex 编码。
 // DockerPath 是该用户自己的 Docker 拉取路径后缀（多用户隔离；空=只用用户名段）。
+// Email 为邮箱（注册用户必填、唯一；超管创建的用户可空），用于找回密码与联系。
 type User struct {
 	Username   string `json:"username"`
+	Email      string `json:"email,omitempty"`
 	PassHash   string `json:"pass_hash"`
 	Salt       string `json:"salt"`
 	Role       string `json:"role"` // super / normal
@@ -48,9 +50,20 @@ func normUserRole(r string) string {
 	return RoleNormal
 }
 
-// validUsername 校验用户名：2-32 位，仅字母、数字、`.`、`_`、`-`。
+// reservedUsernames 用户名保留字（禁止用户注册使用，避免与系统语义 / 超管账号混淆）。
+var reservedUsernames = map[string]bool{
+	"admin": true, "user": true, "guest": true, "root": true,
+	"super": true, "system": true, "administrator": true, "owner": true,
+}
+
+// isReservedUsername 判断用户名是否为保留字（大小写不敏感）。
+func isReservedUsername(name string) bool {
+	return reservedUsernames[strings.ToLower(strings.TrimSpace(name))]
+}
+
+// validUsername 校验用户名格式：4-32 位，仅字母、数字、`.`、`_`、`-`（保留字由调用方按场景决定是否额外校验）。
 func validUsername(name string) bool {
-	if len(name) < 2 || len(name) > 32 {
+	if len(name) < 4 || len(name) > 32 {
 		return false
 	}
 	for _, r := range name {
@@ -128,7 +141,7 @@ func (us *UserStore) Has(username string) bool {
 func (us *UserStore) Add(username, pass, role string) error {
 	username = strings.TrimSpace(username)
 	if !validUsername(username) {
-		return fmt.Errorf("用户名不合法（2-32 位，仅字母、数字、.、_、-）")
+		return fmt.Errorf("用户名不合法（4-32 位，仅字母、数字、.、_、-）")
 	}
 	if len(pass) < 4 {
 		return fmt.Errorf("密码至少 4 位")
@@ -150,6 +163,88 @@ func (us *UserStore) Add(username, pass, role string) error {
 		CreatedAt: time.Now().Unix(),
 	}
 	return us.saveLocked()
+}
+
+// ByEmail 按邮箱查用户（大小写不敏感；空邮箱不匹配）。用于注册查重与密码重置。
+func (us *UserStore) ByEmail(email string) (*User, bool) {
+	us.mu.RLock()
+	defer us.mu.RUnlock()
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, false
+	}
+	for _, u := range us.users {
+		if u.Email != "" && strings.ToLower(u.Email) == email {
+			return u, true
+		}
+	}
+	return nil, false
+}
+
+// SetEmail 设置用户邮箱（去空格；空串可清空）。注册流程在创建后回填。
+func (us *UserStore) SetEmail(username, email string) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[username]
+	if !ok {
+		return fmt.Errorf("用户不存在: %s", username)
+	}
+	u.Email = strings.TrimSpace(email)
+	return us.saveLocked()
+}
+
+// Register 注册一个普通用户：用户名格式 + 保留字 + 重名 + 邮箱唯一 + 密码长度校验。
+func (us *UserStore) Register(username, email, pass string) error {
+	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(email)
+	if !validUsername(username) {
+		return fmt.Errorf("用户名不合法（4-32 位，仅字母、数字、.、_、-，且不能使用保留字）")
+	}
+	if isReservedUsername(username) {
+		return fmt.Errorf("用户名 %q 为保留字，请换一个", username)
+	}
+	if len(pass) < 4 {
+		return fmt.Errorf("密码至少 4 位")
+	}
+	if !validEmail(email) {
+		return fmt.Errorf("邮箱格式不正确")
+	}
+	salt, hash, err := hashPassword(pass)
+	if err != nil {
+		return err
+	}
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	if _, ok := us.users[username]; ok {
+		return fmt.Errorf("用户名已存在: %s", username)
+	}
+	for _, u := range us.users {
+		if u.Email != "" && strings.EqualFold(u.Email, email) {
+			return fmt.Errorf("该邮箱已被注册")
+		}
+	}
+	us.users[username] = &User{
+		Username:  username,
+		Email:     email,
+		PassHash:  hash,
+		Salt:      salt,
+		Role:      RoleNormal,
+		CreatedAt: time.Now().Unix(),
+	}
+	return us.saveLocked()
+}
+
+// validEmail 简单的邮箱格式校验（非空 + 含 @ + 域名含点，避免过度严格）。
+func validEmail(email string) bool {
+	if len(email) < 3 || len(email) > 254 {
+		return false
+	}
+	at := strings.IndexByte(email, '@')
+	if at <= 0 || at == len(email)-1 {
+		return false
+	}
+	domain := email[at+1:]
+	return strings.Contains(domain, ".")
 }
 
 // Delete 删除用户。不允许删除最后一个 super（防止把自己锁死）。

@@ -31,6 +31,9 @@ type settings struct {
 		AutoPurge   bool `json:"autoPurge"`   // 离线包磁盘满自动清理开关（默认关）
 		PurgeFreeGB int  `json:"purgeFreeGB"` // 触发阈值：磁盘可用低于该 GB 数时清理
 	} `json:"offline"`
+	ContactEmail string     `json:"contactEmail"` // 超管联系邮箱（忘记密码引导 / 用户紧急联系）
+	SMTP         smtpConfig `json:"smtp"`         // SMTP 发信配置（注册/找回密码验证码）
+	RegOpen      bool       `json:"regOpen"`      // 用户自主注册开关
 }
 
 // normDockerPath 规范化 Docker 自定义路径：去首尾与重复斜杠，只允许 [A-Za-z0-9-_/]，最长 64 字符。
@@ -102,6 +105,9 @@ func loadSettings(s *Server, cfg *config.Config) {
 	s.dockerPrefix = st.DockerPath
 	s.offlineAutoPurge = st.Offline.AutoPurge
 	s.offlinePurgeFreeGB = st.Offline.PurgeFreeGB
+	s.contactEmailStr = st.ContactEmail
+	s.smtpCfg = st.SMTP
+	s.regOpen = st.RegOpen
 	s.svcMu.Unlock()
 	if migrated {
 		s.saveSettings()
@@ -132,6 +138,9 @@ func (s *Server) currentSettings() settings {
 	st := settings{Docker: s.dockerOn, HF: s.hfOn, DockerPath: s.dockerPrefix}
 	st.Offline.AutoPurge = s.offlineAutoPurge
 	st.Offline.PurgeFreeGB = s.offlinePurgeFreeGB
+	st.ContactEmail = s.contactEmailStr
+	st.SMTP = s.smtpCfg
+	st.RegOpen = s.regOpen
 	s.svcMu.RUnlock()
 	st.Cache.MaxFileMB = int(s.cache.MaxBytes() / (1024 * 1024))
 	st.Cache.MaxTotalMB = int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -227,6 +236,30 @@ func (s *Server) setOfflinePurge(autoPurge bool, purgeFreeGB int) {
 	s.offlinePurgeFreeGB = purgeFreeGB
 	s.svcMu.Unlock()
 	s.saveSettings()
+}
+
+// setPortalSettings 保存 SMTP 配置、注册开关与联系邮箱（热生效 + 持久化）。
+func (s *Server) setPortalSettings(cfg smtpConfig, regOpen bool, contactEmail string) {
+	s.svcMu.Lock()
+	s.smtpCfg = cfg
+	s.regOpen = regOpen
+	s.contactEmailStr = strings.TrimSpace(contactEmail)
+	s.svcMu.Unlock()
+	s.saveSettings()
+}
+
+// smtpSettings 返回当前 SMTP 配置。
+func (s *Server) smtpSettings() smtpConfig {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.smtpCfg
+}
+
+// regEnabled 返回用户注册开关状态。
+func (s *Server) regEnabled() bool {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.regOpen
 }
 
 // offlinePurgeBytes 返回离线包自动清理阈值（字节；0 表示未启用）。
