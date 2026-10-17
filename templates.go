@@ -204,6 +204,12 @@ const pageStyle = `
   .err{color:var(--danger)}
   .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   .foot{margin-top:18px;font-size:.9rem;color:var(--muted-foreground);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* MCP 工具清单表 */
+  .mcp-tools{width:100%;border-collapse:collapse;margin-top:6px}
+  .mcp-tools th,.mcp-tools td{border:1px solid var(--border);padding:8px 12px;text-align:left;font-size:.88rem;vertical-align:top}
+  .mcp-tools th{background:var(--muted);font-weight:700;white-space:nowrap}
+  .mcp-tools td code{white-space:nowrap}
+  .mcp-tools td.muted{color:var(--muted-foreground);white-space:nowrap}
   .foot a{display:inline-flex;align-items:center;gap:6px}
   /* 三个页脚图标统一 16px（三个 SVG 自带尺寸不同：15/14/18），保证视觉等大 */
   .foot a svg{flex:0 0 auto;width:16px;height:16px;opacity:.9}
@@ -907,6 +913,37 @@ var tokensBody = `
       <h2 style="margin-top:22px">新增 Token</h2>
       %s
       <p class="foot">%s</p>
+    </section>
+  </div>
+</div>`
+
+// mcpBody 是 MCP 接入介绍页面的 body 片段（/admin/mcp）。
+// 动词：aside / topbarRight / flash / status / httpEx / stdioEx / tools
+var mcpBody = `
+<div class="console" id="top">
+  %s
+  <div class="main">
+    <div class="topbar">
+      <button class="btn outline nav-toggle" type="button" onclick="toggleNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+      <h1>MCP 接入</h1>
+      <div class="spacer">%s</div>
+    </div>
+    %s
+    <section class="card">
+      <h2>接入就绪状态</h2>
+      %s
+    </section>
+    <section class="card">
+      <h2>方式一 · HTTP</h2>
+      %s
+    </section>
+    <section class="card">
+      <h2>方式二 · stdio</h2>
+      %s
+    </section>
+    <section class="card">
+      <h2>可用工具（12 个）</h2>
+      %s
     </section>
   </div>
 </div>`

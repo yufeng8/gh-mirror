@@ -120,6 +120,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
+	case sub == "mcp":
+		if s.isAuthed(r) {
+			s.renderMCPPage(w, r)
+			return
+		}
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
 	case sub == "service":
 		if !s.isAuthed(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
@@ -558,6 +564,118 @@ func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
 }
 
+// adminTokens 过滤出 role=admin（高级 Token）的 token —— MCP 鉴权要求 admin 角色。
+func adminTokens(tokens []*Token) []*Token {
+	var out []*Token
+	for _, t := range tokens {
+		if normRole(t.Role) == RoleAdmin {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// mcpTokenSelector 生成 MCP 页的 Token 选择器（只列 admin 角色 token，默认选中第一个）。
+// 用 .gmtok class 复用全局联动：切换后同步本页所有 .tslot（HTTP/stdio 示例里的 token）。
+func (s *Server) mcpTokenSelector(tokens []*Token) string {
+	adm := adminTokens(tokens)
+	var sb strings.Builder
+	sb.WriteString(`<div class="tsel"><label>用于 MCP 接入的高级 Token</label><select class="gmtok" onchange="gmApplyToken(this.value)" aria-label="选择用于 MCP 接入的 Token">`)
+	if len(adm) == 0 {
+		sb.WriteString(`<option value="">暂无</option>`)
+	} else {
+		for i, t := range adm {
+			note := t.Note
+			if note == "" {
+				note = "（无备注）"
+			}
+			sb.WriteString(fmt.Sprintf(`<option value="%s">%d. %s · %s…</option>`,
+				html.EscapeString(t.Token), i+1, html.EscapeString(note), html.EscapeString(shortTok(t.Token))))
+		}
+	}
+	sb.WriteString(`</select></div>`)
+	return sb.String()
+}
+
+// mcpToolsTable 渲染 12 个工具的分类清单（与 mcp.go 的 mcpRegistry 一一对应，勿漏）。
+func mcpToolsTable() string {
+	type row struct{ cat, name, desc string }
+	rows := []row{
+		{"健康与信息", "health", "返回服务状态与运行时长"},
+		{"Token 管理", "list_tokens", "列出全部 Token（类型 / 命中 / 流量 / 时间）"},
+		{"Token 管理", "create_token", "创建新 Token（类型 user / admin）"},
+		{"Token 管理", "delete_token", "删除指定 Token"},
+		{"服务开关", "get_services", "查询 GitHub / Docker / HuggingFace 启用状态"},
+		{"服务开关", "set_service", "开启或关闭 Docker / HuggingFace 加速"},
+		{"缓存", "get_cache_stats", "查询缓存：已用 / 上限 / 时效 / 目录"},
+		{"缓存", "set_cache_limits", "调整缓存参数（即时生效并持久化）"},
+		{"缓存", "clear_cache", "清空缓存目录内所有文件"},
+		{"链接与镜像", "convert_link", "把原始链接 / 镜像名转为加速链接"},
+		{"链接与镜像", "search_images", "在 Docker Hub 搜索镜像（等价 /api/search）"},
+		{"链接与镜像", "list_tags", "列出 Docker Hub 某仓库的标签（等价 /api/tags）"},
+	}
+	var sb strings.Builder
+	for _, r := range rows {
+		sb.WriteString(`<tr><td class="muted">` + r.cat + `</td><td><code>` + r.name + `</code></td><td>` + r.desc + `</td></tr>`)
+	}
+	return sb.String()
+}
+
+// renderMCPPage 渲染 MCP 接入介绍页（/admin/mcp）。
+// 核心：根据当前是否有 admin 角色 token 动态给出「就绪状态」与可复制的接入配置。
+func (s *Server) renderMCPPage(w http.ResponseWriter, r *http.Request) {
+	sid, ok := s.parseSession(r)
+	if !ok {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	_ = sid
+	tokens := s.store.All()
+	adm := adminTokens(tokens)
+	base := baseOf(r)
+	tk := ""
+	if len(adm) > 0 {
+		tk = adm[0].Token
+	}
+
+	// 就绪状态卡：有 admin token 则就绪并给出选择器；否则引导创建
+	status := ""
+	if len(adm) > 0 {
+		status = `<div class="flash ok"><strong style="flex:0 0 auto">✓</strong><span>已就绪：当前有 ` +
+			strconv.Itoa(len(adm)) + ` 个「高级 Token」可用于 MCP 接入。切换下方选择器，下方命令里的 Token 会同步更新，复制即用。</span></div>` +
+			s.mcpTokenSelector(tokens)
+	} else {
+		status = `<div class="flash err"><strong style="flex:0 0 auto">!</strong><span>未就绪：还没有「高级 Token」。MCP 鉴权要求 admin 角色（高级 Token），请先到「Token 管理」创建一个。</span></div>` +
+			`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">去创建高级 Token</a></div>`
+	}
+
+	// 两种接入方式的示例命令（token 段为 .tslot，随选择器联动）
+	httpEx, stdioEx := "", ""
+	if tk != "" {
+		httpEx = `<p class="muted">endpoint：<code>` + html.EscapeString(base) + `/mcp</code>（仅支持 <code>POST</code>，鉴权用 <code>Authorization: Bearer &lt;token&gt;</code>）</p>` +
+			`<div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -sX POST ` + html.EscapeString(base) + `/mcp \
+  -H "Authorization: Bearer ` + tokSlot(tk) + `" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</code></pre></div>`
+		stdioEx = `<p class="muted">在本地或跳板机运行 <code>gh-mirror</code> 二进制：日志写 stderr，stdout 只输出协议 JSON。</p>` +
+			`<div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>gh-mirror mcp --token ` + tokSlot(tk) + `
+# 或使用环境变量（不落命令行历史）
+GM_MCP_TOKEN=` + tokSlot(tk) + ` gh-mirror mcp</code></pre></div>`
+	} else {
+		httpEx = `<p class="muted">创建「高级 Token」后，这里会自动生成可复制的接入命令。</p>`
+		stdioEx = `<p class="muted">创建「高级 Token」后，这里会自动生成可复制的接入命令。</p>`
+	}
+
+	tools := `<table class="mcp-tools"><thead><tr><th>类别</th><th>工具</th><th>说明</th></tr></thead><tbody>` +
+		mcpToolsTable() + `</tbody></table>` +
+		`<p class="muted small" style="margin-top:12px">完整协议说明见 <a href="` + repoURL + `/blob/main/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。首页还提供「一键交给 AI Agent 部署」的完整提示词，复制给 CodeBuddy / Cursor / Claude 即可自动完成部署与验证。</p>`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// verbs: aside, topbarRight, flash, status, httpEx, stdioEx, tools
+	body := fmt.Sprintf(mcpBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), status, httpEx, stdioEx, tools)
+	_, _ = w.Write([]byte(pageApp("MCP 接入 - gh-mirror", "gh-mirror MCP 接入指南", body)))
+}
+
 // consoleAside 渲染后台侧栏（各页面共用；小屏为抽屉，唤出入口见顶栏 ☰ 按钮）。
 func (s *Server) consoleAside(r *http.Request) string {
 	n := len(s.store.All())
@@ -565,16 +683,20 @@ func (s *Server) consoleAside(r *http.Request) string {
 	if n > 0 {
 		tokensNav = fmt.Sprintf("Token 管理（%d）", n)
 	}
-	// 高亮互斥：/admin/tokens 时只高亮 Token 管理，其余情况高亮概览
-	overviewActive, tokensActive := " active", ""
-	if strings.HasSuffix(r.URL.Path, "/tokens") {
+	// 高亮互斥：/admin/tokens 或 /admin/mcp 各自高亮，其余情况高亮概览
+	overviewActive, tokensActive, mcpActive := " active", "", ""
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/tokens"):
 		overviewActive, tokensActive = "", " active"
+	case strings.HasSuffix(r.URL.Path, "/mcp"):
+		overviewActive, mcpActive = "", " active"
 	}
 	return `<aside id="gmNav">` +
 		`<a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>` +
 		`<nav class="nav">` +
 		`<a class="navitem` + overviewActive + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
 		`<a class="navitem` + tokensActive + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
+		`<a class="navitem` + mcpActive + `" href="` + s.adminPath + `/mcp"><span class="ic">🤖</span>MCP 接入</a>` +
 		`<a class="navitem" href="` + s.adminPath + `#services"><span class="ic">⚙️</span>服务管理</a>` +
 		`<a class="navitem" href="` + s.adminPath + `#cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<span class="navsep"></span>` +
