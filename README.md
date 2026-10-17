@@ -502,3 +502,17 @@ gh-mirror 受其思路启发，以 Go **独立实现**，并扩展了 Web 管理
 ## 📄 License
 
 MIT（沿用上游项目协议）。
+
+## ⭐ Star & Fork
+
+如果这个项目帮你节省了时间，或真正解决了下载提速的痛点，欢迎在 GitHub 上支持一下：
+
+- ⭐ **Star**：<https://github.com/yufeng8/gh-mirror> — 帮助更多人发现它，也是我持续维护的动力。
+- 🍴 **Fork**：<https://github.com/yufeng8/gh-mirror/fork> — 添加功能、定制界面，或适配到你的内网环境。
+- 🐛 **Issue / PR**：发现 Bug 或有想法？欢迎到 <https://github.com/yufeng8/gh-mirror/issues> 分享。
+
+> 你的支持会让我更有动力，谢谢！
+
+---
+
+© 2026 gh-mirror · MIT License
