@@ -1,7 +1,18 @@
-/cache/
+# ---- 构建产物 ----
 /gh-mirror
+*.exe
 *.tmp
 *.meta
-tokens.json
-*.exe
+
+# ---- 本地运行时数据（含凭证，切勿提交！）----
+/cache/
+gm-data/
+gmtest/
+*.log
 *.env
+
+# 数据文件：Token / 用户（含密码哈希）/ 邀请码 / 运行时设置（含 SMTP 密码）
+tokens.json
+users.json
+invites.json
+settings.json
