@@ -72,6 +72,14 @@ func (c *Cache) SetMaxTotalMB(mb int) {
 	c.maxTotalBytes.Store(int64(mb) * 1024 * 1024)
 }
 
+// diskFreeMin 是缓存所在磁盘的可用空间下限（1 GiB）：低于该值时，
+// 即使没超出缓存总量上限，也会按最旧优先清理缓存，避免磁盘被写满影响整机。
+// 声明为变量以便单元测试置 0 关闭该规则（避免依赖跑测机器的磁盘余量）。
+var diskFreeMin int64 = 1 << 30
+
+// DiskFree 返回缓存所在磁盘的当前可用字节数（探测失败返回 0，表示未知）。
+func (c *Cache) DiskFree() int64 { return diskFree(c.dir) }
+
 // UsageBytes 遍历缓存目录，返回当前已占用字节数（含 .meta/.tmp 旁路文件），并刷新近似值。
 func (c *Cache) UsageBytes() int64 {
 	var total int64
@@ -112,9 +120,12 @@ func (c *Cache) Clear() (files int, bytes int64) {
 	return files, bytes
 }
 
-// Evict 执行一次清理：先删除过期文件（ModTime 早于 now-TTL，TTL=0 时跳过），
-// 再在超出总上限时按最旧优先删除至低于上限。返回 (过期删除数, 超限删除数)。
-func (c *Cache) Evict() (expired, over int) {
+// Evict 执行一次清理，返回 (过期删除数, 超限删除数, 磁盘余量删除数)：
+//  1. 删除过期文件（ModTime 早于 now-TTL；TTL=0 表示永不过期，跳过）
+//  2. 缓存总量超出总上限时，按最旧优先删除至低于上限
+//  3. 所在磁盘可用空间低于 diskFreeMin（1 GiB）时，同样按最旧优先清理，
+//     直到余量回到阈值以上（缓存是临时的，磁盘写满会拖垮整机）
+func (c *Cache) Evict() (expired, over, lowDisk int) {
 	ttl := c.TTL()
 	type item struct {
 		path  string
@@ -124,7 +135,7 @@ func (c *Cache) Evict() (expired, over int) {
 	var items []item
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 	now := time.Now()
 	var total int64
@@ -156,20 +167,46 @@ func (c *Cache) Evict() (expired, over int) {
 			}
 		}
 	}
+	// 磁盘余量保护：可用空间不足阈值时继续按最旧优先清理
+	if free := diskFree(c.dir); free > 0 && free < diskFreeMin {
+		need := diskFreeMin - free
+		sort.Slice(items, func(i, j int) bool { return items[i].mtime.Before(items[j].mtime) })
+		for _, it := range items {
+			if need <= 0 {
+				break
+			}
+			// 已在上一步删掉的文件会被跳过（os.Remove 返回错误）
+			if os.Remove(it.path) == nil {
+				total -= it.size
+				need -= it.size
+				lowDisk++
+			}
+		}
+	}
+	if total < 0 {
+		total = 0
+	}
 	c.sizeApprox.Store(total)
-	return expired, over
+	return expired, over, lowDisk
 }
 
-// maybeEvictAsync 在 Commit 后轻量触发清理：仅在设定了总上限且近似占用超限时，
-// 异步执行 Evict（避免每次回源都全盘遍历，也不阻塞请求）。
+// maybeEvictAsync 在 Commit 后轻量触发清理：仅在「缓存近似占用超总上限」或
+// 「磁盘可用空间低于阈值」时异步执行 Evict（避免每次回源都全盘遍历，也不阻塞请求）。
 func (c *Cache) maybeEvictAsync() {
 	max := c.MaxTotalBytes()
-	if max <= 0 || c.sizeApprox.Load() < max {
+	overLimit := max > 0 && c.sizeApprox.Load() >= max
+	lowFree := false
+	if free := diskFree(c.dir); free > 0 && free < diskFreeMin {
+		lowFree = true
+	}
+	if !overLimit && !lowFree {
 		return
 	}
 	go func() {
-		if _, over := c.Evict(); over > 0 {
-			log.Printf("缓存超限自动清理: 删除 %d 个文件，当前占用 %s", over, formatBytes(c.UsageBytes()))
+		_, over, low := c.Evict()
+		if over > 0 || low > 0 {
+			log.Printf("缓存自动清理: 超限 %d 个、磁盘余量 %d 个，当前占用 %s（磁盘可用 %s）",
+				over, low, formatBytes(c.UsageBytes()), formatBytes(diskFree(c.dir)))
 		}
 	}()
 }

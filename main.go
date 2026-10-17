@@ -127,9 +127,10 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(cacheSweepInterval)
 		for range ticker.C {
-			if expired, over := cache.Evict(); expired > 0 || over > 0 {
-				log.Printf("缓存自动失效: 过期 %d 个、超限 %d 个，当前占用 %s",
-					expired, over, formatBytes(cache.UsageBytes()))
+			expired, over, low := cache.Evict()
+			if expired > 0 || over > 0 || low > 0 {
+				log.Printf("缓存自动失效: 过期 %d 个、超限 %d 个、磁盘余量 %d 个，当前占用 %s（磁盘可用 %s）",
+					expired, over, low, formatBytes(cache.UsageBytes()), formatBytes(cache.DiskFree()))
 			}
 		}
 	}()

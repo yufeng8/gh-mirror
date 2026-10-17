@@ -291,10 +291,10 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		svcBadge(s.dockerEnabled(), "Docker 加速", "已开启", "未开启 · 可配置") +
 		svcBadge(s.hfEnabled(), "HuggingFace", "已开启", "未开启 · 可配置")
 	// 概览统计卡（网关真实指标，不伪造主机监控）
+	// 概览只放与 token 流量相关的指标；缓存细节在下方「缓存管理」里展示，避免重复
 	stats := statCard("Token 数", fmt.Sprintf("%d", len(tokens)), "个") +
 		statCard("总命中", fmt.Sprintf("%d", totalHits), "次") +
 		statCard("总流量", formatBytes(totalBytes), "") +
-		statCard("缓存占用", formatBytes(s.cache.UsageBytes()), "单文件上限 "+formatBytes(s.cache.MaxBytes())) +
 		statCard("运行时长", fmtDuration(time.Since(processStart)), "")
 	// 链接转换器：识别与生成统一在服务端 buildAccelURL（与 MCP convert_link 同一实现）
 	conv := `<div id="gmconv" data-api="` + s.adminPath + `/api/convert" data-csrf="` + csrf + `" hidden></div>` +
@@ -318,13 +318,13 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 				`<input type="hidden" name="name" value="` + svc + `">`
 			switch {
 			case on:
+				// 关闭按钮用另一套配色，和「开启」形成状态区分
 				state = `<span class="badge on">● 已开启</span>`
-				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn svccard-btn">关闭</button></form>`
+				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn svccard-btn is-off">关闭</button></form>`
 			case svc == "docker":
 				// 开启 Docker 前先弹安全确认（风险说明不再常驻页面）
 				state = `<span class="badge off">○ 未开启</span>`
 				foot = form + `<input type="hidden" name="on" value="1">` +
-					`<button type="button" class="btn outline svccard-btn" onclick="gmOpenModal('gmDockerModal')">安全说明</button>` +
 					`<button type="button" class="btn svccard-btn" onclick="gmOpenModal('gmDockerModal','gmSvcForm-docker')">开启</button></form>`
 			default:
 				state = `<span class="badge off">○ 未开启</span>`
@@ -351,10 +351,21 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	if ttlMin > 0 {
 		ttlTxt = fmt.Sprintf("%d 分钟", ttlMin)
 	}
+	// 磁盘可用空间：低于 1 GiB 时缓存也会按最旧优先自动清理
+	freeBytes := s.cache.DiskFree()
+	diskTxt, diskSub := "—", "探测不可用"
+	if freeBytes > 0 {
+		diskTxt = formatBytes(freeBytes)
+		diskSub = "充裕"
+		if freeBytes < diskFreeMin {
+			diskSub = "偏低，缓存会自动清理"
+		}
+	}
 	cacheMgmt := `<div class="stats">` +
 		statCard("缓存已用", formatBytes(s.cache.UsageBytes()), "总上限 "+totalTxt) +
 		statCard("单文件上限", fmt.Sprintf("%d MB", maxFileMB), "超过则不缓存") +
 		statCard("缓存时效", ttlTxt, "到期自动失效") +
+		statCard("磁盘可用", diskTxt, diskSub) +
 		statCardCls("缓存目录", html.EscapeString(s.cfg.CacheDir), "", "sm") +
 		`</div>
 <form method="post" action="` + s.adminPath + `/cache" class="row" style="margin-top:16px;align-items:flex-end">
@@ -368,7 +379,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
   <input type="hidden" name="csrf" value="` + csrf + `">
   <button type="submit" class="btn outline">清除缓存</button>
 </form>
-<p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。时效：到期文件由后台周期任务自动删除。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
+<p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。<strong>磁盘可用空间低于 1 GB 时，即使没到总上限也会按最旧优先清理</strong>（缓存是临时的，避免写满磁盘拖垮整机）。时效：到期文件由后台周期任务自动删除。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
 	// Token 区块已独立成页，这里只放引导卡
 	tokensGuide := `<p class="muted">Token 的创建、复制、删除与角色管理已独立成页，便于统一维护。</p>` +
 		`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">前往 Token 管理` +
@@ -498,9 +509,13 @@ func (s *Server) tokenAddForm(csrf string) string {
 		`<p class="muted small" style="margin-top:8px">说明：<strong>普通 Token</strong>仅用于代理访问；<strong>高级 Token</strong> 另可用于 <code>MCP</code> 接入（<code>/mcp</code> 或 <code>gh-mirror mcp</code>），请勿随意外发。</p>`
 }
 
-// tokenFoot Token 页面页脚链接。
+// tokenFoot Token 页面页脚链接（各带适配图标，便于快速识别）。
 func (s *Server) tokenFoot() string {
-	return `<a href="` + s.adminPath + `/logout">退出登录</a> · <a href="/">返回首页</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a>`
+	return `<a href="` + s.adminPath + `/logout">` + logoutSVG + `退出登录</a>` +
+		`<span class="foot-sep">·</span>` +
+		`<a href="/">` + homeSVG + `返回首页</a>` +
+		`<span class="foot-sep">·</span>` +
+		`<a href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + `GitHub</a>`
 }
 
 // renderTokensPage 渲染 Token 管理独立页面（/admin/tokens）。
@@ -540,7 +555,7 @@ func (s *Server) consoleAside(r *http.Request) string {
 		`<a class="navitem" href="` + s.adminPath + `#cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<span class="navsep"></span>` +
 		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
-		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">✦</span>GitHub</a>` +
+		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">` + githubSVG + `</span>GitHub</a>` +
 		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">` + logoutSVG + `</span>退出登录</a>` +
 		`</nav>` + s.asideFoot() + `</aside>` +
 		`<button class="nav-mask" type="button" aria-label="关闭导航菜单" onclick="toggleNav()"></button>`

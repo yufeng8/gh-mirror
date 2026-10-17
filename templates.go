@@ -40,6 +40,9 @@ const tagSVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stro
 
 const pkgSVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8 14 5v6L8 14.2 2 11V5z"/><path d="M2 5l6 3.2L14 5M8 8.2v6"/></svg>`
 
+// homeSVG 是「返回首页」用的房子图标。
+const homeSVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 7.1 8 2.6l5.4 4.5v5.6a.9.9 0 0 1-.9.9H3.5a.9.9 0 0 1-.9-.9z"/><path d="M6.5 13.6V9.7h3v3.9"/></svg>`
+
 // 平台标签：logo + 短代号（图形负责形象、文字负责零歧义，且不像全名那样占宽）。
 const tagGH = `<span class="tag tag-logo" title="GitHub">` + githubSVG + `<span class="tag-txt">GH</span></span>`
 
@@ -187,7 +190,16 @@ const pageStyle = `
   html.dark .alert.danger{background:#3a1414}
   .err{color:var(--danger)}
   .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .foot{margin-top:18px;font-size:.9rem;color:var(--muted-foreground)}
+  .foot{margin-top:18px;font-size:.9rem;color:var(--muted-foreground);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .foot a{display:inline-flex;align-items:center;gap:6px}
+  /* 三个页脚图标统一 16px（三个 SVG 自带尺寸不同：15/14/18），保证视觉等大 */
+  .foot a svg{flex:0 0 auto;width:16px;height:16px;opacity:.9}
+  .foot .foot-sep{opacity:.5}
+  /* 「关闭」按钮用另一套配色，与绿色实心的「开启」区分状态 */
+  .svccard-btn.is-off{background:var(--card);color:#b45309;border:1px solid rgba(217,119,6,.65);box-shadow:none}
+  .svccard-btn.is-off:hover{background:#fffbeb;border-color:#d97706}
+  html.dark .svccard-btn.is-off{background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.55)}
+  html.dark .svccard-btn.is-off:hover{background:rgba(245,158,11,.2)}
   .footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--border);color:var(--muted-foreground);font-size:.85rem}
   details{border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;background:var(--muted);margin-bottom:14px}
   details summary{cursor:pointer;font-weight:600;list-style:none}
