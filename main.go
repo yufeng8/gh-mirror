@@ -41,6 +41,7 @@ type Server struct {
 	dockerPrefix string // /v2 自定义路径前缀（空=未启用），持 svcMu 保护；读取用 dockerPath()
 	offlineAutoPurge   bool // 离线包磁盘满自动清理开关
 	offlinePurgeFreeGB int  // 触发阈值（磁盘可用低于该 GB 数时按最旧优先清理）
+	offlineMaxFileMB   int  // 离线包单文件上限（MB，0=不限；超过则不落盘缓存）
 	contactEmailStr    string // 超管联系邮箱（忘记密码引导 / 用户紧急联系展示）
 	smtpCfg            smtpConfig // SMTP 发信配置（持 svcMu）
 	regOpen            bool       // 用户自主注册开关（持 svcMu）

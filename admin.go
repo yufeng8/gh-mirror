@@ -702,7 +702,7 @@ func (s *Server) dockerPathCard(csrf, base, user string) string {
   <label class="fld">我的 Docker 自定义路径<input name="dockerPath" value="` + cur + `" placeholder="可选，如 team-a"></label>
   <button type="submit" class="btn">保存</button>
 </form>
-<p class="muted small" style="margin-top:6px">你的 Docker 拉取路径为 <code>域名/` + html.EscapeString(dockerSegment(user)) + `[/自定义路径]</code>；留空则仅用用户名段。仅支持字母、数字、-、_、/（最长 64 字符）。</p>`
+<p class="muted small" style="margin-top:6px">你的 Docker 拉取命令：<code>docker pull 域名/` + html.EscapeString(dockerSegment(user)) + `[/自定义路径]/镜像名</code>（docker 客户端会自动补 <code>/v2/</code> 前缀，服务端完整路径为 <code>/v2/` + html.EscapeString(dockerSegment(user)) + `[/自定义路径]/…</code>）。registry 拉取<strong>不校验 Token</strong>，路径本身就是凭证；留空则仅用用户名段。自定义路径仅支持字母、数字、-、_、/（最长 64 字符）。</p>`
 }
 
 // renderServicesPage 渲染服务管理独立页（/admin/services）：GitHub / Docker / HuggingFace 三卡开关。
@@ -788,20 +788,10 @@ func (s *Server) renderCachePage(w http.ResponseWriter, r *http.Request) {
 	if maxTotalMB > 0 {
 		totalTxt = formatBytes(s.cache.MaxTotalBytes())
 	}
-	// 磁盘可用空间：低于 1 GiB 时缓存也会按最旧优先自动清理
-	freeBytes := s.cache.DiskFree()
-	diskTxt, diskSub := "—", "探测不可用"
-	if freeBytes > 0 {
-		diskTxt = formatBytes(freeBytes)
-		diskSub = "充裕"
-		if freeBytes < diskFreeMin {
-			diskSub = "偏低，缓存会自动清理"
-		}
-	}
+	// 顶部统计卡：磁盘可用统一在下方「离线包缓存」区展示（避免重复）
 	cacheMgmt := `<div class="stats">` +
 		statCard("缓存已用", formatBytes(s.cache.UsageBytes()), "总上限 "+totalTxt) +
 		statCard("单文件上限", fmt.Sprintf("%d MB", maxFileMB), "超过则不缓存") +
-		statCard("磁盘可用", diskTxt, diskSub) +
 		statCardCls("缓存目录", html.EscapeString(s.cfg.CacheDir), "服务端本地路径", "sm") +
 		`</div>
 <form method="post" action="` + s.adminPath + `/cache" class="row" style="margin-top:16px;align-items:flex-end">
@@ -815,7 +805,7 @@ func (s *Server) renderCachePage(w http.ResponseWriter, r *http.Request) {
   <input type="hidden" name="csrf" value="` + csrf + `">
   <button type="submit" class="btn outline">清除缓存</button>
 </form>
-<p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。<strong>磁盘可用空间低于 1 GB 时，即使没到总上限也会按最旧优先清理</strong>（缓存是临时的，避免写满磁盘拖垮整机）。时效：到期文件由后台周期任务自动删除。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
+<p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。<strong>磁盘可用空间低于 1 GB 时，即使没到总上限也会按最旧优先清理</strong>（缓存是临时的，避免写满磁盘拖垮整机）。时效：到期文件由后台周期任务自动删除。<strong>离线包缓存</strong>单独管理（见下方「离线包缓存」区：自动清理阈值 + 单文件上限），不受本区参数影响。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
 	// 离线包区块：分页参数 + 当前用户（复制下载链接用）
 	page := 1
 	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
@@ -869,9 +859,10 @@ func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size in
   <input type="hidden" name="csrf" value="` + csrf + `">
   <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="autoPurge" value="1"` + autoPurgeChecked + `> 磁盘满自动清理</label>
   <label class="fld">磁盘可用低于(GB)<input name="purgeFreeGB" type="number" min="0" value="` + strconv.Itoa(s.offlinePurgeFreeGB) + `"></label>
+  <label class="fld">单文件上限(MB，0=不限)<input name="maxFileMB" type="number" min="0" value="` + strconv.Itoa(s.offlineMaxFileMB) + `"></label>
   <button type="submit" class="btn">保存</button>
 </form>
-<p class="muted small" style="margin-top:8px">开启后，磁盘可用空间低于阈值时，按<strong>最旧优先</strong>自动删除离线缓存包，直到恢复到阈值以上（默认关闭，避免误删有意保留的包）。</p>`
+<p class="muted small" style="margin-top:8px"><strong>磁盘满自动清理</strong>：开启后，磁盘可用空间低于阈值时，按<strong>最旧优先</strong>自动删除离线缓存包，直到恢复到阈值以上（默认关闭，避免误删有意保留的包）。<strong>单文件上限</strong>：按镜像 manifest 预估大小，超过该值的离线包<strong>不落盘缓存</strong>（仍可实时打包流式下载），0 = 不限制。</p>`
 
 	// 列表行
 	var rows strings.Builder
@@ -1569,11 +1560,11 @@ func (s *Server) consoleAside(r *http.Request) string {
 	case strings.HasSuffix(r.URL.Path, "/cache"):
 		overviewActive, cacheActive = "", " active"
 	}
-	// 超管专属导航项（服务管理 / 用户管理 / 缓存管理）：仅超管入口 + super 角色可见
-	// 「用户管理」「缓存管理」文字右侧加盾牌符号标识超管专属
+	// 超管专属导航项（用户管理 / 缓存管理 / 服务管理）：仅超管入口 + super 角色可见
+	// 三项文字右侧均加盾牌符号标识超管专属，且按特权分组排在普通功能之后
 	svcNav, cacheNav, usersNav := "", "", ""
 	if isAdmin && role == RoleSuper {
-		svcNav = `<a class="navitem` + svcActive + `" href="` + base + `/services"><span class="ic">⚙️</span>服务管理</a>`
+		svcNav = `<a class="navitem` + svcActive + `" href="` + base + `/services"><span class="ic">⚙️</span>服务管理<span class="priv" title="仅超级管理员可见">🛡️</span></a>`
 		usersNav = `<a class="navitem` + usersActive + `" href="` + base + `/users"><span class="ic">👥</span>用户管理<span class="priv" title="仅超级管理员可见">🛡️</span></a>`
 		cacheNav = `<a class="navitem` + cacheActive + `" href="` + base + `/cache"><span class="ic">💾</span>缓存管理<span class="priv" title="仅超级管理员可见">🛡️</span></a>`
 	}
@@ -1581,11 +1572,11 @@ func (s *Server) consoleAside(r *http.Request) string {
 		`<a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>` +
 		`<nav class="nav">` +
 		`<a class="navitem` + overviewActive + `" href="` + base + `"><span class="ic">▦</span>概览</a>` +
-		svcNav +
 		`<a class="navitem` + tokensActive + `" href="` + base + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
 		`<a class="navitem` + mcpActive + `" href="` + base + `/mcp"><span class="ic">🤖</span>MCP 接入</a>` +
 		usersNav +
 		cacheNav +
+		svcNav +
 		`<span class="navsep"></span>` +
 		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
 		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">` + githubSVG + `</span>GitHub</a>` +
@@ -1938,8 +1929,12 @@ func (s *Server) doOfflineAutoPurge(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("purgeFreeGB"))); err == nil {
 		purgeFreeGB = v
 	}
-	s.setOfflinePurge(autoPurge, purgeFreeGB)
-	log.Printf("离线包自动清理设置: autoPurge=%v purgeFreeGB=%d", autoPurge, purgeFreeGB)
+	maxFileMB := 0
+	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("maxFileMB"))); err == nil {
+		maxFileMB = v
+	}
+	s.setOfflinePurge(autoPurge, purgeFreeGB, maxFileMB)
+	log.Printf("离线包缓存设置: autoPurge=%v purgeFreeGB=%d maxFileMB=%d", autoPurge, purgeFreeGB, maxFileMB)
 	http.Redirect(w, r, s.adminPath+"/cache?ok=offline_purge_saved", http.StatusFound)
 }
 
