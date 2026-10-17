@@ -30,8 +30,8 @@ func newTestServer(t *testing.T) *Server {
 		store:   NewStore(cfg.TokensFile),
 		timeout: 30 * time.Second,
 	}
-	s.store.Add("adm", "test", RoleAdmin)
-	s.store.Add("usr", "test", RoleUser)
+	s.store.Add("adm", "test", RoleAdmin, "")
+	s.store.Add("usr", "test", RoleUser, "")
 	return s
 }
 
