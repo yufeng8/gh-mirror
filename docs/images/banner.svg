@@ -9,8 +9,8 @@
       <stop offset="0" stop-color="#4ade80"/>
       <stop offset="1" stop-color="#38bdf8"/>
     </linearGradient>
-    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#34d399"/>
+    <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22c55e"/>
       <stop offset="1" stop-color="#0ea5e9"/>
     </linearGradient>
     <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
@@ -24,15 +24,17 @@
   </defs>
 
   <rect width="1200" height="300" fill="url(#bg)"/>
-  <ellipse cx="190" cy="150" rx="240" ry="180" fill="url(#glow)"/>
+  <ellipse cx="118" cy="150" rx="200" ry="150" fill="url(#glow)"/>
 
-  <!-- logo 标记：两枚交错的箭头，表示「双向加速」 -->
-  <rect x="60" y="92" width="116" height="116" rx="28" fill="url(#mark)"/>
-  <g stroke="#04140d" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <path d="M92 132h44a10 10 0 0 1 10 10v10"/>
-    <path d="M138 200l-32 0"/>
-    <path d="M100 190l-14 10 14 10"/>
-    <path d="M146 176l12 12 12-12"/>
+  <!-- 项目 logo：gh-mirror 渐变圆角方块 + 白色循环箭头（与站内 logoSVG 完全一致） -->
+  <g transform="translate(60,92) scale(2.0714)">
+    <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#logoGrad)"/>
+    <g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round">
+      <path d="M21 32 A11 11 0 0 1 43 32"/>
+      <path d="M43 32 A11 11 0 0 1 21 32"/>
+    </g>
+    <path d="M43 32 L37 30 L41 36 Z" fill="#ffffff"/>
+    <path d="M21 32 L27 34 L23 28 Z" fill="#ffffff"/>
   </g>
 
   <text x="206" y="146" font-family="'PingFang SC','Microsoft YaHei',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"
