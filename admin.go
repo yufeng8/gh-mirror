@@ -618,8 +618,8 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	// 用法示例：token 包在 .tslot 中，切换右上角选择器即可联动替换（示例 + 链接转换共用）
 	ghEx, hfEx := "请先到「Token 管理」创建一个 token", "请先到「Token 管理」创建一个 token"
 	if tk != "" {
-		ghEx = base + "/g/" + tokSlot(tk) + "/https://github.com/yufeng8/gh-mirror/blob/main/README.md"
-		hfEx = base + "/hf/" + tokSlot(tk) + "/openai-community/gpt2/resolve/main/config.json"
+		ghEx = base + "/g/" + dockerSegment(user) + "/" + tokSlot(tk) + "/https://github.com/yufeng8/gh-mirror/blob/main/README.md"
+		hfEx = base + "/hf/" + dockerSegment(user) + "/" + tokSlot(tk) + "/openai-community/gpt2/resolve/main/config.json"
 	}
 	if !s.hfEnabled() {
 		hfEx = "HuggingFace 加速未开启（须超级管理员在「服务管理」开启）"
@@ -2336,7 +2336,8 @@ var (
 )
 
 // buildAccelURL 把用户粘贴的原始链接 / Docker 镜像名转换为本站加速链接。
-// user 为归属用户名：Docker 离线包路径必须带用户名段（/offline/<用户名>/<token>/<镜像>，多用户隔离）。
+// user 为归属用户名：GitHub / HuggingFace / Docker 离线包路径都带用户名段
+// （/g/<用户名>/<token>/、/hf/<用户名>/<token>/、/offline/<用户名>/<token>/<镜像>，多用户隔离）。
 // 这是后台「链接转换」与 MCP convert_link 的唯一实现（一个实现、两个消费者）。
 // base 为当前访问基地址，tk 为要嵌入的 token（HF / GitHub 需要）。
 func (s *Server) buildAccelURL(base, raw, tk, user string) accelResult {
@@ -2352,7 +2353,7 @@ func (s *Server) buildAccelURL(base, raw, tk, user string) accelResult {
 			if tk == "" {
 				return accelResult{Kind: "github", Hint: "请先在「Token 管理」添加一个 token"}
 			}
-			return accelResult{Kind: "github", URL: base + "/g/" + tk + "/" + raw}
+			return accelResult{Kind: "github", URL: base + "/g/" + dockerSegment(user) + "/" + tk + "/" + raw}
 		case isHFHost(host):
 			if !s.hfEnabled() {
 				return accelResult{Kind: "hf", Hint: "HuggingFace 加速未开启，请先在「服务管理」开启"}

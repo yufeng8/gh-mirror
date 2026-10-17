@@ -34,7 +34,8 @@ func hfRepoName(rest string) string {
 
 // handleHF HuggingFace 模型/LFS 加速入口，由 main.handle 在 [hf].enabled=true 时按 /hf/ 前缀分发。
 // 复用与 GitHub 相同的 resolve/rewrite/serveTarget/磁盘缓存/流式管线（域名白名单见 rewrite.go）。
-// token 鉴权模式下沿用 /hf/<token>/... 形式，保持与 GitHub 一致的安全模型。
+// token 鉴权模式下为 /hf/<用户名>/<token>/... 形式（用户名段反查用户表 + token 归属校验，与 /g /offline 一致）；
+// 开放模式（auth.mode=open）保持 /hf/<owner>/<repo>/... 原形式（无鉴权，用户名段无意义）。
 func (s *Server) handleHF(w http.ResponseWriter, r *http.Request) {
 	rawURI := r.RequestURI
 	if !strings.HasPrefix(rawURI, hfPrefix) {
@@ -45,13 +46,27 @@ func (s *Server) handleHF(w http.ResponseWriter, r *http.Request) {
 	sw := &statsWriter{ResponseWriter: w}
 
 	if s.cfg.Auth.Mode == "token" {
+		// 第一段为用户名段：反查用户表，不存在一律 404（不暴露用户是否存在）
 		idx := strings.IndexByte(rest, '/')
 		if idx < 0 {
 			s.render404(sw, r)
 			return
 		}
+		user, userOK := s.userByDockerSegment(rest[:idx])
+		if !userOK {
+			s.render404(sw, r)
+			return
+		}
+		rest = rest[idx+1:]
+		// 第二段为 token：必须存在且归属该用户（空 owner 归默认管理员）
+		idx = strings.IndexByte(rest, '/')
+		if idx < 0 {
+			s.render404(sw, r)
+			return
+		}
 		token := rest[:idx]
-		if !s.store.Has(token) {
+		t, exists := s.store.Get(token)
+		if !exists || (t.Owner != user && !(t.Owner == "" && user == s.adminUser)) {
 			s.render404(sw, r)
 			return
 		}

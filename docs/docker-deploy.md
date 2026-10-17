@@ -41,7 +41,7 @@ docker compose -f docker-compose.yml -f docker-compose.hostcert.yml --profile pr
 ### 域名前置 CDN（EdgeOne / Cloudflare）的正确接法
 若域名前面挡着 CDN（如腾讯 EdgeOne、Cloudflare），公网 TLS 在 CDN 边缘终止、再由 CDN 回源到源站。此时：
 - **让 CDN 持公网证书并终止 TLS，源站只做 80 反代 → `127.0.0.1:8080`，源站不签自己的证书**。在 CDN 后面给源站签 LE，常因回源/IPv6 失败报 **521**，别纠缠（源站 certbot 根本不会被 LE 访问到）。
-- CDN 配置：回源=源站公网 IP:80、协议 HTTP、回源 Host 固定为你的域名；**务必关闭缓存与 URL 规范化/重写**（否则会压掉 gh-mirror 的 `/g/<token>/https://` 双斜杠、缓存动态内容 → 404）；不要强制 80 跳转。
+- CDN 配置：回源=源站公网 IP:80、协议 HTTP、回源 Host 固定为你的域名；**务必关闭缓存与 URL 规范化/重写**（否则会压掉 gh-mirror 的 `/g/<用户名>/<token>/https://` 双斜杠、缓存动态内容 → 404）；不要强制 80 跳转。
 - 源站反代段：`merge_slashes off;` + `proxy_pass http://127.0.0.1:8080$request_uri;` + `proxy_set_header X-Forwarded-Proto https;`，且**不要**再加 http→https 跳转（避免回源回环）。
 - 确需源站自己持证时，用 **DNS-01** 验证（绕开 80/回源/IPv6）。
 - 安全组：源站 80 入站对 CDN 回源/公网开放；443 可不开放。
@@ -137,7 +137,7 @@ Docker 加速有两个端点，鉴权方式不同：
 
 | 端点 | 用途 | Token 鉴权 |
 |------|------|-----------|
-| `/v2/<用户名>[/<自定义路径>]/…` | registry 加速（带路径 pull-through） | **不支持 Token**：Docker Registry 协议无法携带我们的 `/g/<token>/`；改用**强制路径前缀**（用户名段必带 + 可选自定义路径）作为保护位 |
+| `/v2/<用户名>[/<自定义路径>]/…` | registry 加速（带路径 pull-through） | **不支持 Token**：Docker Registry 协议无法携带我们的 `/g/<用户名>/<token>/`；改用**强制路径前缀**（用户名段必带 + 可选自定义路径）作为保护位 |
 | `/offline/<用户名>/<token>/<镜像名>` | 离线 tar（`docker load` 可用） | **必须带用户名段与 Token**：用户名不存在、token 缺失或不匹配一律返回 404 |
 
 > `/v2` 的路径前缀**固定为 `<用户名>[/<自定义路径>]`**：用户名段取 `ADMIN_USER`（小写化），不可省略；自定义路径在管理后台可填。`GET /v2/` 探测端点会放行（由上游返回 401 挑战），否则 docker 客户端会判定该 registry 不支持 v2。
@@ -168,9 +168,9 @@ Docker 加速有两个端点，鉴权方式不同：
 > `/offline` 的 token 就是普通的代理 token，泄露后可在后台删除轮换；`/v2` 因协议限制无法带 token，只能靠开关、网络边界与边缘限速控制。开启 `DOCKER_ENABLED` 时，**管理后台会弹出安全确认窗**（说明风险与降险方案），确认后才真正开启。
 
 ## 已知坑（来自项目大脑 knowledge/）
-- **双斜杠**：代理路径 `/g/<token>/https://...` 的 `//` 必须保留，nginx 需 `merge_slashes off` + `proxy_pass ...$request_uri`，否则解析失败 404。
+- **双斜杠**：代理路径 `/g/<用户名>/<token>/https://...` 的 `//` 必须保留，nginx 需 `merge_slashes off` + `proxy_pass ...$request_uri`，否则解析失败 404。
 - **端口冲突**：场景 B 的内置 nginx 会占用主机 80/443。若部署机已有其它 Web 服务，请改用场景 A（不启用 proxy profile）。
-- **域名前置 CDN（EdgeOne/Cloudflare）**：会压掉 `/g/<token>/https://` 的双斜杠、缓存动态内容致 404，并让源站 LE 报 521。按上面「域名前置 CDN 的正确接法」处理：CDN 持证书 + 源站只做 80 反代 + 关 CDN 缓存/URL 规范化。
+- **域名前置 CDN（EdgeOne/Cloudflare）**：会压掉 `/g/<用户名>/<token>/https://` 的双斜杠、缓存动态内容致 404，并让源站 LE 报 521。按上面「域名前置 CDN 的正确接法」处理：CDN 持证书 + 源站只做 80 反代 + 关 CDN 缓存/URL 规范化。
 - **`/v2` 无 Token 鉴权**：registry-mirror 端点因协议限制无法带 token，CDN 后 `ip_allow` 也挡不住真实客户端。详见「Docker 加速安全」：按需 `DOCKER_ENABLED=false` / 边缘限速带宽封顶 / 难猜子域名+安全组。**`/offline` 离线包已强制用户名段与 token**（`/offline/<用户名>/<token>/<镜像>`）。
 - **HTTP 后台登录失败**：纯 HTTP 部署若忘把 `COOKIE_SECURE=false`，浏览器不会下发 Secure cookie，表现为登录无反应/反复跳登录。
 - **GHCR 可见性**：`ghcr.io/yufeng8/gh-mirror` 包须设为 **Public**，否则匿名 `docker pull` 报 401；私有则需在 `gh-mirror` 服务加 `docker login ghcr.io`（带 `read:packages` 的令牌）。

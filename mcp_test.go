@@ -34,14 +34,27 @@ func newTestServer(t *testing.T) *Server {
 	}
 	s.store.Add("adm", "test", RoleAdmin, "")
 	s.store.Add("usr", "test", RoleUser, "")
+	// 用户表：admin（超级管理员，对应 adminUser）+ bobby（普通用户），供多用户权限测试
+	if err := s.users.Add("admin", "pass1234", RoleSuper); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.users.Add("bobby", "pass1234", RoleNormal); err != nil {
+		t.Fatal(err)
+	}
 	return s
 }
 
 // mcpCall 发送一个 JSON-RPC 请求并返回全部响应（owner 传默认管理员 admin）。
 func mcpCall(t *testing.T, s *Server, body string) []*rpcResp {
 	t.Helper()
+	return mcpCallAs(t, s, "admin", body)
+}
+
+// mcpCallAs 以指定 owner（模拟不同用户的高级 Token 调用者）发送 JSON-RPC 请求。
+func mcpCallAs(t *testing.T, s *Server, owner, body string) []*rpcResp {
+	t.Helper()
 	var out []*rpcResp
-	s.serveMCPRPC("http://127.0.0.1:18099", "admin", []byte(body), func(r *rpcResp) { out = append(out, r) })
+	s.serveMCPRPC("http://127.0.0.1:18099", owner, []byte(body), func(r *rpcResp) { out = append(out, r) })
 	return out
 }
 
@@ -159,13 +172,62 @@ func TestMCPCallSetService(t *testing.T) {
 	}
 }
 
-// TestMCPCallConvertLink 验证链接转换（与后台转换器同一实现）。
+// TestMCPCallConvertLink 验证链接转换（与后台转换器同一实现，GitHub 输出带用户名段）。
 func TestMCPCallConvertLink(t *testing.T) {
 	s := newTestServer(t)
 	out := mcpCall(t, s, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"convert_link","arguments":{"url":"https://github.com/o/r/releases/download/v1/a.zip"}}}`)
 	text := mcpFirstText(t, out[0])
-	if !strings.Contains(text, "/g/") || !strings.Contains(text, "github.com/o/r") {
+	if !strings.Contains(text, "/g/admin/") || !strings.Contains(text, "github.com/o/r") {
 		t.Fatalf("转换结果异常: %s", text)
+	}
+}
+
+// TestMCPPermissionBoundaries 验证 MCP 多用户权限边界：
+// 实例级操作（服务开关/缓存）仅超级管理员；token 列表/删除按归属隔离。
+func TestMCPPermissionBoundaries(t *testing.T) {
+	s := newTestServer(t)
+	s.store.Add("tokBobby", "", RoleUser, "bobby") // 归属 bobby
+
+	call := func(owner, body string) string {
+		out := mcpCallAs(t, s, owner, body)
+		if len(out) != 1 {
+			t.Fatalf("期望 1 个响应，实际 %d", len(out))
+		}
+		return mcpFirstText(t, out[0])
+	}
+	setSvc := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_service","arguments":{"name":"hf","enabled":true}}}`
+	clearC := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"clear_cache","arguments":{}}}`
+	listT := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_tokens","arguments":{}}}`
+	delT := func(tok string) string {
+		return `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"delete_token","arguments":{"token":"` + tok + `"}}}`
+	}
+
+	// 1. 普通用户（bobby）调实例级工具应被拒
+	if txt := call("bobby", setSvc); !strings.Contains(txt, "超级管理员") {
+		t.Fatalf("normal 调 set_service 应被拒，实际: %s", txt)
+	}
+	if txt := call("bobby", clearC); !strings.Contains(txt, "超级管理员") {
+		t.Fatalf("normal 调 clear_cache 应被拒，实际: %s", txt)
+	}
+	// 2. 普通用户 list_tokens 只见自己的（不见 adm/usr——它们归 admin）
+	if txt := call("bobby", listT); strings.Contains(txt, "tokBobby") && !strings.Contains(txt, "\"adm\"") {
+		if strings.Contains(txt, "\"token\": \"adm\"") {
+			t.Fatalf("normal 不应看到他人 token: %s", txt)
+		}
+	} else if !strings.Contains(txt, "tokBobby") {
+		t.Fatalf("normal 应看到自己的 token: %s", txt)
+	}
+	// 3. 普通用户删除他人 token 应被拒
+	if txt := call("bobby", delT("adm")); !strings.Contains(txt, "无权删除") {
+		t.Fatalf("normal 删他人 token 应被拒，实际: %s", txt)
+	}
+	// 4. 普通用户删除自己的 token 应成功
+	if txt := call("bobby", delT("tokBobby")); !strings.Contains(txt, "已删除") {
+		t.Fatalf("normal 删自己的 token 应成功，实际: %s", txt)
+	}
+	// 5. 超级管理员（admin）调实例级工具应成功
+	if txt := call("admin", setSvc); !strings.Contains(txt, "已开启") {
+		t.Fatalf("super 调 set_service 应成功，实际: %s", txt)
 	}
 }
 

@@ -38,8 +38,8 @@ func (w *statsWriter) status() int {
 	return w.code
 }
 
-// handleProxy 处理 /g/<token>/<github-url>：校验 token 后回源或命中缓存。
-// 无效 token 或无法解析的目标一律返回 404。
+// handleProxy 处理 /g/<用户名>/<token>/<github-url>：校验用户名段与 token 归属后回源或命中缓存。
+// 无效用户名、token 或 token 不归属该用户一律返回 404（多用户隔离，与 /offline 同模型）。
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// 使用原始 RequestURI，保留 GitHub 地址中的双斜杠（https://）
 	rawURI := r.RequestURI
@@ -48,13 +48,27 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rest := rawURI[len(tokenPrefix):]
+	// 第一段为用户名段：反查用户表，不存在一律 404（不暴露用户是否存在）
 	idx := strings.IndexByte(rest, '/')
 	if idx < 0 {
 		s.render404(w, r)
 		return
 	}
+	user, userOK := s.userByDockerSegment(rest[:idx])
+	if !userOK {
+		s.render404(w, r)
+		return
+	}
+	// 第二段为 token：必须存在且归属该用户（空 owner 归默认管理员）
+	rest = rest[idx+1:]
+	idx = strings.IndexByte(rest, '/')
+	if idx < 0 {
+		s.render404(w, r)
+		return
+	}
 	token := rest[:idx]
-	if !s.store.Has(token) {
+	t, exists := s.store.Get(token)
+	if !exists || (t.Owner != user && !(t.Owner == "" && user == s.adminUser)) {
 		s.render404(w, r)
 		return
 	}
