@@ -36,7 +36,13 @@
 <table>
   <tr>
     <td width="50%"><img src="docs/images/home-hero.png" alt="首页"><br><sub><b>首页</b>：能力概览 + 一键交接给 AI Agent</sub></td>
-    <td width="50%"><img src="docs/images/admin-overview-light.png" alt="管理后台概览"><br><sub><b>管理后台</b>：服务状态 / 统计 / 链接转换</sub></td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/admin-overview-dark.png">
+        <img src="docs/images/admin-overview-light.png" alt="管理后台概览">
+      </picture>
+      <br><sub><b>管理后台</b>：服务状态 / 统计 / 链接转换　<i>（此图跟随 GitHub 主题自动切换深浅）</i></sub>
+    </td>
   </tr>
   <tr>
     <td><img src="docs/images/admin-services.png" alt="服务管理"><br><sub><b>服务管理</b>：开关即时生效并持久化</sub></td>
@@ -44,32 +50,15 @@
   </tr>
   <tr>
     <td><img src="docs/images/admin-conv-result.png" alt="链接转换"><br><sub><b>链接转换</b>：粘贴原始地址即得加速链接</sub></td>
-    <td><img src="docs/images/admin-docker-modal.png" alt="Docker 安全确认"><br><sub><b>Docker 安全确认</b>：路径前缀 + 风险提示</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/images/home-usage.png" alt="基本使用"><br><sub><b>基本使用</b>：三种服务的命令直接复制</sub></td>
     <td><img src="docs/images/admin-usage.png" alt="用法示例"><br><sub><b>用法示例</b>：Token 一键切换、全页联动</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="docs/images/mobile-home.png" alt="移动端首页" width="30%">
-  <img src="docs/images/mobile-tokens.png" alt="移动端 Token 管理" width="30%">
-  <img src="docs/images/home-features.png" alt="通用特性" width="30%">
+  <img src="docs/images/mobile-home.png" alt="移动端首页" width="31%" style="vertical-align:top">
+  <img src="docs/images/mobile-tokens.png" alt="移动端 Token 管理" width="31%" style="vertical-align:top">
 </p>
-
-<details>
-<summary><b>🌗 深色模式（点击展开）</b></summary>
-<p align="center"><img src="docs/images/admin-overview-dark.png" alt="深色模式"></p>
-</details>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/admin-overview-dark.png">
-    <img src="docs/images/admin-overview-light.png" alt="随系统主题自动切换" width="100%">
-  </picture>
-  <br><sub>↑ 这张图会<b>跟随你的 GitHub 主题</b>自动切换深色 / 浅色</sub>
-</p>
+<p align="center"><sub>移动端（393px）：抽屉式导航、Token 卡片式列表、点击编辑就地展开表单</sub></p>
 
 ---
 
@@ -122,6 +111,8 @@ gh-mirror mcp
 ---
 
 ## ✨ 特性
+
+<p align="center"><img src="docs/images/home-features.png" alt="通用特性"></p>
 
 - 🐳 **Docker 镜像加速**：兼容 Registry API v2，内置 Docker Hub / GHCR / Quay / GCR / registry.k8s.io 多源；Manifest/Token 内存缓存、Layer 写透磁盘缓存、流式传输、`Range` 断点续传。
 - 🐙 **GitHub 资源加速**：`/g/<token>/` + 完整 GitHub 地址，覆盖 blob/raw、archive、releases、API，自带磁盘缓存。
@@ -252,6 +243,8 @@ socks5 = ""            # 如 "socks5://user:pass@127.0.0.1:1080"
 
 ## 🧭 各服务用法
 
+<p align="center"><img src="docs/images/home-usage.png" alt="基本使用：三种服务的命令直接复制"></p>
+
 ### 🐙 GitHub 资源加速（`/g/<token>/`）
 
 ```
@@ -273,6 +266,9 @@ curl -L -o app.zip "https://mirror.example.com/g/<token>/https://github.com/owne
 响应头 `X-Cache: HIT` 命中缓存，`MISS` 回源。
 
 ### 🐳 Docker 镜像加速（`/v2/<用户名>[/<自定义路径>]/…`、`/token`）
+
+<p align="center"><img src="docs/images/admin-docker-modal.png" alt="开启 Docker 前的安全确认与自定义路径" width="52%"><br>
+<sub>开启前会弹出安全确认：说明风险、并可设置「用户名 + 自定义路径」前缀</sub></p>
 
 开启 `[docker] enabled=true`（或 `DOCKER_ENABLED=true`）后，`/v2` 的拉取路径**固定带用户名段**（管理后台可再填一段自定义路径）：
 
