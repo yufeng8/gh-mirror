@@ -1,32 +1,46 @@
-# GitHub Mirror 镜像加速服务
+# gh-mirror v1.1.0 — 首个正式版
 
-轻量、自托管的 GitHub 资源镜像代理：通过带 Token 的 URL 加速 `raw`、`releases`、`archive` 等资源的访问，自带用量统计与管理后台。
+一个单二进制、零第三方依赖的自托管加速网关：**Docker 镜像**、**GitHub 资源**、**HuggingFace 权重**三类加速一站搞定，内置 Token 鉴权、磁盘缓存、镜像搜索与 **MCP 服务端**（AI Agent 友好）。
 
-## ✨ 功能特性
+## ✨ 本版亮点
 
-- **Token 鉴权**：每个访问地址携带独立 Token，未授权一律 404
-- **用量统计**：按 Token 记录访问次数、流量与最近使用时间，持久化到 `tokens.json`
-- **管理后台**：Web 界面增删 Token、查看统计，卡片式精致 UI
-- **智能缓存**：GET 请求带缓存减少回源；并发回源串行化避免惊群
-- **多协议重写**：`raw.githubusercontent.com` / `github.com` / releases / archive 统一经 `gh-mirror` 重写
-- **一键部署**：提供 `deploy.sh`、`Dockerfile`、`systemd` 服务文件与 `nginx` 反代配置
+- 🤖 **MCP 接入**：内置 MCP 服务端，AI Agent 用标准协议直接管理网关——`POST /mcp`（HTTP）与 `gh-mirror mcp`（stdio）两种传输，12 个工具覆盖 Token、服务开关、缓存、链接转换、镜像搜索
+- 🎛️ **管理后台**：概览 / 服务管理 / 缓存管理 / Token 管理 / **MCP 接入**五个页面；小屏抽屉导航、Token 独立页（类型 / 一键复制 / 行内编辑）、操作反馈提示
+- 🐳 **Docker 路径安全**：`/v2` 强制 `<用户名>[/<自定义路径>]` 前缀（为多用户预留）、`/offline` 离线包强制 Token
+- 💾 **磁盘缓存 + 余量保护**：流式代理 + 磁盘缓存（Range 续传）；磁盘可用低于 1 GB 自动按最旧优先清理
+- 🔒 **访问可控**：Token 鉴权、IP/仓库黑白名单、令牌桶限流、SOCKS5 出站
+
+## ⚠️ 破坏性变更（从预发布升级必读）
+
+1. **Docker 拉取路径变更**：`/v2/...` → `/v2/<用户名>[/<自定义路径>]/...`，`registry-mirrors` 不再生效（docker daemon 不支持带路径 mirror），改用带路径 pull：
+   ```bash
+   docker pull <域名>/<用户名>/library/nginx:1.25
+   ```
+2. **离线包强制 Token**：`/offline/<镜像>` → `/offline/<token>/<镜像>`，缺失或无效一律 404
+3. **Token 字段**：新增 `owner`（归属用户，多用户预留，旧数据自动归属默认管理员）；后台展示的「角色」改称「类型」（内部值 `admin` / `user` 不变，MCP 仍要求高级 Token）
 
 ## 🚀 快速开始
 
-1. 下载对应平台的二进制（`gh-mirror-<os>-<arch>`）并放到服务器
-2. 准备 `tokens.json`（或用管理后台添加），并设置环境变量：
-   - `ADMIN_PASS`：后台登录密码
-   - `LISTEN`：监听地址（默认 `:8080`）
-   - `TOKENS_FILE`：Token 文件路径
-   - `CACHE_DIR`：缓存目录
-3. 启动后访问 `http://<你的域名>/admin` 登录后台，添加第一个 Token
-4. 客户端使用方式：
-   - Git：`git config --global http."https://github.com/".proxy http://<你的域名>/g/<token>`
-   - 或直接把资源 URL 的 `https://github.com` 替换为 `https://<你的域名>/g/<token>/https://github.com`
+```bash
+# 方式一：Docker（推荐）
+docker run -d --name gh-mirror \
+  -p 8080:8080 \
+  -e ADMIN_USER=admin \
+  -e ADMIN_PASS='强口令' \
+  -e ADMIN_SECRET="$(openssl rand -hex 32)" \
+  -e DOCKER_ENABLED=true -e HF_ENABLED=true \
+  -v gm-data:/data \
+  ghcr.io/yufeng8/gh-mirror:v1.1.0
+
+# 方式二：下载本页二进制
+# 各平台 gh-mirror-<os>-<arch>，`chmod +x` 后直接运行
+```
+
+启动后访问 `http://<域名>/admin` 登录后台，创建 Token 后即可使用；MCP 接入命令见后台「MCP 接入」页。
 
 ## 🔗 相关链接
 
-- 源码：https://github.com/yufeng8/gh-mirror
-- 部署文档：见仓库 `README.md` 与 `deploy.sh`
+- 文档：[README.md](https://github.com/yufeng8/gh-mirror/blob/main/README.md) · [docs/](https://github.com/yufeng8/gh-mirror/tree/main/docs)
+- 镜像：[ghcr.io/yufeng8/gh-mirror](https://github.com/yufeng8/gh-mirror/pkgs/container/gh-mirror)
 
 ---
