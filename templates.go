@@ -585,7 +585,7 @@ function gmCloseModal(reset){var ms=document.querySelectorAll('.modal');for(var 
 function gmConfirmModal(){var f=gmPendingForm;gmCloseModal(false);if(f)if(typeof f.requestSubmit==='function'){f.requestSubmit()}else{f.submit()}}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')gmCloseModal()});
 (function(){try{var t=localStorage.getItem('gm_tok');var sels=document.querySelectorAll('.gmtok');if(!sels.length)return;if(!t){return}var hit=false;for(var i=0;i<sels.length;i++){for(var j=0;j<sels[i].options.length;j++){if(sels[i].options[j].value===t){hit=true;break}}if(hit){break}}if(hit){gmApplyToken(t)}else{try{localStorage.removeItem('gm_tok')}catch(e){}}}catch(e){}})();
-function togglePromptExpand(){var t=document.getElementById('agentPromptTerm');var b=document.querySelector('#agentPromptTerm .fold-btn');if(!t||!b)return;var folded=t.classList.toggle('folded');b.textContent=folded?'展开全部':'收起';if(!folded){t.scrollIntoView({behavior:'smooth',block:'nearest'})}}
+function togglePromptExpand(){var t=document.getElementById('agentPromptTerm');var b=document.querySelector('#agentPromptTerm .fold-btn');if(!t||!b)return;var folded=t.classList.toggle('folded');b.textContent=folded?'展开':'收起';if(!folded){t.scrollIntoView({behavior:'smooth',block:'nearest'})}}
 (function(){var d=document.documentElement.classList.contains('dark');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';})();
 </script>`
 
@@ -650,8 +650,10 @@ func (s *Server) agentPrompt() string {
 // homeHTML 生成首页（宣传/介绍页）；host 取请求实际域名，避免写死示例域名。
 // 提示词中的 <你的域名> 保持通用占位符（由使用者替换为实际部署域名），仅做 HTML 转义注入。
 func (s *Server) homeHTML(host string) string {
-	body := strings.ReplaceAll(homeTmpl, "{{HOST}}", host)
-	body = strings.ReplaceAll(body, "{{AGENT_PROMPT}}", html.EscapeString(s.agentPrompt()))
+	// 示例地址统一用「部署域名或IP」占位文字：首页是公开宣传页，与访问实例无关，
+	// 不注入真实访问地址（host 参数仅为兼容调用方保留）。
+	_ = host
+	body := strings.ReplaceAll(homeTmpl, "{{AGENT_PROMPT}}", html.EscapeString(s.agentPrompt()))
 	return page("gh-mirror · 多服务加速网关", "自托管的多服务加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。Token 鉴权、磁盘缓存、私有化部署，并支持 MCP 接入让 AI Agent 直接调用。", body)
 }
 
@@ -710,17 +712,17 @@ const homeTmpl = `
     <div class="svc">
       ` + tagGH + `<h3>GitHub 资源</h3>
       <p>域名后拼接 <code>/g/&lt;token&gt;/</code> 再加完整 GitHub 地址。</p>
-      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o file "{{HOST}}/g/&lt;token&gt;/https://github.com/owner/repo/releases/download/v1.0/app.zip"</code></pre></div>
+      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o file "部署域名或IP/g/&lt;token&gt;/https://github.com<wbr>/owner<wbr>/repo<wbr>/releases<wbr>/download<wbr>/v1.0<wbr>/app.zip"</code></pre></div>
     </div>
     <div class="svc">
       ` + tagHF + `<h3>HuggingFace 权重</h3>
       <p>拼接 <code>/hf/&lt;token&gt;/</code> 与 owner/repo 路径（token 模式需带 token）。</p>
-      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o config.json "{{HOST}}/hf/&lt;token&gt;/openai-community/gpt2/resolve/main/config.json"</code></pre></div>
+      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o config.json "部署域名或IP/hf/&lt;token&gt;/openai-community<wbr>/gpt2<wbr>/resolve<wbr>/main<wbr>/config.json"</code></pre></div>
     </div>
     <div class="svc">
       ` + tagDK + `<h3>Docker 镜像</h3>
       <p>registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>（无需 token，路径必须带用户名段，后台可再加自定义路径）；离线 tar 走 <code>/offline/&lt;token&gt;/&lt;镜像&gt;</code> 供 <code>docker load</code>。</p>
-      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">/etc/docker/daemon.json</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{ "registry-mirrors": ["{{HOST}}"] }</code></pre></div>
+      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>docker pull 部署域名或IP/&lt;用户名&gt;/library/nginx:1.25</code></pre></div>
     </div>
   </div>
   <p class="muted" style="margin-top:14px">镜像搜索：内置强大的搜索能力，<code>/search?q=nginx</code> 与 <code>/tags?repo=library/nginx</code> 页面及 JSON API 均可用，也能通过 MCP 交给 AI Agent 直接调用。</p>
@@ -751,7 +753,7 @@ curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
     <strong>它也是 AI Agent 友好型服务</strong>：内置 MCP 服务端，Agent（CodeBuddy / Cursor / Claude 等）可用标准协议直接管理 Token、开关 Docker/HF 加速、调整缓存、转换链接与搜索镜像，无需再手工拼接口。
   </div>
   <p class="muted">把下面这段提示词整体复制，交给你的 AI Agent（CodeBuddy / Cursor / Claude 等），它就能照着仓库文档自动完成部署与验证。提示词中的 <code>&lt;你的域名&gt;</code> 是通用占位符，<strong>请先替换为你要部署的实际域名</strong>（或让 Agent 先向你确认）：</p>
-  <div class="term folded" id="agentPromptTerm"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">prompt · 默认折叠，展开可见全文</span><button type="button" class="fold-btn" onclick="togglePromptExpand()">展开全部</button><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{{AGENT_PROMPT}}</code></pre></div>
+  <div class="term folded" id="agentPromptTerm"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">prompt · 默认折叠，展开可见全文</span><button type="button" class="fold-btn" onclick="togglePromptExpand()">展开</button><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{{AGENT_PROMPT}}</code></pre></div>
   <p class="muted" style="margin-top:12px">本服务同时支持 <strong>MCP 接入</strong>：AI Agent 可通过标准 MCP 协议直接管理 Token、服务开关与缓存，无需再猜接口。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。提示词内容与仓库 <code>docs/agent-prompt.md</code> 保持一致，随版本更新。</p>
 </section>
 
