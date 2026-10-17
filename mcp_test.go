@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -228,6 +230,54 @@ func TestMCPPermissionBoundaries(t *testing.T) {
 	// 5. 超级管理员（admin）调实例级工具应成功
 	if txt := call("admin", setSvc); !strings.Contains(txt, "已开启") {
 		t.Fatalf("super 调 set_service 应成功，实际: %s", txt)
+	}
+}
+
+// TestMCPPathUserSeg 验证 /ai/<用户名>/mcp 端点：用户名段反查 + 高级 Token 归属校验。
+func TestMCPPathUserSeg(t *testing.T) {
+	s := newTestServer(t)
+	s.store.Add("tokBobby", "", RoleAdmin, "bobby") // bobby 自己的高级 Token
+
+	call := func(path, tok string) int {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		rec := httptest.NewRecorder()
+		s.handleMCP(rec, req)
+		return rec.Code
+	}
+
+	// 1. 用户名段 + 归属自己的高级 Token → 200
+	if c := call("/ai/admin/mcp", "adm"); c != http.StatusOK {
+		t.Errorf("admin 路径 + 归属 token -> %d, want 200", c)
+	}
+	// 2. 普通用户 bobby 用自己的高级 Token → 200
+	if c := call("/ai/bobby/mcp", "tokBobby"); c != http.StatusOK {
+		t.Errorf("bobby 路径 + 自己的高级 token -> %d, want 200", c)
+	}
+	// 3. Token 不归属路径用户（adm 归 admin，用在 bobby 路径）→ 401
+	if c := call("/ai/bobby/mcp", "adm"); c != http.StatusUnauthorized {
+		t.Errorf("跨用户 token -> %d, want 401", c)
+	}
+	// 4. 用户名段不存在 → 404
+	if c := call("/ai/nobody/mcp", "adm"); c != http.StatusNotFound {
+		t.Errorf("用户名不存在 -> %d, want 404", c)
+	}
+	// 5. 旧端点 /mcp 已废弃 → 401（引导用新格式）
+	if c := call("/mcp", "adm"); c != http.StatusUnauthorized {
+		t.Errorf("旧端点 /mcp -> %d, want 401", c)
+	}
+	// 6. 路径第二段不是 mcp → 404
+	if c := call("/ai/admin/other", "adm"); c != http.StatusNotFound {
+		t.Errorf("路径第二段非 mcp -> %d, want 404", c)
+	}
+	// 7. GET 方法 → 405
+	req := httptest.NewRequest(http.MethodGet, "/ai/admin/mcp", nil)
+	rec := httptest.NewRecorder()
+	s.handleMCP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET -> %d, want 405", rec.Code)
 	}
 }
 

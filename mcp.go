@@ -25,6 +25,7 @@ const (
 	mcpDefaultProtocol = "2024-11-05" // initialize 缺省协议版本（优先回显客户端版本）
 	mcpServerName      = "gh-mirror"
 	mcpServerVersion   = "0.2.0"
+	aiPrefix           = "/ai/"       // AI 接入区前缀：/ai/<用户名>/mcp 为 MCP 端点（多用户隔离）
 )
 
 // ---- JSON-RPC 2.0 ----
@@ -556,16 +557,53 @@ func mcpBearerToken(r *http.Request) string {
 	return ""
 }
 
-// handleMCP 处理 POST /mcp（Streamable HTTP：单次请求/响应，不做 SSE 流式）。
-// 鉴权：Bearer token 必须是高级 Token（与普通代理用的 user token 区分）。
+// aiMCPUser 从 /ai/<用户名>/mcp 路径解析并校验用户段，返回归属用户名。
+// 不匹配新格式（缺 /ai/ 前缀、第二段不是 mcp、用户不存在）时返回 ok=false。
+func (s *Server) aiMCPUser(path string) (string, bool) {
+	rest := strings.TrimPrefix(path, aiPrefix)
+	if rest == path || rest == "" {
+		return "", false
+	}
+	parts := strings.SplitN(rest, "/", 2)
+	seg := strings.TrimSpace(parts[0])
+	if seg == "" || len(parts) < 2 || strings.Trim(parts[1], "/") != "mcp" {
+		return "", false
+	}
+	user, ok := s.userByDockerSegment(seg)
+	if !ok {
+		return "", false
+	}
+	return user, true
+}
+
+// handleMCP 处理 POST /ai/<用户名>/mcp（Streamable HTTP：单次请求/响应，不做 SSE 流式）。
+// 多用户隔离（与 /g /hf /offline 同模型）：路径用户名段反查用户表，
+// Bearer 高级 Token 必须归属该用户名，owner 以路径用户为准。
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "仅支持 POST", http.StatusMethodNotAllowed)
 		return
 	}
+	path := r.URL.Path
+	if !strings.HasPrefix(path, aiPrefix) {
+		// 旧端点 /mcp 已废弃：给出明确引导，便于更新 Agent 客户端配置
+		http.Error(w, "MCP 端点已改为 /ai/<用户名>/mcp 形式（需带用户名段），请更新客户端配置", http.StatusUnauthorized)
+		return
+	}
+	user, ok := s.aiMCPUser(path)
+	if !ok {
+		s.render404(w, r)
+		return
+	}
 	tok := mcpBearerToken(r)
 	if !s.store.IsAdmin(tok) {
 		http.Error(w, "未授权：需要高级 Token（Authorization: Bearer <token>）", http.StatusUnauthorized)
+		return
+	}
+	// token 必须归属路径里的用户名（空 owner 归默认管理员）
+	t, exists := s.store.Get(tok)
+	if !exists || (t.Owner != user && !(t.Owner == "" && user == s.adminUser)) {
+		http.Error(w, "未授权：该 Token 不属于路径中的用户", http.StatusUnauthorized)
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -574,7 +612,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		s.writeMCPJSON(w, &resp)
 		return
 	}
-	s.serveMCPRPC(baseOf(r), s.mcpOwner(tok), body, func(resp *rpcResp) { s.writeMCPJSON(w, resp) })
+	s.serveMCPRPC(baseOf(r), user, body, func(resp *rpcResp) { s.writeMCPJSON(w, resp) })
 }
 
 func (s *Server) writeMCPJSON(w http.ResponseWriter, resp *rpcResp) {

@@ -295,8 +295,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleOffline(w, r)
 	case s.hfEnabled() && strings.HasPrefix(path, hfPrefix):
 		s.handleHF(w, r)
-	case path == "/mcp" || strings.HasPrefix(path, "/mcp/"):
-		// MCP 接入（JSON-RPC 2.0）；限流与 ACL 中间件对 /mcp 同样生效
+	case path == "/mcp" || strings.HasPrefix(path, "/mcp/") || strings.HasPrefix(path, aiPrefix):
+		// MCP 接入（JSON-RPC 2.0）：新端点 /ai/<用户名>/mcp；旧 /mcp 走 handleMCP 返回引导提示
+		// 限流与 ACL 中间件对 MCP 同样生效
 		s.handleMCP(w, r)
 	case strings.HasPrefix(path, tokenPrefix):
 		s.handleProxy(w, r)
