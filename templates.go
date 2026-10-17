@@ -205,7 +205,7 @@ const pageStyle = `
   .stat .k{color:var(--muted-foreground);font-size:.8rem;margin:0}
   .stat .v{font-size:1.55rem;font-weight:750;margin:3px 0 0;font-variant-numeric:tabular-nums;line-height:1.1}
   .stat .s{color:var(--muted-foreground);font-size:.76rem;margin:3px 0 0}
-  .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;background:var(--muted);color:var(--muted-foreground);font-size:.8rem;font-weight:600}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;background:var(--muted);color:var(--muted-foreground);font-size:.8rem;font-weight:600;white-space:nowrap}
   .badge.on{background:rgba(34,197,94,.15);color:#15803d}
   .badge.off{background:rgba(245,158,11,.18);color:#b45309}
   html.dark .badge.on{color:#4ade80}
@@ -286,6 +286,34 @@ const pageStyle = `
   .nav-mask.show{display:block}
   .nav-toggle{display:none;align-items:center;justify-content:center;width:40px;height:40px;padding:0;font-size:1.15rem;flex:0 0 auto}
   @media (max-width:820px){.nav-toggle{display:inline-flex}}
+  .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  .card-head h2{margin:0}
+  /* 侧栏底部信息区：Star 引导 + 当前版本 + Releases（贴底） */
+  .console aside{display:flex;flex-direction:column}
+  .console .nav{flex:1 1 auto}
+  .aside-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:grid;gap:6px;font-size:.78rem}
+  .star-cta{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;border-radius:9px;
+    background:var(--muted);border:1px solid var(--border);color:var(--foreground);font-weight:600}
+  .star-cta:hover{background:var(--primary);border-color:var(--primary);color:#fff;text-decoration:none}
+  .aside-foot .ver{color:var(--muted-foreground)}
+  .aside-foot .ver code{font-size:.75rem}
+  .aside-foot .ver-link{color:var(--muted-foreground)}
+  .aside-foot .ver-link:hover{color:var(--primary)}
+  /* Token 表格：桌面为表格，窄屏变卡片式 */
+  .badge.role-admin{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .ops{display:inline-flex;gap:6px;align-items:center;flex-wrap:nowrap}
+  .ops .btn,.ops .danger,.tok-cell .btn{height:32px;padding:0 12px;border-radius:8px;white-space:nowrap;min-width:64px}
+  .tok-cell code{white-space:nowrap}
+  /* 8 列在窄卡片内会被压成"一字宽"导致中文逐字换行：给表格足够最小宽度，
+     超出部分交由 .table-wrap 横向滚动（不会把整页撑破） */
+  .table-wrap{overflow-x:auto}
+  .table-wrap table{min-width:960px}
+  .tok-table th,.tok-table td{white-space:nowrap}
+  .tok-table td[data-label="备注"]{white-space:normal;min-width:120px;max-width:240px}
+  .edit-row td{background:var(--muted);border-radius:10px}
+  .edit-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .edit-form .fld input,.edit-form .fld select{width:220px}
+  .edit-form .muted{margin:0 0 6px}
   .tsel{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .tsel label{font-size:.8rem;color:var(--muted-foreground);font-weight:600;margin:0}
   .tsel select{padding:7px 10px;border:1px solid var(--border);border-radius:9px;background:var(--background);color:var(--foreground);font-size:.86rem;max-width:100%}
@@ -326,7 +354,34 @@ const pageStyle = `
     .console .topbar .spacer{gap:6px}
     .console .topbar .btn{padding:6px 10px;font-size:.82rem}
   }
+  /* Token 表在窄屏切换为卡片式：隐藏表头，每行变一张卡，字段名由 data-label 提供 */
+  @media (max-width:760px){
+    /* 卡片式下取消表格横向滚动与最小宽度 */
+    .table-wrap{overflow:visible}
+    .table-wrap table{min-width:0}
+    .tok-table thead{display:none}
+    .tok-table,.tok-table tbody{display:block;overflow:visible;white-space:normal}
+    .tok-table tr.tok-row{display:block;border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
+    .tok-table tr.tok-row:hover{background:var(--card)}
+    .tok-table tr.tok-row td{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border:0;padding:5px 0;white-space:normal;text-align:left}
+    .tok-table tr.tok-row td::before{content:attr(data-label);color:var(--muted-foreground);font-size:.78rem;font-weight:600;flex:0 0 auto}
+    .tok-table tr.tok-row td[data-label="Token"]{display:block}
+    .tok-table tr.tok-row td[data-label="Token"]::before{display:block;margin-bottom:4px}
+    .tok-table tr.tok-row td[data-label="操作"]{justify-content:flex-start;margin-top:6px}
+    .tok-table tr.tok-row td[data-label="操作"]::before{display:none}
+    .tok-table tr.edit-row{display:block}
+    /* [hidden] 必须优先于上面的 display:block，否则编辑表单会默认展开 */
+    .tok-table tr.edit-row[hidden]{display:none}
+    .tok-table tr.edit-row td{display:block;padding:10px}
+    .tok-table td[data-label="Token"]{min-width:0}
+    .tok-cell code{white-space:normal;overflow-wrap:anywhere}
+    .edit-form{display:block}
+    .edit-form .fld{display:block;margin-bottom:10px}
+    .edit-form .fld input,.edit-form .fld select{width:100%}
+  }
   @media (max-width:600px){.container{padding:0 14px 44px}.topnav{padding:8px 12px;gap:10px}.topnav nav{display:none}.topnav .btn{padding:6px 10px;font-size:.82rem}.topnav .gh span{display:none}.topnav .gh{padding:6px 9px}.topnav .brand{gap:8px;font-size:.95rem}.topnav .brand>svg{width:26px;height:26px}.hero{gap:18px;padding:30px 0 6px}pre{font-size:.8rem}table{display:block;overflow-x:auto;white-space:nowrap}.conv-row input{min-width:100%}.fld input{width:100%}.stat .v{font-size:1.3rem}.stat .k,.stat .s{font-size:.74rem}.stat{word-break:break-word;overflow-wrap:anywhere}}
+  /* 全局 600px 的 table 横滚规则不适用于卡片化的 Token 表 */
+  @media (max-width:600px){.tok-table{overflow-x:visible;white-space:normal}}
 </style>`
 
 const docOpen = `<!doctype html>
@@ -339,15 +394,16 @@ const pageScript = `<script>
 function toggleTheme(){var d=document.documentElement.classList.toggle('dark');try{localStorage.setItem('theme',d?'dark':'light')}catch(e){}var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';}
 function copyCode(btn){var t=btn.closest('.term');if(!t)return;var c=t.querySelector('code')||t.querySelector('pre');var txt=c?c.innerText:'';var done=function(){btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
 function togglePw(){var i=document.getElementById('pw');var b=document.getElementById('pwToggle');if(!i||!b)return;if(i.type==='password'){i.type='text';b.textContent='隐藏'}else{i.type='password';b.textContent='显示'}}
-function gmConvert(){var box=document.getElementById('gmconv');var inp=document.getElementById('gmconv-in');var out=document.getElementById('gmconv-out');if(!box||!inp||!out)return;var u=(inp.value||'').trim();out.removeAttribute('data-url');if(!u){out.value='';out.setAttribute('placeholder','加速链接将显示在这里');return}out.value='处理中…';var fd=new URLSearchParams();fd.set('url',u);fd.set('csrf',box.getAttribute('data-csrf')||'');var sel=document.getElementById('gmTokenSel');if(sel&&sel.value)fd.set('token',sel.value);fetch(box.getAttribute('data-api')||'',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString()}).then(function(r){return r.json()}).then(function(d){if(d&&d.ok&&d.url){out.value=d.url;out.setAttribute('data-url',d.url);out.setAttribute('placeholder','')}else{out.value='';out.setAttribute('placeholder',(d&&d.hint)||'无法识别该输入')}}).catch(function(){out.value='';out.setAttribute('placeholder','请求失败，请重试')})}
+function gmConvert(){var box=document.getElementById('gmconv');var inp=document.getElementById('gmconv-in');var out=document.getElementById('gmconv-out');if(!box||!inp||!out)return;var u=(inp.value||'').trim();out.removeAttribute('data-url');if(!u){out.value='';out.setAttribute('placeholder','加速链接将显示在这里');return}out.value='处理中…';var fd=new URLSearchParams();fd.set('url',u);fd.set('csrf',box.getAttribute('data-csrf')||'');var sel=document.querySelector('.gmtok');if(sel&&sel.value)fd.set('token',sel.value);fetch(box.getAttribute('data-api')||'',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString()}).then(function(r){return r.json()}).then(function(d){if(d&&d.ok&&d.url){out.value=d.url;out.setAttribute('data-url',d.url);out.setAttribute('placeholder','')}else{out.value='';out.setAttribute('placeholder',(d&&d.hint)||'无法识别该输入')}}).catch(function(){out.value='';out.setAttribute('placeholder','请求失败，请重试')})}
 function gmConvURL(){var o=document.getElementById('gmconv-out');return o?(o.getAttribute('data-url')||''):''}
 function gmCopyConv(){var u=gmConvURL();if(!u)return;var b=document.getElementById('gmconv-copy');if(!b)return;var done=function(){b.textContent='已复制 ✓';setTimeout(function(){b.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=u;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(done,fb)}else{fb()}}
 function gmDownloadConv(){var u=gmConvURL();if(!u)return;var a=document.createElement('a');a.href=u;a.download='';document.body.appendChild(a);a.click();a.remove()}
 function gmOpenConv(){var u=gmConvURL();if(!u)return;window.open(u,'_blank','noopener')}
 function toggleNav(force){var a=document.getElementById('gmNav');var m=document.querySelector('.nav-mask');if(!a)return;var open=(typeof force==='boolean')?force:!a.classList.contains('open');a.classList.toggle('open',open);if(m)m.classList.toggle('show',open);var b=document.querySelector('.nav-toggle');if(b)b.setAttribute('aria-expanded',open?'true':'false')}
 function gmCopyText(btn,txt){var done=function(){var o=btn.textContent;btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent=o},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
-function gmApplyToken(tk){try{localStorage.setItem('gm_tok',tk||'')}catch(e){}var s=document.querySelectorAll('.tslot');for(var i=0;i<s.length;i++){s[i].textContent=tk||'token'}var box=document.getElementById('gmconv');if(box)box.setAttribute('data-token',tk||'')}
-(function(){try{var t=localStorage.getItem('gm_tok');if(t){var sel=document.getElementById('gmTokenSel');if(sel){sel.value=t;gmApplyToken(t)}}}catch(e){}})();
+function gmApplyToken(tk){try{localStorage.setItem('gm_tok',tk||'')}catch(e){}var sels=document.querySelectorAll('.gmtok');for(var i=0;i<sels.length;i++){if(sels[i].value!==tk)sels[i].value=tk}var s=document.querySelectorAll('.tslot');for(var j=0;j<s.length;j++){s[j].textContent=tk||'token'}}
+function gmToggleEdit(btn){var tr=btn.closest('tr');if(!tr)return;var row=tr.classList.contains('edit-row')?tr.previousElementSibling:tr;if(!row)return;var er=row.nextElementSibling;if(!er||!er.classList.contains('edit-row'))return;var open=er.hasAttribute('hidden');if(open){er.removeAttribute('hidden')}else{er.setAttribute('hidden','')}var t=row.querySelector('.edit-toggle');if(t){t.textContent=open?'取消':'编辑';t.setAttribute('aria-expanded',open?'true':'false')}if(open){var f=er.querySelector('input[name=note]');if(f)try{f.focus()}catch(e){}}}
+(function(){try{var t=localStorage.getItem('gm_tok');var sels=document.querySelectorAll('.gmtok');if(!sels.length)return;if(!t){return}var hit=false;for(var i=0;i<sels.length;i++){for(var j=0;j<sels[i].options.length;j++){if(sels[i].options[j].value===t){hit=true;break}}if(hit){break}}if(hit){gmApplyToken(t)}else{try{localStorage.removeItem('gm_tok')}catch(e){}}}catch(e){}})();
 function togglePromptExpand(){var t=document.getElementById('agentPromptTerm');var b=document.querySelector('#agentPromptTerm .fold-btn');if(!t||!b)return;var folded=t.classList.toggle('folded');b.textContent=folded?'展开全部':'收起';if(!folded){t.scrollIntoView({behavior:'smooth',block:'nearest'})}}
 (function(){var d=document.documentElement.classList.contains('dark');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';})();
 </script>`
@@ -611,7 +667,7 @@ var dashboardBody = `
       <div class="stats">%s</div>
     </section>
     <section class="card">
-      <h2>链接转换</h2>
+      <div class="card-head"><h2>链接转换</h2>%s</div>
       %s
     </section>
     <section class="card" id="services">
@@ -646,10 +702,12 @@ var tokensBody = `
     </div>
     <section class="card">
       <h2>Token 列表</h2>
-      <table>
+      <div class="table-wrap">
+      <table class="tok-table">
         <thead><tr><th>Token</th><th>备注</th><th>角色</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
         <tbody>%s</tbody>
       </table>
+      </div>
       <h2 style="margin-top:22px">新增 Token</h2>
       %s
       <p class="foot">%s</p>

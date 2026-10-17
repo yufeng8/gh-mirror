@@ -39,6 +39,10 @@ type Server struct {
 // processStart 记录进程启动时间，用于后台展示运行时长。
 var processStart = time.Now()
 
+// version 是当前程序版本号，构建时由 -ldflags "-X main.version=<tag>" 注入；
+// 本地 go build / go run 时为 "dev"。
+var version = "dev"
+
 // cacheSweepInterval 是缓存自动失效（过期清理 + 超限清理）的执行周期。
 const cacheSweepInterval = 10 * time.Minute
 

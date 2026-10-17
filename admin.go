@@ -114,6 +114,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
+	case sub == "tokens/edit":
+		if s.isAuthed(r) {
+			s.doEditToken(w, r)
+			return
+		}
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
 	case sub == "service":
 		if !s.isAuthed(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
@@ -257,7 +263,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	var ex strings.Builder
 	ex.WriteString(`<div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">`)
 	ex.WriteString(`<p class="muted" style="margin:0;flex:1;min-width:220px">已自动填入当前访问地址；下方示例与「链接转换」都会使用这里选定的 Token。</p>`)
-	ex.WriteString(s.tokenSelector(tokens))
+	ex.WriteString(s.tokenSelector(tokens, "示例使用的 Token"))
 	ex.WriteString(`</div>`)
 	ex.WriteString(`<p><strong>GitHub 资源</strong>（需 token）：<br><code>` + ghEx + `</code></p>`)
 	ex.WriteString(`<p><strong>HuggingFace 权重</strong>（需 token）：<br><code>` + hfEx + `</code></p>`)
@@ -295,7 +301,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`<button type="button" id="gmconv-copy" class="btn outline" onclick="gmCopyConv()">复制</button>` +
 		`<button type="button" class="btn outline" onclick="gmDownloadConv()">下载</button>` +
 		`<button type="button" class="btn outline" onclick="gmOpenConv()">访问</button></div>` +
-		`<p class="muted small" style="margin-top:10px">基于当前访问地址与首个 token 生成；GitHub / HuggingFace 链接需 token，Docker 镜像名给出 <code>/offline</code> 离线 tar 地址。</p>`
+		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成；GitHub / HuggingFace 链接需带 token，Docker 镜像名给出 <code>/offline</code> 离线 tar 地址。</p>`
+	// 链接转换卡片的 Token 快捷切换器（与「用法示例」的切换器联动，共用 .gmtok）
+	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
 	// 服务管理三卡：GitHub 恒开；Docker / HuggingFace 即时开关（持锁内存 + settings.json 持久化）
 	svcCard := func(tag, name, desc, usage string, on bool, svc string) string {
 		// 三张卡的底部标识统一宽高，视觉一致；GitHub 恒开用「默认开启」标识代替按钮
@@ -356,9 +364,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`（` + strconv.Itoa(len(tokens)) + `）</a></div>`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, warn, badges, stats, converter, services, cacheMgmt, examples, tokensGuide
+	// verbs: aside, topbarRight, warn, badges, stats, convSel, converter, services, cacheMgmt, examples, tokensGuide
 	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
-	body := fmt.Sprintf(dashboardBody, aside, topbarRight, warnHTML, badges, stats, conv, services, cacheMgmt, example, tokensGuide)
+	body := fmt.Sprintf(dashboardBody, aside, topbarRight, warnHTML, badges, stats, convSel, conv, services, cacheMgmt, example, tokensGuide)
 	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
 }
 
@@ -378,27 +386,29 @@ func shortTok(tk string) string {
 	return tk[:8]
 }
 
-// tokenSelector 生成「示例用 Token」下拉框：按列表序号 + 备注 + token 前 8 位展示，便于查找切换。
-func (s *Server) tokenSelector(tokens []*Token) string {
+// tokenSelector 生成 Token 快捷下拉框：按列表序号 + 备注 + token 前 8 位展示，便于查找切换。
+// 用 class="gmtok" 而非 id，使同一页面可放多个实例（链接转换 / 用法示例）并保持联动。
+func (s *Server) tokenSelector(tokens []*Token, label string) string {
 	var sb strings.Builder
-	sb.WriteString(`<div class="tsel"><label for="gmTokenSel">示例使用的 Token</label><select id="gmTokenSel" onchange="gmApplyToken(this.value)">`)
+	sb.WriteString(`<div class="tsel"><label>` + html.EscapeString(label) + `</label><select class="gmtok" onchange="gmApplyToken(this.value)" aria-label="` + html.EscapeString(label) + `">`)
 	if len(tokens) == 0 {
 		sb.WriteString(`<option value="">暂无 token</option>`)
 	} else {
 		for i, t := range tokens {
-			label := t.Note
-			if label == "" {
-				label = "（无备注）"
+			note := t.Note
+			if note == "" {
+				note = "（无备注）"
 			}
 			sb.WriteString(fmt.Sprintf(`<option value="%s">%d. %s · %s…</option>`,
-				html.EscapeString(t.Token), i+1, html.EscapeString(label), html.EscapeString(shortTok(t.Token))))
+				html.EscapeString(t.Token), i+1, html.EscapeString(note), html.EscapeString(shortTok(t.Token))))
 		}
 	}
 	sb.WriteString(`</select></div>`)
 	return sb.String()
 }
 
-// tokenRows 渲染 Token 表格行（含一键复制与删除）。
+// tokenRows 渲染 Token 表格行（复制 / 编辑 / 删除）。
+// 每个 td 带 data-label，窄屏下由 CSS 切换为卡片式布局；每行后跟一条隐藏的编辑行（行内表单）。
 func (s *Server) tokenRows(tokens []*Token, csrf string) string {
 	var rows strings.Builder
 	for _, t := range tokens {
@@ -408,26 +418,60 @@ func (s *Server) tokenRows(tokens []*Token, csrf string) string {
 		}
 		roleTxt, roleCls := "普通", "badge"
 		if normRole(t.Role) == RoleAdmin {
-			roleTxt, roleCls = "管理员", "badge on"
+			roleTxt, roleCls = "管理员", "badge role-admin"
+		}
+		esc := html.EscapeString(t.Token)
+		// 列表里只显示缩写（完整值放 title 并用「复制」按钮拿走），避免 32 位 token 把表格撑宽
+		shown := esc
+		if len(t.Token) > 10 {
+			shown = html.EscapeString(shortTok(t.Token)) + "…"
 		}
 		rows.WriteString(fmt.Sprintf(
-			`<tr><td><span class="tok-cell"><code>%s</code>`+
+			`<tr class="tok-row"><td data-label="Token"><span class="tok-cell"><code title="完整 Token：%s">%s</code>`+
 				`<button type="button" class="btn outline" title="复制 token" onclick="gmCopyText(this,&quot;%s&quot;)">复制</button></span></td>`+
-				`<td>%s</td><td><span class="%s">%s</span></td><td>%s</td><td class="num">%d</td><td class="num">%s</td><td>%s</td><td>
-<form method="post" action="%s/del" class="del-form">
+				`<td data-label="备注">%s</td>`+
+				`<td data-label="角色"><span class="%s">%s</span></td>`+
+				`<td data-label="创建时间">%s</td>`+
+				`<td data-label="访问次数" class="num">%d</td>`+
+				`<td data-label="流量" class="num">%s</td>`+
+				`<td data-label="最近使用">%s</td>`+
+				`<td data-label="操作"><span class="ops">`+
+				`<button type="button" class="btn outline edit-toggle" onclick="gmToggleEdit(this)" aria-expanded="false">编辑</button>`+
+				`<form method="post" action="%s/del" class="del-form">`+
+				`<input type="hidden" name="csrf" value="%s">`+
+				`<input type="hidden" name="token" value="%s">`+
+				`<button type="submit" class="danger" onclick="return confirm('确定删除该 token？')">删除</button>`+
+				`</form></span></td></tr>
+<tr class="edit-row" hidden><td colspan="8">
+<form method="post" action="%s/tokens/edit" class="edit-form">
 <input type="hidden" name="csrf" value="%s">
 <input type="hidden" name="token" value="%s">
-<button type="submit" class="danger" onclick="return confirm('确定删除该 token？')">删除</button>
-</form></td></tr>`,
-			html.EscapeString(t.Token), html.EscapeString(t.Token), html.EscapeString(t.Note), roleCls, roleTxt,
+<label class="fld">备注<input name="note" value="%s" placeholder="用于区分用途，如 CI / 个人笔记本"></label>
+<label class="fld">角色<select name="role" aria-label="Token 角色"><option value="user"%s>普通用户（仅代理）</option><option value="admin"%s>管理员（可用于 MCP）</option></select></label>
+<button type="submit" class="btn">保存</button>
+<button type="button" class="btn outline" onclick="gmToggleEdit(this)">取消</button>
+<span class="muted small">Token 值不可修改，避免已发出的链接失效。</span>
+</form>
+</td></tr>`,
+			esc, shown, esc, html.EscapeString(t.Note), roleCls, roleTxt,
 			time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"),
 			t.Hits, formatBytes(t.Bytes), lastUsed,
-			s.adminPath, csrf, html.EscapeString(t.Token)))
+			s.adminPath, csrf, esc,
+			s.adminPath, csrf, esc, html.EscapeString(t.Note),
+			selAttr(normRole(t.Role) == RoleUser), selAttr(normRole(t.Role) == RoleAdmin)))
 	}
 	if len(tokens) == 0 {
 		rows.WriteString(`<tr><td colspan="8" class="muted">暂无 token，请在上方创建</td></tr>`)
 	}
 	return rows.String()
+}
+
+// selAttr 返回选中属性（供编辑表单里的角色下拉回显）。
+func selAttr(sel bool) string {
+	if sel {
+		return " selected"
+	}
+	return ""
 }
 
 // tokenAddForm Token 新增表单（角色选择供 MCP 使用）。
@@ -470,20 +514,57 @@ func (s *Server) consoleAside(r *http.Request) string {
 	if n > 0 {
 		tokensNav = fmt.Sprintf("Token 管理（%d）", n)
 	}
-	active := ""
+	// 高亮互斥：/admin/tokens 时只高亮 Token 管理，其余情况高亮概览
+	overviewActive, tokensActive := " active", ""
 	if strings.HasSuffix(r.URL.Path, "/tokens") {
-		active = " active"
+		overviewActive, tokensActive = "", " active"
 	}
-	return `<aside id="gmNav"><a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a><nav class="nav">` +
-		`<a class="navitem` + active + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
-		`<a class="navitem` + active + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
+	return `<aside id="gmNav">` +
+		`<a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>` +
+		`<nav class="nav">` +
+		`<a class="navitem` + overviewActive + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
+		`<a class="navitem` + tokensActive + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
 		`<a class="navitem" href="` + s.adminPath + `#services"><span class="ic">⚙️</span>服务管理</a>` +
 		`<a class="navitem" href="` + s.adminPath + `#cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<span class="navsep"></span>` +
-		`<a class="navitem" href="` + repoURL + `/#文档" target="_blank" rel="noopener"><span class="ic">📄</span>文档</a>` +
+		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
 		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">✦</span>GitHub</a>` +
-		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">⎋</span>退出登录</a></nav></aside>` +
+		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">⎋</span>退出登录</a>` +
+		`</nav>` + s.asideFoot() + `</aside>` +
 		`<button class="nav-mask" type="button" aria-label="关闭导航菜单" onclick="toggleNav()"></button>`
+}
+
+// asideFoot 渲染侧栏底部信息区：⭐ Star 引导 + 当前版本号 + Releases 链接。
+// 版本号由构建期注入（见 main.go 的 version），此处只做静态展示，不联网拉取最新版本。
+func (s *Server) asideFoot() string {
+	return `<div class="aside-foot">` +
+		`<a class="star-cta" href="` + repoURL + `" target="_blank" rel="noopener" title="在 GitHub 上 Star 本项目">⭐ Star 支持一下</a>` +
+		`<div class="ver">当前版本 <code>` + html.EscapeString(version) + `</code></div>` +
+		`<a class="ver-link" href="` + repoURL + `/releases" target="_blank" rel="noopener">查看 Releases ↗</a>` +
+		`</div>`
+}
+
+// doEditToken 修改 Token 的备注与角色（登录 + CSRF；token 值本身不可改）。
+func (s *Server) doEditToken(w http.ResponseWriter, r *http.Request) {
+	sid, ok := s.parseSession(r)
+	if !ok {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		return
+	}
+	tok := strings.TrimSpace(r.FormValue("token"))
+	note := strings.TrimSpace(r.FormValue("note"))
+	role := normRole(r.FormValue("role"))
+	if !s.store.Update(tok, note, role) {
+		http.Error(w, "token 不存在", http.StatusNotFound)
+		return
+	}
+	log.Printf("Token 已更新: 角色=%s", role)
+	http.Redirect(w, r, s.adminPath+"/tokens", http.StatusFound)
 }
 
 // topbarRight 渲染后台顶栏右侧按钮（各页面共用）。

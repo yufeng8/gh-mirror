@@ -2,10 +2,11 @@
 # 不传时由 buildx + QEMU 按目标平台原生编译，用于 GitHub Actions 多架构构建。
 FROM golang:1.24 AS build
 ARG GOARCH=
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod ./
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux ${GOARCH:+GOARCH=$GOARCH} go build -o /out/gh-mirror .
+RUN CGO_ENABLED=0 GOOS=linux ${GOARCH:+GOARCH=$GOARCH} go build -ldflags "-X main.version=${VERSION}" -o /out/gh-mirror .
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /out/gh-mirror /gh-mirror
