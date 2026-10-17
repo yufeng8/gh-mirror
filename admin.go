@@ -188,7 +188,7 @@ func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
 	tok := strings.TrimSpace(r.FormValue("token"))
@@ -197,10 +197,14 @@ func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 	if tok == "" {
 		tok = GenToken()
 	}
-	if !s.store.Has(tok) {
+	code := "token_added"
+	if s.store.Has(tok) {
+		code = "token_exists"
+	} else {
 		s.store.Add(tok, note, role)
 	}
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	// 跳回 Token 管理页（该页才是操作上下文），并带上一次性反馈码
+	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
 }
 
 func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
@@ -211,14 +215,16 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
 	tok := r.FormValue("token")
-	if tok != "" {
+	code := "token_missing"
+	if tok != "" && s.store.Has(tok) {
 		s.store.Delete(tok)
+		code = "token_deleted"
 	}
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
@@ -269,11 +275,8 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	ex.WriteString(`<p><strong>HuggingFace 权重</strong>（需 token）：<br><code>` + hfEx + `</code></p>`)
 	ex.WriteString(`<p><strong>Docker 镜像</strong>（无需 token）：<br><code>` + dockerEx + `</code></p>`)
 	example := ex.String()
-	// Docker 开启时在后台顶部强提醒：/v2、/offline 端点无 Token 鉴权，公网暴露有滥用/带宽风险
-	warnHTML := ""
-	if s.dockerEnabled() {
-		warnHTML = `<div class="alert danger"><strong>⚠️ 安全提醒：Docker 加速/离线镜像已开启</strong>（<code>DOCKER_ENABLED=true</code>）。端点 <code>/v2</code> 与 <code>/offline</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token）。<br>· 若网关经公网/CDN 暴露，<strong>任何人都能使用你的镜像加速、拉取离线 tar</strong>，耗费上游带宽。<br>· 置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只见 CDN 回源 IP，X-Forwarded-For 可伪造）。<br><strong>降低风险（任选）：</strong>1) 不需要公网 Docker 加速就设 <code>DOCKER_ENABLED=false</code>；2) 公网反代挡掉裸路径 <code>location ^~ /v2/ { return 404; }</code>、<code>location ^~ /offline/ { return 404; }</code>，/offline 改用带秘密前缀的地址；3) registry 用「不走 CDN 的难猜子域名」直连源站 + 云安全组按来源 IP 放行；4) 在 CDN（EdgeOne）对 <code>/v2</code>、<code>/offline</code> 配速率限制与带宽封顶（CDN 看得到真实客户端 IP）。详见 <code>docs/docker-deploy.md</code>「Docker 加速安全」。</div>`
-	}
+	// 操作反馈条（保存 / 创建 / 开关等）；Docker 风险说明改由弹窗承载，不再常驻页面
+	flashHTML := s.flashHTML(r)
 	// 侧栏与顶栏（各页面共用组件；小屏侧栏为抽屉）
 	aside := s.consoleAside(r)
 	topbarRight := s.topbarRight(base)
@@ -309,13 +312,21 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		// 三张卡的底部标识统一宽高，视觉一致；GitHub 恒开用「默认开启」标识代替按钮
 		state, foot := `<span class="badge on">● 已开启</span>`, `<span class="svccard-tag">默认开启</span>`
 		if svc != "" {
-			form := `<form method="post" action="` + s.adminPath + `/service" class="svc-toggle">` +
+			form := `<form method="post" action="` + s.adminPath + `/service" class="svc-toggle"` +
+				` id="gmSvcForm-` + svc + `">` +
 				`<input type="hidden" name="csrf" value="` + csrf + `">` +
 				`<input type="hidden" name="name" value="` + svc + `">`
-			if on {
+			switch {
+			case on:
 				state = `<span class="badge on">● 已开启</span>`
 				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn svccard-btn">关闭</button></form>`
-			} else {
+			case svc == "docker":
+				// 开启 Docker 前先弹安全确认（风险说明不再常驻页面）
+				state = `<span class="badge off">○ 未开启</span>`
+				foot = form + `<input type="hidden" name="on" value="1">` +
+					`<button type="button" class="btn outline svccard-btn" onclick="gmOpenModal('gmDockerModal')">安全说明</button>` +
+					`<button type="button" class="btn svccard-btn" onclick="gmOpenModal('gmDockerModal','gmSvcForm-docker')">开启</button></form>`
+			default:
 				state = `<span class="badge off">○ 未开启</span>`
 				foot = form + `<input type="hidden" name="on" value="1"><button type="submit" class="btn svccard-btn">开启</button></form>`
 			}
@@ -326,9 +337,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	services := `<div class="svcgrid">` +
 		svcCard("GH", "GitHub 资源加速", "覆盖 blob / raw、Releases、仓库打包 archive 与短链，支持 Range 断点续传。始终可用。", "/g/&lt;token&gt;/https://github.com/owner/repo", true, "") +
-		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启后请阅读顶部安全提醒。", "daemon.json → registry-mirrors；/offline/&lt;image&gt;", s.dockerEnabled(), "docker") +
+		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", "daemon.json → registry-mirrors；/offline/&lt;image&gt;", s.dockerEnabled(), "docker") +
 		svcCard("HF", "HuggingFace 权重", "加速模型与 LFS 大文件下载，token 模式下需带 token。", "/hf/&lt;token&gt;/owner/repo/resolve/main/file", s.hfEnabled(), "hf") +
-		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>`
+		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModal
 	// 缓存管理：已用总量 / 单文件上限 / 总上限 / 时效，均热改；超限与过期自动清理；可一键清除
 	maxFileMB := int(s.cache.MaxBytes() / (1024 * 1024))
 	maxTotalMB := int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -364,9 +375,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`（` + strconv.Itoa(len(tokens)) + `）</a></div>`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, warn, badges, stats, convSel, converter, services, cacheMgmt, examples, tokensGuide
+	// verbs: aside, topbarRight, flash, badges, stats, convSel, converter, services, cacheMgmt, examples, tokensGuide
 	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
-	body := fmt.Sprintf(dashboardBody, aside, topbarRight, warnHTML, badges, stats, convSel, conv, services, cacheMgmt, example, tokensGuide)
+	body := fmt.Sprintf(dashboardBody, aside, topbarRight, flashHTML, badges, stats, convSel, conv, services, cacheMgmt, example, tokensGuide)
 	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
 }
 
@@ -502,8 +513,8 @@ func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 	csrf := s.csrfToken(sid)
 	tokens := s.store.All()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, rows, addForm, foot
-	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)),
+	// verbs: aside, topbarRight, flash, rows, addForm, foot
+	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
 		s.tokenRows(tokens, csrf), s.tokenAddForm(csrf), s.tokenFoot())
 	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
 }
@@ -554,18 +565,67 @@ func (s *Server) doEditToken(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
 	tok := strings.TrimSpace(r.FormValue("token"))
 	note := strings.TrimSpace(r.FormValue("note"))
 	role := normRole(r.FormValue("role"))
 	if !s.store.Update(tok, note, role) {
-		http.Error(w, "token 不存在", http.StatusNotFound)
+		http.Redirect(w, r, s.adminPath+"/tokens?err=token_missing", http.StatusFound)
 		return
 	}
-	log.Printf("Token 已更新: 角色=%s", role)
-	http.Redirect(w, r, s.adminPath+"/tokens", http.StatusFound)
+	log.Printf("Token 已更新: 类型=%s", role)
+	http.Redirect(w, r, s.adminPath+"/tokens?ok=token_updated", http.StatusFound)
+}
+
+// flashOK / flashErr 把 POST 后重定向携带的 ok / err 码翻译成可读文案。
+var flashOK = map[string]string{
+	"token_added":   "Token 已创建，可立即用于代理访问",
+	"token_deleted": "Token 已删除",
+	"token_updated": "Token 已保存",
+	"token_exists":  "该 Token 已存在，未做改动",
+	"service_on":    "服务已开启，即时生效（已持久化）",
+	"service_off":   "服务已关闭",
+	"cache_saved":   "缓存设置已保存，即时生效",
+	"cache_cleared": "缓存已清除",
+}
+
+var flashErr = map[string]string{
+	"csrf":          "安全校验失败（会话可能已过期），请刷新页面后重试",
+	"token_missing": "Token 不存在或已被删除",
+	"bad_input":     "输入不合法，请检查后重试",
+	"svc_unknown":   "未知服务，仅支持 Docker / HuggingFace",
+	"svc_failed":    "服务开关调整失败，请查看日志",
+}
+
+// flashHTML 渲染一次性操作反馈条（保存 / 创建 / 开关等操作后的即时提示）。
+// 文案由重定向带上来的 ?ok= / ?err= 决定；前端会自动淡出并清理该查询参数。
+func (s *Server) flashHTML(r *http.Request) string {
+	q := r.URL.Query()
+	msg, kind := "", ""
+	if code := q.Get("ok"); code != "" {
+		if m, ok := flashOK[code]; ok {
+			msg, kind = m, "ok"
+		}
+	}
+	if msg == "" {
+		if code := q.Get("err"); code != "" {
+			if m, ok := flashErr[code]; ok {
+				msg, kind = m, "err"
+			}
+		}
+	}
+	if msg == "" {
+		return ""
+	}
+	icon := "✓"
+	if kind == "err" {
+		icon = "!"
+	}
+	return `<div class="flash ` + kind + `" id="gmFlash" role="status" aria-live="polite">` +
+		`<strong style="flex:0 0 auto">` + icon + `</strong><span>` + msg + `</span>` +
+		`<button type="button" class="flash-x" onclick="gmDismissFlash()" aria-label="关闭提示">✕</button></div>`
 }
 
 // topbarRight 渲染后台顶栏右侧按钮（各页面共用）。
@@ -628,21 +688,25 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"?err=csrf#services", http.StatusFound)
 		return
 	}
 	name := strings.ToLower(strings.TrimSpace(r.FormValue("name")))
 	if name != "docker" && name != "hf" {
-		http.Error(w, "未知服务（仅支持 docker / hf）", http.StatusBadRequest)
+		http.Redirect(w, r, s.adminPath+"?err=svc_unknown#services", http.StatusFound)
 		return
 	}
 	on := r.FormValue("on") == "1" || strings.EqualFold(r.FormValue("on"), "true") || strings.EqualFold(r.FormValue("on"), "on")
 	if err := s.setService(name, on); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Redirect(w, r, s.adminPath+"?err=svc_failed#services", http.StatusFound)
 		return
 	}
 	log.Printf("服务开关已调整: %s -> %v", name, on)
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	code := "service_off"
+	if on {
+		code = "service_on"
+	}
+	http.Redirect(w, r, s.adminPath+"?ok="+code+"#services", http.StatusFound)
 }
 
 // doSetCache 运行时调整缓存参数（单文件上限 / 总上限 / 时效），即时生效并持久化。
@@ -654,20 +718,20 @@ func (s *Server) doSetCache(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"?err=csrf#cache", http.StatusFound)
 		return
 	}
 	maxFileMB := atoiOr(r.FormValue("maxFileMB"), -1)
 	maxTotalMB := atoiOr(r.FormValue("maxTotalMB"), -1)
 	ttlMinutes := atoiOr(r.FormValue("ttlMinutes"), -1)
 	if maxFileMB < -1 || maxTotalMB < -1 || ttlMinutes < -1 {
-		http.Error(w, "参数不合法（应为非负整数）", http.StatusBadRequest)
+		http.Redirect(w, r, s.adminPath+"?err=bad_input#cache", http.StatusFound)
 		return
 	}
 	_ = s.setCacheLimits(maxFileMB, maxTotalMB, ttlMinutes)
 	log.Printf("缓存参数已调整: 单文件=%dMB 总计=%dMB 时效=%d分钟",
 		int(s.cache.MaxBytes()/(1024*1024)), int(s.cache.MaxTotalBytes()/(1024*1024)), int(s.cache.TTL()/time.Minute))
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"?ok=cache_saved#cache", http.StatusFound)
 }
 
 // doClearCache 清空缓存目录内的所有文件（不影响 Token 与设置）。
@@ -679,12 +743,12 @@ func (s *Server) doClearCache(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"?err=csrf#cache", http.StatusFound)
 		return
 	}
 	files, bytes := s.cache.Clear()
 	log.Printf("缓存已清除: %d 个文件，%s", files, formatBytes(bytes))
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"?ok=cache_cleared#cache", http.StatusFound)
 }
 
 // convertResp 是链接转换 API（POST /admin/api/convert）的 JSON 响应。
