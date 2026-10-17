@@ -449,6 +449,9 @@ const pageStyle = `
   .modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);flex-wrap:wrap}
   .nav-mask{display:none;position:fixed;inset:0;z-index:45;background:rgba(0,0,0,.45);border:0}
   .nav-mask.show{display:block}
+  .captcha-row{display:flex;gap:8px;align-items:center;margin:10px 0}
+  .captcha-row input[type=text],.captcha-row input:not([type]){flex:1;min-width:0}
+  .captcha-row img{border:1px solid var(--border);border-radius:6px;flex:0 0 auto}
   .nav-toggle{display:none;align-items:center;justify-content:center;width:40px;height:40px;padding:0;font-size:1.15rem;flex:0 0 auto}
   @media (max-width:820px){.nav-toggle{display:inline-flex}}
   /* 首页导航抽屉（小屏）：默认收起 nav 与操作区，点汉堡展开为纵向 */
@@ -605,6 +608,7 @@ function toggleHomeNav(){var tn=document.querySelector('.topnav');if(!tn)return;
 function gmCopyText(btn,txt){var done=function(){var o=btn.textContent;btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent=o},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
 /* 发送邮箱验证码（注册 register / 找回密码 reset）；emailId 指定邮箱输入框，默认 email */
 function gmSendCode(url,purpose,emailId){var email=document.getElementById(emailId||'email');if(!email||!email.value){alert('请先填写邮箱');return}var btn=document.getElementById('sendCodeBtn');var orig=btn?btn.textContent:'发送验证码';var done=function(){if(btn){btn.disabled=false;btn.textContent=orig}};if(btn){btn.disabled=true;btn.textContent='发送中...'}var fd=new URLSearchParams();fd.set('email',email.value);fd.set('purpose',purpose);fetch(url,{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(j){if(j&&j.ok){if(btn){btn.textContent='已发送 ✓'}else{alert('验证码已发送')}}else{alert((j&&j.err)||'发送失败')}}).catch(function(){alert('网络错误，请稍后再试')}).finally(function(){setTimeout(done,3000)})}
+function gmRefreshCaptcha(img){fetch('/captcha/new').then(function(r){return r.json()}).then(function(j){if(!j||!j.cid)return;var row=img.closest('.captcha-row');if(row){var h=row.querySelector('input[name=captchaId]');if(h)h.value=j.cid;var inp=row.querySelector('input[name=captcha]');if(inp)inp.value=''}img.src='/captcha?cid='+encodeURIComponent(j.cid)+'&t='+Date.now()}).catch(function(){})}
 function gmApplyToken(tk){try{localStorage.setItem('gm_tok',tk||'')}catch(e){}var sels=document.querySelectorAll('.gmtok');for(var i=0;i<sels.length;i++){if(sels[i].value!==tk)sels[i].value=tk}var s=document.querySelectorAll('.tslot');for(var j=0;j<s.length;j++){/* 空值/失效 token 时回退到服务端渲染的原值，绝不显示字面 "token" */var v=tk||s[j].getAttribute('data-orig')||'';s[j].textContent=v}}
 function gmToggleEdit(btn){var tr=btn.closest('tr');if(!tr)return;var row=tr.classList.contains('edit-row')?tr.previousElementSibling:tr;if(!row)return;var er=row.nextElementSibling;if(!er||!er.classList.contains('edit-row'))return;var open=er.hasAttribute('hidden');if(open){er.removeAttribute('hidden')}else{er.setAttribute('hidden','')}var t=row.querySelector('.edit-toggle');if(t){t.textContent=open?'取消':'编辑';t.setAttribute('aria-expanded',open?'true':'false')}if(open){var f=er.querySelector('input[name=note]');if(f)try{f.focus()}catch(e){}}}
 function gmDismissFlash(){var f=document.getElementById('gmFlash');if(f)f.remove()}
@@ -857,6 +861,7 @@ var loginBody = `
           <button type="button" id="pwToggle" class="btn outline" onclick="togglePw()">显示</button>
         </div>
         <p class="err">%s</p>
+        %s
         <button type="submit" class="btn btn-login">登录</button>
       </form>
       %s
@@ -894,6 +899,7 @@ var registerBody = `
       <form method="post" action="%s/register" autocomplete="off">
         <label for="username">用户名</label>
         <input id="username" name="username" placeholder="4-32 位字母数字 . _ -（不能用保留字）" required autofocus>
+        %s
         <label for="email">邮箱</label>
         <input id="email" name="email" type="email" placeholder="用于找回密码" required>
         <label for="code">验证码</label>
@@ -903,6 +909,7 @@ var registerBody = `
         </div>
         <label for="pass">密码</label>
         <input id="pass" name="pass" type="password" placeholder="至少 4 位" required>
+        %s
         <button type="submit" class="btn btn-login">注册</button>
       </form>
       <p class="muted back"><a href="%s">返回登录</a> · <a href="/">返回首页</a></p>
@@ -1067,6 +1074,7 @@ var usersBody = `
       <h2 style="margin-top:22px">新增用户</h2>
       %s
     </section>
+    %s
     %s
   </div>
 </div>`
