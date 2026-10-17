@@ -69,6 +69,7 @@
 - [Security notes](#security-notes)
 - [Compliance & Disclaimer](#compliance--disclaimer)
 - [Contributing](#contributing)
+- [Acknowledgements](#acknowledgements)
 - [License](#license)
 - [⭐ Star & Fork guide](#-star--fork-guide)
 
@@ -326,6 +327,27 @@ To adjust, simply edit `/etc/cron.d/gh-mirror`.
 ## Contributing
 
 Please develop new features or fixes on a `feat/` / `fix/` branch and open a PR to `main`. It merges after CI passes (+ 1 review). See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Acknowledgements
+
+Parts of the design are **inspired by [sky22333/hubproxy](https://github.com/sky22333/hubproxy) (MIT License · © 2025 sky22333)** — a multi-purpose acceleration service that also covers Docker image acceleration, GitHub acceleration, and offline images.
+
+gh-mirror takes that inspiration and is **independently implemented in Go**, extending it with a web admin dashboard, token-based auth, on-disk caching, image search, link conversion, and MCP support. If the original project fits your scenario better, it is worth a try as well.
+
+This project is **not affiliated** with hubproxy. Any reuse of its code follows the MIT license and keeps the corresponding notices.
+
+### Ecosystem recommendation: [KPanel](https://github.com/kejilion/KPanel)
+
+If you also want to manage **host operations together with automated project deployment** on the same machine, take a look at **[kejilion/KPanel](https://github.com/kejilion/KPanel)**:
+
+- **Server-side AI Agent**: drive real operations on a real host in natural language — no more jumping between the panel, SSH, and the shell.
+- **Friendly to small hosts**: **runs fine on a 1 GB RAM box**, which suits low-end VPS instances, home servers, and lightweight production setups.
+- **Automated project deployment**: hand the deployment flow to the agent and cut down manual steps (and human error).
+- **One real host, working together**: system, websites, Docker, files, clusters, and the AI assistant are wired to the same machine instead of being separate silos.
+
+It complements gh-mirror nicely: gh-mirror makes **upstream resources faster** (with built-in MCP so an agent can manage tokens, service toggles, and cache directly), while KPanel handles **orchestration for the host and the projects on it**. Both share the same idea — let an AI agent actually get work done on a real server.
+
+> Community recommendation only — not affiliated with this project, and provided with no warranty of any kind. Evaluate it yourself before use.
 
 ## License
 
