@@ -320,7 +320,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 				foot = form + `<input type="hidden" name="on" value="1"><button type="submit" class="btn svccard-btn">开启</button></form>`
 			}
 		}
-		return `<div class="svccard"><div class="svccard-head"><span class="tag">` + tag + `</span><h3>` + name + `</h3>` + state + `</div>` +
+		return `<div class="svccard"><div class="svccard-head">` + svcTagHTML(tag) + `<h3>` + name + `</h3>` + state + `</div>` +
 			`<p>` + desc + `</p><p><code>` + usage + `</code></p>` +
 			`<div class="svccard-foot">` + foot + `</div></div>`
 	}
@@ -431,7 +431,7 @@ func (s *Server) tokenRows(tokens []*Token, csrf string) string {
 			`<tr class="tok-row"><td data-label="Token"><span class="tok-cell"><code title="完整 Token：%s">%s</code>`+
 				`<button type="button" class="btn outline" title="复制 token" onclick="gmCopyText(this,&quot;%s&quot;)">复制</button></span></td>`+
 				`<td data-label="备注">%s</td>`+
-				`<td data-label="角色"><span class="%s">%s</span></td>`+
+				`<td data-label="类型"><span class="%s">%s</span></td>`+
 				`<td data-label="创建时间">%s</td>`+
 				`<td data-label="访问次数" class="num">%d</td>`+
 				`<td data-label="流量" class="num">%s</td>`+
@@ -540,8 +540,8 @@ func (s *Server) consoleAside(r *http.Request) string {
 func (s *Server) asideFoot() string {
 	return `<div class="aside-foot">` +
 		`<a class="star-cta" href="` + repoURL + `" target="_blank" rel="noopener" title="在 GitHub 上 Star 本项目">⭐ Star 支持一下</a>` +
-		`<div class="ver">当前版本 <code>` + html.EscapeString(version) + `</code></div>` +
-		`<a class="ver-link" href="` + repoURL + `/releases" target="_blank" rel="noopener">查看 Releases ↗</a>` +
+		`<div class="ver">` + tagSVG + `当前版本 <code>` + html.EscapeString(version) + `</code></div>` +
+		`<a class="ver-link" href="` + repoURL + `/releases" target="_blank" rel="noopener">` + pkgSVG + `查看 Releases</a>` +
 		`</div>`
 }
 

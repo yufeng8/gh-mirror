@@ -30,6 +30,30 @@ const logoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" rol
   <path d="M21 32 L27 34 L23 28 Z" fill="#ffffff"/>
 </svg>`
 
+// dockerSVG / tagSVG / pkgSVG 为小尺寸内联图标（零外部请求）：
+// Docker 鲸鱼（简化版：容器方块 + 船体 + 浪花）、版本标签、发布包。
+// 容器方块按官方排布（上 2 / 中 3 / 下 5 的阶梯），下方为不对称鲸身（左宽右收）+ 右侧尾鳍，
+// 用官方品牌蓝以增强 1× 尺寸下的辨识度。
+const dockerSVG = `<svg viewBox="0 0 26.6 19" width="20" height="20" fill="#2496ED" aria-hidden="true"><rect x="11.24" y="2.9" width="2.33" height="2.33" rx=".4"/><rect x="14.45" y="2.9" width="2.33" height="2.33" rx=".4"/><rect x="8.03" y="6.11" width="2.33" height="2.33" rx=".4"/><rect x="11.24" y="6.11" width="2.33" height="2.33" rx=".4"/><rect x="14.45" y="6.11" width="2.33" height="2.33" rx=".4"/><rect x="4.82" y="9.32" width="2.33" height="2.33" rx=".4"/><rect x="8.03" y="9.32" width="2.33" height="2.33" rx=".4"/><rect x="11.24" y="9.32" width="2.33" height="2.33" rx=".4"/><rect x="14.45" y="9.32" width="2.33" height="2.33" rx=".4"/><rect x="17.66" y="9.32" width="2.33" height="2.33" rx=".4"/><path d="M19.6 11.9c0 4.3-3.3 6.9-7.5 6.9H7.2C3.9 18.8 1.1 16.4.2 13.4c-.1-.4.2-.8.7-.8h18.7z"/><path d="M19.6 12.1c1.2-1 2.6-1.6 4.1-1.5 1.4.1 2.4 1 2.5 2.1-.9 1.5-2.6 2.3-4.3 2.1l-2.3-.2z"/></svg>`
+
+const tagSVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2 7.2V3.4A1.4 1.4 0 0 1 3.4 2h3.8l6.4 6.4a1.4 1.4 0 0 1 0 2l-2.8 2.8a1.4 1.4 0 0 1-2 0z"/><circle cx="5.4" cy="5.4" r="1.1" fill="currentColor" stroke="none"/></svg>`
+
+const pkgSVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8 14 5v6L8 14.2 2 11V5z"/><path d="M2 5l6 3.2L14 5M8 8.2v6"/></svg>`
+
+// svcTagHTML 把服务代号渲染成「平台 logo + 平台名」标签：
+// 图案负责形象、文字负责零歧义（20px 级的小图标单靠形状不足以稳定辨识）。
+func svcTagHTML(code string) string {
+	switch code {
+	case "GH":
+		return `<span class="tag tag-logo" title="GitHub">` + githubSVG + `<span class="tag-txt">GitHub</span></span>`
+	case "DK":
+		return `<span class="tag tag-logo" title="Docker">` + dockerSVG + `<span class="tag-txt">Docker</span></span>`
+	case "HF":
+		return `<span class="tag tag-logo" title="HuggingFace"><span class="emo">🤗</span><span class="tag-txt">HuggingFace</span></span>`
+	}
+	return `<span class="tag">` + code + `</span>`
+}
+
 // logoutSVG 是「退出登录」用的图标（门 + 外出的箭头，比符号 ⎋ 更直观）。
 const logoutSVG = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 2H4.2A1.7 1.7 0 0 0 2.5 3.7v8.6A1.7 1.7 0 0 0 4.2 14h2.3"/><path d="M10.6 11.2 13.8 8l-3.2-3.2"/><path d="M13.8 8H6.2"/></svg>`
 
@@ -168,7 +192,12 @@ const pageStyle = `
   .feature:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.07)}
   .feature h3{margin:8px 0 6px;font-size:1rem;font-weight:650}
   .feature p{margin:0;color:var(--muted-foreground);font-size:.9rem}
-  .tag{display:inline-flex;min-width:40px;justify-content:center;padding:2px 9px;border-radius:8px;background:var(--muted);color:var(--foreground);font-weight:800;font-size:.76rem;letter-spacing:.04em}
+  .tag{display:inline-flex;min-width:40px;justify-content:center;align-items:center;padding:2px 9px;border-radius:8px;background:var(--muted);color:var(--foreground);font-weight:800;font-size:.76rem;letter-spacing:.04em}
+  /* 平台标签：logo + 平台名（图形负责形象、文字保证零歧义）；三枚固定同高，品牌色增强辨识 */
+  .tag-logo{padding:3px 10px 3px 8px;height:26px;gap:6px;font-size:.78rem;font-weight:700;letter-spacing:0}
+  .tag-logo svg{display:block;width:17px;height:17px}
+  .tag-logo .emo{font-size:.95rem;line-height:1}
+  .tag-txt{white-space:nowrap}
   .grid-svc{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
   .svc{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;transition:transform .15s ease,box-shadow .15s ease}
   .svc:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.07)}
@@ -279,8 +308,12 @@ const pageStyle = `
   .small{font-size:.82rem}
   .svcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
   .svccard{background:var(--muted);border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column}
-  .svccard-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .svccard-head h3{margin:0;font-size:1.02rem;font-weight:700}
+  /* 两列 grid：左列（平台标签 / 标题）固定，右列状态徽标垂直居中——
+     避免加了平台名后三项挤在一行导致换行参差 */
+  .svccard-head{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;align-items:center;gap:6px 10px}
+  .svccard-head>.tag{grid-column:1;grid-row:1;justify-self:start}
+  .svccard-head h3{grid-column:1;grid-row:2;margin:0;font-size:1.02rem;font-weight:700}
+  .svccard-head>.badge{grid-column:2;grid-row:1 / span 2;justify-self:end;align-self:center}
   .svccard p{color:var(--muted-foreground);font-size:.88rem;margin:10px 0 0}
   .svccard code{font-size:.8rem}
   /* 底部标识统一宽高并贴卡片底部对齐（margin-top:auto），三张卡视觉一致 */
@@ -303,10 +336,11 @@ const pageStyle = `
   .star-cta{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;border-radius:9px;
     background:var(--muted);border:1px solid var(--border);color:var(--foreground);font-weight:600}
   .star-cta:hover{background:var(--primary);border-color:var(--primary);color:#fff;text-decoration:none}
-  .aside-foot .ver{color:var(--muted-foreground)}
+  .aside-foot .ver{color:var(--muted-foreground);display:inline-flex;align-items:center;gap:6px}
   .aside-foot .ver code{font-size:.75rem}
-  .aside-foot .ver-link{color:var(--muted-foreground)}
+  .aside-foot .ver-link{color:var(--muted-foreground);display:inline-flex;align-items:center;gap:6px}
   .aside-foot .ver-link:hover{color:var(--primary)}
+  .aside-foot svg{flex:0 0 auto;opacity:.9}
   /* Token 表格：桌面为表格，窄屏变卡片式 */
   .badge.role-admin{background:var(--primary);color:#fff;border-color:var(--primary)}
   .ops{display:inline-flex;gap:6px;align-items:center;flex-wrap:nowrap}
@@ -720,7 +754,7 @@ var tokensBody = `
       <h2>Token 列表</h2>
       <div class="table-wrap">
       <table class="tok-table">
-        <thead><tr><th>Token</th><th>备注</th><th>角色</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
+        <thead><tr><th>Token</th><th>备注</th><th>类型</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
         <tbody>%s</tbody>
       </table>
       </div>
