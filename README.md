@@ -1,35 +1,137 @@
-# github-mirror — 自托管多服务加速网关（Docker / GitHub / HuggingFace）
+<p align="center">
+  <img src="docs/images/banner.svg" alt="gh-mirror · 自托管多服务加速网关" width="100%">
+</p>
 
-[![build](https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml/badge.svg)](https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml)
-[![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
+<p align="center">
+  <b>一个单二进制、零第三方依赖的自托管加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一站加速。</b><br>
+  内置 Token 鉴权、磁盘缓存、镜像搜索与 <b>MCP 服务端</b>，让 AI Agent 也能直接接管运维。
+</p>
 
-> 一个单二进制、完全自托管的多服务加速网关：**Docker 镜像**、**GitHub 资源**、**HuggingFace 模型**三类加速一站搞定，
-> 内置 Token 鉴权、访问控制（IP/仓库黑白名单）、智能限流、SOCKS5 出站与镜像搜索。
+<p align="center">
+  <a href="https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml"><img src="https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml/badge.svg" alt="build"></a>
+  <a href="https://github.com/yufeng8/gh-mirror/releases"><img src="https://img.shields.io/github/v/release/yufeng8/gh-mirror?include_prereleases&label=release" alt="release"></a>
+  <img src="https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/deps-0-blueviolet" alt="zero dependencies">
+  <img src="https://img.shields.io/badge/protocols-Docker%20%7C%20GitHub%20%7C%20HuggingFace-2ea44f" alt="protocols">
+  <a href="docs/mcp.md"><img src="https://img.shields.io/badge/MCP-AI%20Agent%20ready-6f42c1" alt="MCP"></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license">
+</p>
+
+<p align="center">
+  <a href="#-界面一览">界面一览</a> ·
+  <a href="#-功能亮点">功能亮点</a> ·
+  <a href="#-mcp让-ai-agent-直接接管网关">MCP 接入</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#配置">配置</a>
+</p>
+
+---
+
+## 🖼️ 界面一览
+
+> 下面都是本机真实运行截图（桌面 1280 宽 + 移动端 393 宽），非设计稿。
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/home-hero.png" alt="首页"><br><sub><b>首页</b>：能力概览 + 一键交接给 AI Agent</sub></td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/admin-overview-dark.png">
+        <img src="docs/images/admin-overview-light.png" alt="管理后台概览">
+      </picture>
+      <br><sub><b>管理后台</b>：服务状态 / 统计 / 链接转换　<i>（此图跟随 GitHub 主题自动切换深浅）</i></sub>
+    </td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/admin-services.png" alt="服务管理"><br><sub><b>服务管理</b>：开关即时生效并持久化</sub></td>
+    <td><img src="docs/images/admin-tokens.png" alt="Token 管理"><br><sub><b>Token 管理</b>：独立页面，角色 / 复制 / 行内编辑</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/admin-conv-result.png" alt="链接转换"><br><sub><b>链接转换</b>：粘贴原始地址即得加速链接</sub></td>
+    <td><img src="docs/images/admin-usage.png" alt="用法示例"><br><sub><b>用法示例</b>：Token 一键切换、全页联动</sub></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/mobile-home.png" alt="移动端首页" height="520">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/images/mobile-tokens.png" alt="移动端 Token 管理" height="520">
+</p>
+<p align="center"><sub>移动端（393px）：抽屉式导航、Token 卡片式列表、点击「编辑」就地展开表单</sub></p>
+
+---
+
+## 🎯 功能亮点
+
+### 📦 三类加速，一套网关
+
+| 服务 | 加速端点 | 鉴权方式 | 亮点 |
+|------|----------|----------|------|
+| 🐳 **Docker 镜像** | `/v2/<用户名>[/<自定义路径>]/…` | 路径前缀（协议无法带 Token） | 多源回源（Docker Hub / GHCR / Quay / GCR / k8s）、Manifest+Token 内存缓存、Layer 磁盘缓存 |
+| 🐙 **GitHub 资源** | `/g/<token>/https://github.com/…` | Token | 覆盖 blob/raw、archive、releases、API，支持 `Range` 续传 |
+| 🤗 **HuggingFace 权重** | `/hf/<token>/<owner>/<repo>/resolve/<rev>/<file>` | Token | 自动跟随 302 到 CDN，模型 / LFS 大文件流式 + 缓存 |
+| 📦 **离线镜像 tar** | `/offline/<token>/<image>` | Token | 不需要本地 Docker，直接产出 `docker load` 可用的 tar |
+
+### 💡 为什么值得自托管
+
+- 🚀 **单二进制、零依赖**：`CGO_ENABLED=0` 静态编译，多架构镜像，扔进 1 核 512M 的机器就能跑。
+- 🔒 **访问可控**：Token 鉴权（默认开启）+ IP（CIDR）/ 仓库（通配符）黑白名单 + 令牌桶限流（IPv6 按 `/64` 归并）。
+- 💾 **真磁盘缓存**：Layer / 文件落盘，命中直接返回 `X-Cache: HIT`；缓存总量、单文件上限、TTL 都能在后台热改，超限与磁盘余量不足自动按最旧优先清理。
+- 🤖 **AI Agent 友好**：内置 MCP 服务端（`POST /mcp` 与 `gh-mirror mcp` stdio），12 个工具覆盖 Token、服务开关、缓存、链接转换、镜像搜索。
+- 🎛️ **后台可视化**：服务状态、统计、链接转换、Token 管理、缓存管理全在网页里，开关即时生效并持久化到 `gm-data/settings.json`。
+
+---
+
+## 🤖 MCP：让 AI Agent 直接接管网关
+
+内置 MCP（Model Context Protocol）服务端，Agent 不必猜接口，直接用标准协议操作网关：
+
+```bash
+# 方式一：HTTP（推荐，配 admin / 高级 Token）
+curl -sX POST https://mirror.example.com/mcp \
+  -H "Authorization: Bearer <高级Token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+# 方式二：stdio（本地或跳板机）
+gh-mirror mcp
+```
+
+| 类别 | 工具 |
+|------|------|
+| 健康与信息 | `health` |
+| Token 管理 | `list_tokens` · `create_token` · `delete_token` |
+| 服务开关 | `get_services` · `set_service` |
+| 缓存 | `get_cache_stats` · `set_cache_limits` · `clear_cache` |
+| 链接与镜像 | `convert_link` · `search_images` · `list_tags` |
+
+> 详见 [docs/mcp.md](docs/mcp.md)。首页还提供「一键交给 AI Agent 部署」的完整提示词，复制给 CodeBuddy / Cursor / Claude 即可照着仓库文档完成部署与验证。
+
+---
+
+## ✨ 特性
+
+<p align="center"><img src="docs/images/home-features.png" alt="通用特性"></p>
+
+- 🐳 **Docker 镜像加速**：兼容 Registry API v2，内置 Docker Hub / GHCR / Quay / GCR / registry.k8s.io 多源；Manifest/Token 内存缓存、Layer 写透磁盘缓存、流式传输、`Range` 断点续传。
+- 🐙 **GitHub 资源加速**：`/g/<token>/` + 完整 GitHub 地址，覆盖 blob/raw、archive、releases、API，自带磁盘缓存。
+- 🤗 **HuggingFace 加速**：`/hf/<token>/<owner>/<repo>/resolve/<rev>/<file>`，自动跟随 302 到 CDN，模型/LFS 流式 + 缓存。
+- 📦 **离线镜像 tar**：`/offline/<token>/<image>` 无需本地 Docker，把镜像打包成 `docker load` 可用的 tar（流式 + 同镜像并发防抖；**需 token**，避免公开暴露被白嫖流量）。
+- 🔍 **镜像搜索**：Docker Hub 搜索 / 标签浏览，服务端渲染轻量页面（`/search`、`/tags`）与 JSON API（`/api/search`、`/api/tags`）。
+- 🛡️ **安全管控**：Token 鉴权（默认）+ 可选开放模式；IP（CIDR）/ 仓库（通配符）黑白名单；按真实客户端 IP 的令牌桶限流（IPv6 归并 `/64`）。
+- ⚙️ **统一配置**：`config.toml` + 环境变量覆盖，平滑兼容旧的环境变量部署。
+- 🧦 **可选 SOCKS5 出站**：为 GitHub/HF/Docker 回源统一走 SOCKS5 代理。
+- 🤖 **MCP 接入（AI Agent 友好）**：内置 MCP 服务端，AI Agent 可通过标准协议调用网关能力——管理 Token、开关 Docker/HuggingFace 加速、查看与调整缓存、链接转换、健康检查、镜像搜索与标签。支持 `POST /mcp` 与 `gh-mirror mcp` stdio 两种接入（需 admin 角色 token），详见 `docs/mcp.md`。
+- 🎛️ **后台可视化运维**：服务状态徽标、概览统计（Token 数 / 命中 / 流量 / 缓存占用 / 运行时长）、服务开关即时生效、缓存上限与时效可调 + 自动失效、链接转换工具。
+
 > 文档示例域名为 `mirror.example.com`，请替换为你自己的域名。
-
-设计参考了 [sky22333/hubproxy](https://github.com/sky22333/hubproxy) 的多服务架构，并以 Go **标准库**重写、无任何第三方依赖，便于审计与离线构建。
-
----
-
-## 特性
-
-- **Docker 镜像加速**：兼容 Registry API v2，内置 Docker Hub / GHCR / Quay / GCR / registry.k8s.io 多源；Manifest/Token 内存缓存、Layer 写透磁盘缓存、流式传输、`Range` 断点续传。
-- **GitHub 资源加速**：`/g/<token>/` + 完整 GitHub 地址，覆盖 blob/raw、archive、releases、API，自带磁盘缓存。
-- **HuggingFace 加速**：`/hf/<token>/<owner>/<repo>/resolve/<rev>/<file>`，自动跟随 302 到 CDN，模型/LFS 流式 + 缓存。
-- **离线镜像 tar**：`/offline/<token>/<image>` 无需本地 Docker，把镜像打包成 `docker load` 可用的 tar（流式 + 同镜像并发防抖；**需 token**，避免公开暴露被白嫖流量）。
-- **镜像搜索**：Docker Hub 搜索 / 标签浏览，服务端渲染轻量页面（`/search`、`/tags`）与 JSON API（`/api/search`、`/api/tags`）。
-- **安全管控**：Token 鉴权（默认）+ 可选开放模式；IP（CIDR）/ 仓库（通配符）黑白名单；按真实客户端 IP 的令牌桶限流（IPv6 归并 `/64`）。
-- **统一配置**：`config.toml` + 环境变量覆盖，平滑兼容旧的环境变量部署。
-- **可选 SOCKS5 出站**：为 GitHub/HF/Docker 回源统一走 SOCKS5 代理。
-- **MCP 接入（AI Agent 友好）**：内置 MCP 服务端，AI Agent 可通过标准协议调用网关能力——管理 Token、开关 Docker/HuggingFace 加速、查看与调整缓存、链接转换、健康检查、镜像搜索与标签。支持 `POST /mcp` 与 `gh-mirror mcp` stdio 两种接入（需 admin 角色 token），详见 `docs/mcp.md`。
-- **后台可视化运维**：服务状态徽标、概览统计（Token 数 / 命中 / 流量 / 缓存占用 / 运行时长）、服务开关即时生效、缓存上限与时效可调 + 自动失效、链接转换工具。
+> 设计参考了 [sky22333/hubproxy](https://github.com/sky22333/hubproxy) 的多服务架构，并以 Go **标准库**重写、无任何第三方依赖，便于审计与离线构建。
 
 ---
 
-## 快速开始
+## 🚀 快速开始
 
-### 方式一：Docker（推荐）
+### 🐳 方式一：Docker（推荐）
 
 ```bash
 docker run -d --name gh-mirror \
@@ -46,7 +148,7 @@ docker run -d --name gh-mirror \
   ghcr.io/yufeng8/gh-mirror:latest
 ```
 
-### 方式二：docker-compose
+### 🧩 方式二：docker-compose
 
 ```bash
 ADMIN_SECRET="$(openssl rand -hex 32)" docker compose up -d
@@ -54,7 +156,7 @@ ADMIN_SECRET="$(openssl rand -hex 32)" docker compose up -d
 
 编排文件见 [`docker-compose.yml`](docker-compose.yml)：默认挂载数据卷 `gm-data`（缓存 + token），按需在 `environment` 中开启 `DOCKER_ENABLED` / `HF_ENABLED` / `RATELIMIT_ENABLED` / `UPSTREAM_SOCKS5`。
 
-### 方式三：本地构建
+### 🛠️ 方式三：本地构建
 
 ```bash
 go build -o gh-mirror .
@@ -65,11 +167,11 @@ go build -o gh-mirror .
 
 ---
 
-## 配置
+## ⚙️ 配置
 
 优先级：**环境变量 > `config.toml` > 内置默认值**。`config.toml` 缺失时自动退化到默认值 + 环境变量（容器部署可完全用环境变量）。
 
-### config.toml 样例
+### 📝 config.toml 样例
 
 ```toml
 listen = "127.0.0.1:8080"
@@ -115,7 +217,7 @@ repo_block = []          # 如 ["evil/*"]
 socks5 = ""            # 如 "socks5://user:pass@127.0.0.1:1080"
 ```
 
-### 环境变量
+### 🌱 环境变量
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
@@ -138,9 +240,11 @@ socks5 = ""            # 如 "socks5://user:pass@127.0.0.1:1080"
 
 ---
 
-## 各服务用法
+## 🧭 各服务用法
 
-### GitHub 资源加速（`/g/<token>/`）
+<p align="center"><img src="docs/images/home-usage.png" alt="基本使用：三种服务的命令直接复制"></p>
+
+### 🐙 GitHub 资源加速（`/g/<token>/`）
 
 ```
 https://mirror.example.com/g/<token>/<完整 GitHub 地址>
@@ -160,7 +264,10 @@ curl -L -o app.zip "https://mirror.example.com/g/<token>/https://github.com/owne
 
 响应头 `X-Cache: HIT` 命中缓存，`MISS` 回源。
 
-### Docker 镜像加速（`/v2/<用户名>[/<自定义路径>]/…`、`/token`）
+### 🐳 Docker 镜像加速（`/v2/<用户名>[/<自定义路径>]/…`、`/token`）
+
+<p align="center"><img src="docs/images/admin-docker-modal.png" alt="开启 Docker 前的安全确认与自定义路径" width="52%"><br>
+<sub>开启前会弹出安全确认：说明风险、并可设置「用户名 + 自定义路径」前缀</sub></p>
 
 开启 `[docker] enabled=true`（或 `DOCKER_ENABLED=true`）后，`/v2` 的拉取路径**固定带用户名段**（管理后台可再填一段自定义路径）：
 
@@ -177,7 +284,7 @@ docker pull mirror.example.com/admin/library/nginx:1.25
 https://mirror.example.com/v2/ghcr.io/<owner>/<repo>/manifests/<tag>
 ```
 
-### HuggingFace 加速（`/hf/`）
+### 🤗 HuggingFace 加速（`/hf/`）
 
 开启 `[hf] enabled=true` 后：
 
@@ -188,12 +295,12 @@ curl -L -o model.bin "https://mirror.example.com/hf/<token>/<owner>/<repo>/resol
 curl -L -o model.bin "https://mirror.example.com/hf/<owner>/<repo>/resolve/main/model.bin"
 ```
 
-### 镜像搜索 / 标签浏览
+### 🔍 镜像搜索 / 标签浏览
 
 - 页面：`https://mirror.example.com/search?q=nginx`、`https://mirror.example.com/tags?repo=library/nginx`
 - JSON：`/api/search?q=nginx`、`/api/tags?repo=library/nginx`
 
-### 离线镜像打包（`/offline/`）
+### 📦 离线镜像打包（`/offline/`）
 
 开启 `[docker] enabled=true` 后，按需把镜像打包成 `docker load` 可用的 tar，**无需本地 Docker**：
 
@@ -208,7 +315,7 @@ docker load -i nginx.tar
 
 ---
 
-## 管理后台
+## 🎛️ 管理后台
 
 - 默认路径 `/admin`，默认账号/密码 `admin`/`admin`（务必修改）。
 - 登录后基于签名 Session Cookie（HMAC + HttpOnly + SameSite=Strict）保持会话。
@@ -216,7 +323,7 @@ docker load -i nginx.tar
 
 ---
 
-## 安全说明
+## 🛡️ 安全说明
 
 - **域名白名单**：仅允许回源到 GitHub/HuggingFace 相关域名（见 `rewrite.go`），不会被当作开放代理滥用（防 SSRF）。
 - **Token 鉴权**：默认所有代理请求必须携带后台下发 token，无效返回 404；`tokens.json` 与 `ADMIN_SECRET` 等同于凭证，请妥善保管。
@@ -227,7 +334,7 @@ docker load -i nginx.tar
 
 ---
 
-## 生产建议
+## 🏭 生产建议
 
 - **反代 + HTTPS**：nginx 反代到 `127.0.0.1:8080`，用 Let's Encrypt 签证书；`COOKIE_SECURE=true`。
 - **数据落盘**：`CACHE_DIR` 与 `TOKENS_FILE` 指向持久化卷/目录，避免写入容器 overlay 层。
@@ -237,7 +344,7 @@ docker load -i nginx.tar
 
 ---
 
-## 部署脚本
+## 📜 部署脚本
 
 保留原有的一键部署 / 安装 / 卸载脚本（Ubuntu 24.04，含 nginx + TLS + systemd）：
 
@@ -257,7 +364,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/unins
 
 ---
 
-## 目录结构
+## 🗂️ 目录结构
 
 ```
 main.go        # 入口、配置加载、service group 路由、入口中间件
@@ -279,7 +386,7 @@ settings.go    # 运行时设置持久化（服务开关 + 缓存参数，gm-dat
 cache_test.go  # 缓存自动失效 / 超限清理 / 清除 的单元测试
 ```
 
-## 文档
+## 📚 文档
 
 - `docs/docker-deploy.md`：通用 Docker 部署、环境适配与冲突排查表、**域名前置 CDN（EdgeOne/Cloudflare）正确接法**、**Docker 加速安全**
 - `docs/deploy-runbook.md`：目标机实测部署 Runbook（先探测 → 选型 → 执行 → 端到端验证 → 更新/回滚）
@@ -287,7 +394,7 @@ cache_test.go  # 缓存自动失效 / 超限清理 / 清除 的单元测试
 - `docs/agent-prompt.md`：**给 AI Agent 的部署提示词**（首页「一键交给 AI Agent 部署」直接渲染此文件，随版本更新；可用 `AGENT_PROMPT_FILE` 或 `gm-data/agent-prompt.md` 覆盖）
 - `docs/mcp.md`：**MCP 接入指南**（HTTP `POST /mcp` 与 `gh-mirror mcp` stdio 两种接入、工具清单、鉴权、安全建议、故障排查）
 
-## 致谢 / Acknowledgements
+## 🙏 致谢 / Acknowledgements
 
 本项目**部分思路参考自 [sky22333/hubproxy](https://github.com/sky22333/hubproxy)（MIT License · © 2025 sky22333）**——一个同样支持 Docker 镜像加速、GitHub 加速与离线镜像的多功能加速服务。
 
@@ -295,7 +402,7 @@ gh-mirror 受其思路启发，以 Go **独立实现**，并扩展了 Web 管理
 
 本项目与 hubproxy **无任何关联（not affiliated）**。如有对其代码的复用，均遵循其 MIT 许可并保留相应声明。
 
-### 生态推荐：[KPanel](https://github.com/kejilion/KPanel)
+### 🔗 生态推荐：[KPanel](https://github.com/kejilion/KPanel)
 
 如果你还想在同一台机器上把「主机运维 + 项目自动化部署」一起管起来，可以看看 **[kejilion/KPanel](https://github.com/kejilion/KPanel)**：
 
@@ -308,6 +415,6 @@ gh-mirror 受其思路启发，以 Go **独立实现**，并扩展了 Web 管理
 
 > 仅为生态推荐，与本项目无关联（not affiliated），也不构成任何担保；请自行评估后使用。
 
-## License
+## 📄 License
 
 MIT（沿用上游项目协议）。

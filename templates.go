@@ -184,7 +184,7 @@ const pageStyle = `
   .console aside .brand>svg{width:30px;height:30px}
   .console .topbar .brand>svg{width:32px;height:32px}
   .muted{color:var(--muted-foreground)}
-  code{background:var(--muted);padding:2px 6px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86rem;word-break:break-all}
+  code{background:var(--muted);padding:2px 6px;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86rem;word-break:normal;overflow-wrap:break-word}
   pre{background:#0b1020;color:#e6edf3;padding:14px 16px;border-radius:var(--radius);overflow:auto;font-size:.85rem;line-height:1.55;margin:0}
   pre code{background:transparent;color:inherit;padding:0}
   a{color:var(--primary);text-decoration:none}
@@ -250,7 +250,8 @@ const pageStyle = `
   .hero .lede{font-size:clamp(1.35rem,2.1vw,1.85rem);font-weight:750;margin:8px 0 6px}
   /* 不设 max-width：ch 按字符"0"宽计算，中文下会出现突兀断点，交给容器自然换行即可 */
   .hero .sub{color:var(--muted-foreground);margin:0;font-size:clamp(1rem,1.15vw,1.1rem);line-height:1.65}
-  .section{margin-top:52px}
+  /* scroll-margin-top 让锚点跳转/截图时标题不被 sticky 顶栏压住 */
+  .section{margin-top:52px;scroll-margin-top:84px}
   .sec-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px}
   .sec-num{font-size:2.2rem;font-weight:800;line-height:1;color:var(--primary);opacity:.85;font-variant-numeric:tabular-nums}
   .sec-en{display:block;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted-foreground);font-weight:700}
@@ -266,8 +267,9 @@ const pageStyle = `
   .tag-logo svg{display:block;width:17px;height:17px}
   .tag-logo .emo{font-size:.95rem;line-height:1}
   .tag-txt{white-space:nowrap}
-  .grid-svc{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-  .svc{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;transition:transform .15s ease,box-shadow .15s ease}
+  /* minmax(0,1fr) + 卡片 min-width:0：否则内部的等宽命令文本会把列撑开、顶出视口 */
+  .grid-svc{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+  .svc{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;min-width:0;transition:transform .15s ease,box-shadow .15s ease}
   .svc:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.07)}
   .svc h3{margin:10px 0 4px;font-size:1.08rem}
   .svc p{color:var(--muted-foreground);font-size:.9rem;margin:0 0 4px}
@@ -275,11 +277,14 @@ const pageStyle = `
   .term-bar{display:flex;align-items:center;gap:6px;padding:8px 12px;background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.07)}
   .term-bar .dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
   .term-bar .dot.r{background:#ff5f56}.term-bar .dot.y{background:#ffbd2e}.term-bar .dot.g{background:#27c93f}
-  .term-bar .title{color:#8b98a9;font-size:.76rem;margin-left:8px;font-family:ui-monospace,Menlo,Consolas,monospace}
-  .copy-btn{margin-left:auto;background:transparent;border:1px solid rgba(255,255,255,.2);color:#cbd5e1;padding:3px 11px;font-size:.76rem;border-radius:8px;cursor:pointer}
+  /* 文件名过长时截断，避免把右侧「复制」按钮挤到贴边 */
+  .term-bar .title{color:#8b98a9;font-size:.76rem;margin-left:8px;font-family:ui-monospace,Menlo,Consolas,monospace;
+    min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .copy-btn{margin-left:auto;flex:0 0 auto;white-space:nowrap;background:transparent;border:1px solid rgba(255,255,255,.2);color:#cbd5e1;padding:3px 11px;font-size:.76rem;border-radius:8px;cursor:pointer}
   .copy-btn:hover{background:rgba(255,255,255,.09)}
   .term pre{padding:14px 16px}
-  .term code{background:transparent;color:inherit;padding:0;word-break:break-all;white-space:pre-wrap}
+  /* 优先在空格/斜杠处换行，避免把 127.0.0.1 这类地址拦腰截断 */
+  .term code{background:transparent;color:inherit;padding:0;word-break:normal;overflow-wrap:break-word;white-space:pre-wrap}
   /* 长提示词默认折叠为约 5 行，底部渐隐提示可展开 */
   .term.folded pre{max-height:calc(1.65em * 5 + 28px);overflow:hidden;position:relative}
   .term.folded pre::after{content:"";position:absolute;left:0;right:0;bottom:0;height:60px;background:linear-gradient(to bottom,rgba(11,16,32,0),#0b1020)}
@@ -413,7 +418,8 @@ const pageStyle = `
   @keyframes modalIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
   .modal-head{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border)}
   .modal-head h3{margin:0;font-size:1.02rem;font-weight:750}
-  .modal-body{padding:16px 20px;overflow-y:auto;font-size:.88rem;line-height:1.75;color:var(--muted-foreground)}
+  /* 底部多留 8px，避免最后一行文字被底栏的渐变/边框视觉压住 */
+  .modal-body{padding:16px 20px 24px;overflow-y:auto;font-size:.88rem;line-height:1.75;color:var(--muted-foreground)}
   .modal-body strong{color:var(--foreground)}
   /* 弹窗内的表单字段（如 Docker 自定义路径） */
   .modal-field{margin:0 0 14px;padding:0 0 14px;border-bottom:1px dashed var(--border)}
@@ -463,7 +469,8 @@ const pageStyle = `
   .edit-row td{background:var(--muted);border-radius:10px}
   .edit-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .edit-form .fld input,.edit-form .fld select{width:220px}
-  .edit-form .muted{margin:0 0 6px}
+  /* 编辑表单里的说明文字：独占一行且必须可换行，否则窄屏会撑出横向滚动 */
+  .edit-form .muted{margin:0 0 6px;flex:1 1 100%;white-space:normal;word-break:break-word;min-width:0}
   /* 全局下拉框统一外观（原生下拉在各处风格不一致，这里统一为与输入框一致的圆角+自绘箭头） */
   select{appearance:none;-webkit-appearance:none;padding:9px 34px 9px 12px;border:1px solid var(--border);border-radius:10px;
     background-color:var(--background);color:var(--foreground);font-size:.88rem;line-height:1.3;
@@ -545,8 +552,11 @@ const pageStyle = `
     .tok-table td[data-label="Token"]{min-width:0}
     .tok-cell code{white-space:normal;overflow-wrap:anywhere}
     .edit-form{display:block}
-    .edit-form .fld{display:block;margin-bottom:10px}
-    .edit-form .fld input,.edit-form .fld select{width:100%}
+    /* 窄屏也用 flex 纵排：block 布局下标签与输入框会叠在一起 */
+    .edit-form .fld{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+    .edit-form .fld input,.edit-form .fld select{width:100%;margin:0}
+    /* 编辑区在窄屏也是一张独立卡片，与 .tok-row 视觉一致 */
+    .tok-table tr.edit-row td{border:1px solid var(--border);border-radius:12px;margin-bottom:10px;background:var(--muted)}
   }
   @media (max-width:600px){.container{padding:0 14px 44px}.topnav{padding:8px 12px;gap:10px}.topnav nav{display:none}.topnav .btn{padding:6px 10px;font-size:.82rem}.topnav .gh span{display:none}.topnav .gh{padding:6px 9px}.topnav .brand{gap:8px;font-size:.95rem}.topnav .brand>svg{width:26px;height:26px}.hero{gap:18px;padding:30px 0 6px}pre{font-size:.8rem}table{display:block;overflow-x:auto;white-space:nowrap}.conv-row input{min-width:100%}.fld input{width:100%}.stat .v{font-size:1.3rem}.stat .k,.stat .s{font-size:.74rem}.stat{word-break:break-word;overflow-wrap:anywhere}}
   /* 全局 600px 的 table 横滚规则不适用于卡片化的 Token 表 */
@@ -563,7 +573,7 @@ const pageScript = `<script>
 function toggleTheme(){var d=document.documentElement.classList.toggle('dark');try{localStorage.setItem('theme',d?'dark':'light')}catch(e){}var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';}
 function copyCode(btn){var t=btn.closest('.term');if(!t)return;var c=t.querySelector('code')||t.querySelector('pre');var txt=c?c.innerText:'';var done=function(){btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
 function togglePw(){var i=document.getElementById('pw');var b=document.getElementById('pwToggle');if(!i||!b)return;if(i.type==='password'){i.type='text';b.textContent='隐藏'}else{i.type='password';b.textContent='显示'}}
-function gmConvert(){var box=document.getElementById('gmconv');var inp=document.getElementById('gmconv-in');var out=document.getElementById('gmconv-out');if(!box||!inp||!out)return;var u=(inp.value||'').trim();out.removeAttribute('data-url');if(!u){out.value='';out.setAttribute('placeholder','加速链接将显示在这里');return}out.value='处理中…';var fd=new URLSearchParams();fd.set('url',u);fd.set('csrf',box.getAttribute('data-csrf')||'');var sel=document.querySelector('.gmtok');if(sel&&sel.value)fd.set('token',sel.value);fetch(box.getAttribute('data-api')||'',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString()}).then(function(r){return r.json()}).then(function(d){if(d&&d.ok&&d.url){out.value=d.url;out.setAttribute('data-url',d.url);out.setAttribute('placeholder','')}else{out.value='';out.setAttribute('placeholder',(d&&d.hint)||'无法识别该输入')}}).catch(function(){out.value='';out.setAttribute('placeholder','请求失败，请重试')})}
+function gmConvert(){var box=document.getElementById('gmconv');var inp=document.getElementById('gmconv-in');var out=document.getElementById('gmconv-out');if(!box||!inp||!out)return;var u=(inp.value||'').trim();out.removeAttribute('data-url');if(!u){out.value='';out.removeAttribute('title');out.setAttribute('placeholder','加速链接将显示在这里');return}out.value='处理中…';var fd=new URLSearchParams();fd.set('url',u);fd.set('csrf',box.getAttribute('data-csrf')||'');var sel=document.querySelector('.gmtok');if(sel&&sel.value)fd.set('token',sel.value);fetch(box.getAttribute('data-api')||'',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd.toString()}).then(function(r){return r.json()}).then(function(d){if(d&&d.ok&&d.url){out.value=d.url;out.setAttribute('data-url',d.url);out.title=d.url;out.setAttribute('placeholder','')}else{out.value='';out.setAttribute('placeholder',(d&&d.hint)||'无法识别该输入')}}).catch(function(){out.value='';out.setAttribute('placeholder','请求失败，请重试')})}
 function gmConvURL(){var o=document.getElementById('gmconv-out');return o?(o.getAttribute('data-url')||''):''}
 function gmCopyConv(){var u=gmConvURL();if(!u)return;var b=document.getElementById('gmconv-copy');if(!b)return;var done=function(){b.textContent='已复制 ✓';setTimeout(function(){b.textContent='复制'},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=u;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(done,fb)}else{fb()}}
 function gmDownloadConv(){var u=gmConvURL();if(!u)return;var a=document.createElement('a');a.href=u;a.download='';document.body.appendChild(a);a.click();a.remove()}
