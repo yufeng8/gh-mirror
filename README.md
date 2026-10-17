@@ -32,9 +32,9 @@
 
 ---
 
-## 🖼️ 界面一览
+## 📷 界面一览
 
-> 下面都是本机真实运行截图（桌面 1280 宽 + 移动端 393 宽），非设计稿。
+> 以下均为本机真实运行截图（桌面 + 移动端自适应），非设计稿。
 
 <table>
   <tr>
@@ -226,7 +226,7 @@ ADMIN_SECRET="$(openssl rand -hex 32)" docker compose up -d
 
 编排文件见 [`docker-compose.yml`](docker-compose.yml)：默认挂载数据卷 `gm-data`（缓存 + token），按需在 `environment` 中开启 `DOCKER_ENABLED` / `HF_ENABLED` / `RATELIMIT_ENABLED` / `UPSTREAM_SOCKS5`。
 
-### 🛠️ 方式三：本地构建
+### 🧰 方式三：本地构建
 
 ```bash
 go build -o gh-mirror .
@@ -237,7 +237,7 @@ go build -o gh-mirror .
 
 ---
 
-## ⚙️ 配置
+## 🔧 配置
 
 优先级：**环境变量 > `config.toml` > 内置默认值**。`config.toml` 缺失时自动退化到默认值 + 环境变量（容器部署可完全用环境变量）。
 
@@ -389,7 +389,7 @@ docker load -i nginx.tar
 
 ---
 
-## 🎛️ 管理后台
+## 💻 管理后台
 
 **双入口**：超管入口 `/admin`（仅超级管理员可登录）+ 普通用户入口 `/user`（`USER_PATH` 可配、可隐藏），各自独立会话 Cookie，普通用户登录超管入口会被拒绝。账号密码由 `ADMIN_USER` / `ADMIN_PASS` 环境变量设置（务必修改默认值）；登录后基于签名 Session Cookie（HMAC + HttpOnly + SameSite=Strict）保持会话。
 
@@ -401,7 +401,7 @@ docker load -i nginx.tar
 
 ---
 
-## 🛡️ 安全说明
+## 🔐 安全说明
 
 - **域名白名单**：仅允许回源到 GitHub/HuggingFace 相关域名（见 `rewrite.go`），不会被当作开放代理滥用（防 SSRF）。
 - **Token 鉴权**：默认所有代理请求必须携带后台下发 token，无效返回 404；`tokens.json` 与 `ADMIN_SECRET` 等同于凭证，请妥善保管。
@@ -442,7 +442,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/unins
 
 ---
 
-## 🗂️ 目录结构
+## 📁 目录结构
 
 ```
 main.go        # 入口、配置加载、service group 路由、入口中间件
