@@ -32,9 +32,9 @@
 
 ---
 
-## 🖼️ Screenshots
+## 📷 Screenshots
 
-> Real screenshots from a live instance (desktop 1280 + mobile 393), not mockups. The admin UI is currently Chinese-only.
+> Real screenshots from a live instance (desktop + mobile adaptive), not mockups. The admin UI is currently Chinese-only.
 
 <table>
   <tr>
@@ -226,7 +226,7 @@ ADMIN_SECRET="$(openssl rand -hex 32)" docker compose up -d
 
 See [`docker-compose.yml`](docker-compose.yml): the data volume `gm-data` (cache + tokens) is mounted by default; enable `DOCKER_ENABLED` / `HF_ENABLED` / `RATELIMIT_ENABLED` / `UPSTREAM_SOCKS5` in `environment` as needed.
 
-### 🛠️ Option 3: build locally
+### 🧰 Option 3: build locally
 
 ```bash
 go build -o gh-mirror .
@@ -237,7 +237,7 @@ go build -o gh-mirror .
 
 ---
 
-## ⚙️ Configuration
+## 🔧 Configuration
 
 Priority: **environment variables > `config.toml` > built-in defaults**. When `config.toml` is missing it degrades gracefully to defaults + env vars (container deployments can rely on env vars alone).
 
@@ -389,7 +389,7 @@ docker load -i nginx.tar
 
 ---
 
-## 🎛️ Admin dashboard
+## 💻 Admin dashboard
 
 **Dual entry points**: super-admin entry `/admin` (super admins only) + normal-user entry `/user` (`USER_PATH` configurable / hideable), each with its own session cookie; normal users are rejected at the super-admin entry. Credentials come from the `ADMIN_USER` / `ADMIN_PASS` environment variables (change the defaults!); sessions are kept by a signed session cookie (HMAC + HttpOnly + SameSite=Strict).
 
@@ -401,7 +401,7 @@ The dashboard is mobile-friendly (393px): drawer navigation, card-style token li
 
 ---
 
-## 🛡️ Security notes
+## 🔐 Security notes
 
 - **Domain allowlist**: upstream fetches are restricted to GitHub/HuggingFace-related domains (see `rewrite.go`), so it cannot be abused as an open proxy (SSRF-safe).
 - **Token auth**: by default every proxied request must carry a dashboard-issued token; invalid tokens return 404. `tokens.json` and `ADMIN_SECRET` are credentials — keep them safe.
@@ -442,7 +442,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/unins
 
 ---
 
-## 🗂️ Project layout
+## 📁 Project layout
 
 ```
 main.go        # entry, config loading, service group routing, entry middleware
