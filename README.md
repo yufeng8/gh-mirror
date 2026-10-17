@@ -49,12 +49,6 @@
   </tr>
 </table>
 
-<p align="center">
-  <img src="docs/images/mobile-home.png" alt="移动端首页" height="520">
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="docs/images/mobile-tokens.png" alt="移动端 Token 管理" height="520">
-</p>
-
 ---
 
 ## 🎯 功能亮点
