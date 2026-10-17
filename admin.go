@@ -264,8 +264,13 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	dockerEx := "Docker 加速未开启（可在「服务管理」开启）"
 	if s.dockerEnabled() {
+		// 离线包必须带 token：没有 token 时给引导文案，不能拼出字面 "token" 占位（否则像是已经固定好了）
+		offlineEx := "请先到「Token 管理」创建一个 token（离线包必须带 token）"
+		if tk != "" {
+			offlineEx = base + "/offline/" + tokSlot(tk) + "/library/nginx:1.25"
+		}
 		// 拉取路径固定为 <用户名>[/<自定义路径>]，因此 registry-mirrors 不再适用，统一用带路径的 pull
-		dockerEx = "离线 tar（需 token）：" + base + "/offline/" + tokSlot(tk) + "/library/nginx:1.25" +
+		dockerEx = "离线 tar（需 token）：" + offlineEx +
 			" ；registry 加速（无需 token，按带路径方式 pull）：<code>docker pull " + base + "/" +
 			html.EscapeString(s.dockerV2Prefix()) + "/library/nginx:1.25</code>"
 	}
@@ -410,11 +415,13 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // tokSlot 把示例里的 token 包成可被前端替换的片段（切换 Token 选择器时更新）。
+// data-orig 记住服务端渲染时的值：前端切到空/失效 token 时回退到它，避免露出字面 "token" 占位。
 func tokSlot(tk string) string {
 	if tk == "" {
-		return `<span class="tslot">token</span>`
+		return `<span class="tslot" data-orig="">token</span>`
 	}
-	return `<span class="tslot">` + html.EscapeString(tk) + `</span>`
+	esc := html.EscapeString(tk)
+	return `<span class="tslot" data-orig="` + esc + `">` + esc + `</span>`
 }
 
 // shortTok 取 token 前 8 位用于展示，避免长串占满下拉框。
