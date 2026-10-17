@@ -763,13 +763,13 @@ const homeTmpl = `
   <div class="grid-svc">
     <div class="svc">
       ` + tagGH + `<h3>GitHub 资源</h3>
-      <p>域名后拼接 <code>/g/&lt;token&gt;/</code> 再加完整 GitHub 地址。</p>
-      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o file "&lt;你的域名&gt;/g/&lt;token&gt;/https://github.com<wbr>/owner<wbr>/repo<wbr>/releases<wbr>/download<wbr>/v1.0<wbr>/app.zip"</code></pre></div>
+      <p>域名后拼接 <code>/g/&lt;用户名&gt;/&lt;token&gt;/</code> 再加完整 GitHub 地址。</p>
+      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o file "&lt;你的域名&gt;/g/&lt;用户名&gt;/&lt;token&gt;/https://github.com<wbr>/owner<wbr>/repo<wbr>/releases<wbr>/download<wbr>/v1.0<wbr>/app.zip"</code></pre></div>
     </div>
     <div class="svc">
       ` + tagHF + `<h3>HuggingFace 权重</h3>
-      <p>拼接 <code>/hf/&lt;token&gt;/</code> 与 owner/repo 路径（token 模式需带 token）。</p>
-      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o config.json "&lt;你的域名&gt;/hf/&lt;token&gt;/openai-community<wbr>/gpt2<wbr>/resolve<wbr>/main<wbr>/config.json"</code></pre></div>
+      <p>拼接 <code>/hf/&lt;用户名&gt;/&lt;token&gt;/</code> 与 owner/repo 路径（token 模式需带用户名段与 token）。</p>
+      <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -L -o config.json "&lt;你的域名&gt;/hf/&lt;用户名&gt;/&lt;token&gt;/openai-community<wbr>/gpt2<wbr>/resolve<wbr>/main<wbr>/config.json"</code></pre></div>
     </div>
     <div class="svc">
       ` + tagDK + `<h3>Docker 镜像</h3>
