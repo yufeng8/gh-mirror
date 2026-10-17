@@ -21,14 +21,17 @@
 #
 # 可选环境变量:
 #   MODE         native(默认) | docker
-#   VERSION      原生模式: 指定 Release 标签(如 v1.0.0)，默认取最新；
-#                Docker 模式: 指定镜像标签(默认 latest)；若 DOCKER_BUILD=1 则为源码引用(分支/标签，默认 main)
+#   VERSION      原生模式: 指定 Release 标签(如 v1.3.0)，默认取最新；
+#                Docker 模式: 指定镜像标签(默认最新稳定版)；若 DOCKER_BUILD=1 则为源码引用(分支/标签，默认 main)
 #   DOCKER_BUILD 仅 Docker 模式: 设为 1 时从 GitHub 源码构建镜像（而非拉取 GHCR 现成镜像）
 #   GITHUB_TOKEN 私有仓库必填: 具备 repo(读) + read:packages 权限的 PAT，用于拉取脚本/Release/登录 GHCR
 #   GHCR_USER    GHCR 登录用户名（默认 yufeng8），填与 GITHUB_TOKEN 对应账号一致即可
 #   GH_PROXY     下载加速前缀，例如 https://ghproxy.com/（原生二进制下载用，国内服务器可用）
 #   SKIP_NGINX=1 跳过 nginx + TLS 配置，只安装服务（自行反代时）
-#   ADMIN_USER / ADMIN_PATH  如需自定义后台账号/路径
+#   ADMIN_USER / ADMIN_PATH  如需自定义后台账号 / 超管入口路径(默认 /admin)
+#   USER_PATH   普通用户入口路径(默认 /user)
+#               注意：两个入口都不可与 /g /hf /offline /v2 /ai /mcp /search /healthz 等保留路径冲突，
+#               否则 gh-mirror 启动即报错退出（fail-fast）。
 #
 set -euo pipefail
 
@@ -47,6 +50,7 @@ EMAIL="${EMAIL:-}"
 ADMIN_PASS="${ADMIN_PASS:-}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PATH="${ADMIN_PATH:-/admin}"
+USER_PATH="${USER_PATH:-/user}"
 VERSION="${VERSION:-}"
 GH_PROXY="${GH_PROXY:-}"
 SKIP_NGINX="${SKIP_NGINX:-0}"
@@ -161,6 +165,7 @@ install_native() {
 ADMIN_USER=${ADMIN_USER}
 ADMIN_PASS=${ADMIN_PASS}
 ADMIN_PATH=${ADMIN_PATH}
+USER_PATH=${USER_PATH}
 ADMIN_SECRET=${ADMIN_SECRET}
 COOKIE_SECURE=true
 TOKENS_FILE=${TOKENS_DIR}/tokens.json
@@ -250,8 +255,8 @@ install_docker() {
     IMAGE_REF="${SERVICE_NAME}"
     [[ -n "${GIT_INSTEADOF_KEY}" ]] && git config --global --unset "${GIT_INSTEADOF_KEY}" 2>/dev/null || true
   else
-    # 默认：直接拉取 GHCR 现成镜像
-    TAG="${VERSION:-latest}"
+    # 默认：直接拉取 GHCR 现成镜像（不用 latest——GHCR 的 latest 跟随 main 开发分支，非稳定版）
+    TAG="${VERSION:-v1.3.0}"
     echo "==> [docker] 拉取镜像 ${IMAGE}:${TAG}"
     docker pull "${IMAGE}:${TAG}"
     IMAGE_REF="${IMAGE}:${TAG}"
@@ -264,6 +269,7 @@ install_docker() {
     -e ADMIN_USER="${ADMIN_USER}" \
     -e ADMIN_PASS="${ADMIN_PASS}" \
     -e ADMIN_PATH="${ADMIN_PATH}" \
+    -e USER_PATH="${USER_PATH}" \
     -e ADMIN_SECRET="${ADMIN_SECRET}" \
     -e COOKIE_SECURE="true" \
     -e TOKENS_FILE=/var/lib/gh-mirror/tokens.json \
@@ -371,9 +377,16 @@ sleep 2
 if curl -fsS -o /dev/null -w "本地健康检查 HTTP %{http_code}\n" "http://127.0.0.1:8080/healthz"; then
   echo "部署成功! (模式: ${MODE})"
   echo "  首页/说明:    https://${DOMAIN}/"
-  echo "  管理后台:      https://${DOMAIN}${ADMIN_PATH}  (账号 ${ADMIN_USER} / 你设置的密码)"
-  echo "  代理示例:      https://${DOMAIN}/g/<token>/https://github.com/owner/repo/releases/download/v1.0/app.zip"
-  echo "  首次使用请先登录后台添加 token，无 token 的请求会返回 404。"
+  echo "  超管后台:      https://${DOMAIN}${ADMIN_PATH}  (账号 ${ADMIN_USER} / 你设置的密码，仅超级管理员可登录)"
+  echo "  用户入口:      https://${DOMAIN}${USER_PATH}  (普通用户登录入口)"
+  echo ""
+  echo "  代理示例（<用户名> 为后台登录用户名，<token> 须归属该用户）："
+  echo "    GitHub:      https://${DOMAIN}/g/<用户名>/<token>/https://github.com/owner/repo/releases/download/v1.0/app.zip"
+  echo "    HF 权重:     https://${DOMAIN}/hf/<用户名>/<token>/owner/repo/resolve/main/model.bin"
+  echo "    离线镜像:    https://${DOMAIN}/offline/<用户名>/<token>/library/nginx:1.25"
+  echo "    MCP 接入:    POST https://${DOMAIN}/ai/<用户名>/mcp  (Authorization: Bearer <高级Token>)"
+  echo "  Docker 拉取:  docker pull ${DOMAIN}/<用户名>/library/nginx:1.25  (客户端自动补 /v2/，无需 token)"
+  echo "  首次使用请先登录后台添加 token；用户名段或 token 缺失/不匹配一律 404。"
   if [[ "${MODE}" == "docker" ]]; then
     echo "  容器管理: docker logs -f ${SERVICE_NAME} / docker restart ${SERVICE_NAME}"
   else

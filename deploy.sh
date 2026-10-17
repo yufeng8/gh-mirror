@@ -37,6 +37,7 @@ read -r -s -p "管理员密码 [admin]: " ADMIN_PASS; echo
 ADMIN_PASS="${ADMIN_PASS:-admin}"
 ADMIN_USER="admin"
 ADMIN_PATH="/admin"
+USER_PATH="/user"   # 普通用户入口（双入口强隔离；不可与 /g /hf /offline /v2 /ai /mcp /search /healthz 等保留路径冲突）
 ADMIN_SECRET="$(openssl rand -hex 32)"
 COOKIE_SECURE="true"
 TOKENS_FILE="${TOKENS_DIR}/tokens.json"
@@ -47,6 +48,7 @@ cat > /etc/gh-mirror.env <<EOF
 ADMIN_USER=${ADMIN_USER}
 ADMIN_PASS=${ADMIN_PASS}
 ADMIN_PATH=${ADMIN_PATH}
+USER_PATH=${USER_PATH}
 ADMIN_SECRET=${ADMIN_SECRET}
 COOKIE_SECURE=${COOKIE_SECURE}
 TOKENS_FILE=${TOKENS_FILE}
@@ -146,6 +148,7 @@ elif [[ "${MODE}" == "docker" ]]; then
     -e ADMIN_USER="${ADMIN_USER}" \
     -e ADMIN_PASS="${ADMIN_PASS}" \
     -e ADMIN_PATH="${ADMIN_PATH}" \
+    -e USER_PATH="${USER_PATH}" \
     -e ADMIN_SECRET="${ADMIN_SECRET}" \
     -e COOKIE_SECURE="${COOKIE_SECURE}" \
     -e TOKENS_FILE=/var/lib/gh-mirror/tokens.json \
@@ -166,8 +169,8 @@ elif [[ "${MODE}" == "docker" ]]; then
   fi
 fi
 
-# ---------- 配置缓存自动清理 (两种模式均写入 /etc/cron.d，每天 04:10 清理 7 天前的缓存) ----------
-echo "==> 配置缓存定时清理"
+# ---------- 配置缓存定时清理（兜底；gh-mirror 自身已每 10 分钟按 TTL/超限/磁盘余量自动清理） ----------
+echo "==> 配置缓存定时清理（兜底）"
 CRON_FILE="/etc/cron.d/gh-mirror"
 if [[ "${MODE}" == "docker" ]]; then
   cat > "${CRON_FILE}" <<EOF
@@ -210,9 +213,16 @@ sleep 2
 if curl -fsS -o /dev/null -w "HTTP %{http_code}\n" "https://${DOMAIN}/healthz"; then
   echo "部署成功!"
   echo "  首页/说明:    https://${DOMAIN}/"
-  echo "  管理后台:      https://${DOMAIN}${ADMIN_PATH}  (账号 ${ADMIN_USER} / 你设置的密码)"
-  echo "  代理示例:      https://${DOMAIN}/g/<token>/https://github.com/owner/repo/releases/download/v1.0/app.zip"
-  echo "  首次使用请先登录后台添加 token，无 token 的请求会返回 404。"
+  echo "  超管后台:      https://${DOMAIN}${ADMIN_PATH}  (账号 ${ADMIN_USER} / 你设置的密码，仅超级管理员可登录)"
+  echo "  用户入口:      https://${DOMAIN}${USER_PATH}  (普通用户登录入口)"
+  echo ""
+  echo "  代理示例（<用户名> 为后台登录用户名，<token> 须归属该用户）："
+  echo "    GitHub:      https://${DOMAIN}/g/<用户名>/<token>/https://github.com/owner/repo/releases/download/v1.0/app.zip"
+  echo "    HF 权重:     https://${DOMAIN}/hf/<用户名>/<token>/owner/repo/resolve/main/model.bin"
+  echo "    离线镜像:    https://${DOMAIN}/offline/<用户名>/<token>/library/nginx:1.25"
+  echo "    MCP 接入:    POST https://${DOMAIN}/ai/<用户名>/mcp  (Authorization: Bearer <高级Token>)"
+  echo "  Docker 拉取:  docker pull ${DOMAIN}/<用户名>/library/nginx:1.25  (客户端自动补 /v2/，无需 token)"
+  echo "  首次使用请先登录后台添加 token；用户名段或 token 缺失/不匹配一律 404。"
   if [[ "${MODE}" == "docker" ]]; then
     echo "  容器管理: docker logs -f ${SERVICE_NAME} / docker restart ${SERVICE_NAME}"
   else
