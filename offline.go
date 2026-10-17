@@ -181,26 +181,37 @@ func (s *Server) fetchManifest(r *http.Request, m registryMapping, repo, ref, to
 	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 }
 
-// handleOffline /offline/<token>/<image> 打包镜像为 docker-load 可用 tar 并流式下载。
-// 出于安全考虑，离线包地址同样需要有效 token（与 /g/、/hf/ 一致）：
-// 地址里第一段必须是已签发的 token，缺失或无效一律按 404 处理，避免网关暴露后被白嫖带宽。
-// 也兼容 /offline/<token>?image=<镜像名> 的查询串写法。
+// handleOffline /offline/<用户名>/<token>/<镜像> 打包镜像为 docker-load 可用 tar 并流式下载。
+// 多用户隔离：第一段是用户名段（必须对应真实用户），第二段是 token（必须归属该用户）。
+// 缺失或无效一律按 404 处理，避免网关暴露后被白嫖带宽。
+// 也兼容 /offline/<用户名>/<token>?image=<镜像名> 的查询串写法。
 func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/offline/"))
-	tok, image := "", ""
-	if idx := strings.IndexByte(rest, '/'); idx > 0 {
-		tok, image = rest[:idx], strings.TrimSpace(rest[idx+1:])
-	} else {
-		tok = rest
+	seg, tok, image := "", "", ""
+	parts := strings.SplitN(rest, "/", 3)
+	if len(parts) >= 2 {
+		seg, tok = parts[0], parts[1]
+		if len(parts) == 3 {
+			image = strings.TrimSpace(parts[2])
+		}
+	}
+	if image == "" {
 		image = strings.TrimSpace(r.URL.Query().Get("image"))
 	}
-	if tok == "" || !s.store.Has(tok) {
-		// 与 /g/ 保持一致：不泄露「token 是否存在」，统一 404
+	// 用户名段反查用户表：不存在统一 404
+	user, userOK := s.userByDockerSegment(seg)
+	if !userOK {
+		s.render404(w, r)
+		return
+	}
+	// token 必须存在且归属该用户（空 owner 归默认管理员）
+	t, exists := s.store.Get(tok)
+	if !exists || (t.Owner != user && !(t.Owner == "" && user == s.adminUser)) {
 		s.render404(w, r)
 		return
 	}
 	if image == "" {
-		http.Error(w, "缺少镜像名，用法：/offline/<token>/library/nginx:1.25", http.StatusBadRequest)
+		http.Error(w, "缺少镜像名，用法：/offline/<用户名>/<token>/library/nginx:1.25", http.StatusBadRequest)
 		return
 	}
 	m, repo, ref := parseImageRef(image)

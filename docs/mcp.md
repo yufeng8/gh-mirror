@@ -6,21 +6,21 @@ gh-mirror 内置 **MCP（Model Context Protocol）服务端**：AI Agent 可通�
 - 传输：**HTTP `POST /mcp`** 与 **stdio 子命令 `gh-mirror mcp`**，两者共用同一套工具实现
 - 方法：`initialize` / `ping` / `tools/list` / `tools/call`（通知类 `notifications/initialized` 不回响应）
 
-## 1. 准备：签发一个 admin 角色的 Token
+## 1. 准备：签发一个高级 Token
 
 MCP 鉴权要求 **高级 Token**（内部角色值 `admin`，与普通代理用的 `user` token 区分）。
 
-在管理后台 →「Token 管理」→「新增 Token」，**类型选择「高级 Token（可用于 MCP）」**即可。旧 token 若没有该字段，加载时按 `user` 处理（不影响原有代理）。
+在管理后台 →「Token 管理」→「新增 Token」，**类型选择「高级 Token（可用于 MCP）」**即可。
 
-> 命名说明：面板里显示为「高级 Token」而非「管理员」，是为了与后续多用户系统的账号角色（超级管理员 / 管理员 / 普通用户）区分，避免歧义；内部存储值仍是 `admin`。
+> **多用户说明**：每个 Token 归属其创建用户。MCP 接入请使用**归属你自己的**高级 Token——后台「MCP 接入」页会按当前用户自动列出可用 Token 并生成可复制的接入命令，复制即用。
 
-> admin token 具备运维能力，**请勿随意外发**；它同时不会泄露 `ADMIN_SECRET`，也不能修改超级管理员账号。
+> 高级 Token 具备运维能力，**请勿随意外发**；它同时不会泄露 `ADMIN_SECRET`，也不能修改超级管理员账号。
 
 ## 2. 接入方式一：HTTP（远程 / 已部署的网关）
 
 ```bash
 curl -sS -X POST https://<你的域名>/mcp \
-  -H 'Authorization: Bearer <admin-token>' \
+  -H 'Authorization: Bearer <高级Token>' \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
@@ -28,15 +28,15 @@ curl -sS -X POST https://<你的域名>/mcp \
 - 仅支持 `POST`（`GET` 返回 405）
 - 单次请求/响应，**不做 SSE 流式**
 - 支持 JSON-RPC 批量（请求体为数组）
-- 未带 token / token 非 admin → `401`
+- 未带 token / token 非高级 → `401`
 
 ## 3. 接入方式二：stdio（本地 Agent，推荐桌面端）
 
 二进制里直接运行子命令，无需经过 HTTP：
 
 ```bash
-gh-mirror mcp --token <admin-token>            # 或设置环境变量 GM_MCP_TOKEN
-gh-mirror mcp --token <admin-token> --base https://<你的域名>   # 指定生成链接用的基地址
+gh-mirror mcp --token <高级Token>            # 或设置环境变量 GM_MCP_TOKEN
+gh-mirror mcp --token <高级Token> --base https://<你的域名>   # 指定生成链接用的基地址
 ```
 
 - 逐行读 JSON-RPC、逐行写响应；**stdout 只输出协议 JSON，所有日志写 stderr**
@@ -52,7 +52,7 @@ Claude Desktop / CodeBuddy / 其它支持 `mcpServers` 的客户端：
   "mcpServers": {
     "gh-mirror": {
       "command": "gh-mirror",
-      "args": ["mcp", "--token", "<admin-token>", "--base", "https://<你的域名>"]
+      "args": ["mcp", "--token", "<高级Token>", "--base", "https://<你的域名>"]
     }
   }
 }
@@ -104,10 +104,10 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | gh-mirror mcp --token <t
 
 ## 6. 安全建议
 
-1. **只给需要的工具权限**：admin token 能建/删 token 与改设置，按信任范围签发。
+1. **只给需要的工具权限**：高级 Token 能建/删 token 与改设置，按信任范围签发。
 2. **不要暴露在公共网络无保护**：`/mcp` 会经过现有限流与 IP ACL 中间件；若网关经公网暴露，建议在 CDN（EdgeOne）对 `/mcp` 配置速率限制。
 3. **stdio 模式更安全**：不经网络，token 只在本地进程与配置文件中（注意配置文件的读取权限）。
-4. **定期轮换**：在后台删除旧 admin token、签发新的。
+4. **定期轮换**：在后台删除旧高级 Token、签发新的。
 5. **审计**：写操作（建/删 token、开关服务、改缓存、清缓存）都会写入服务日志。
 6. MCP **不提供**超级管理员账号密码的读写，也不泄露 `ADMIN_SECRET`。
 
@@ -115,7 +115,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | gh-mirror mcp --token <t
 
 | 现象 | 原因 / 处理 |
 |------|-------------|
-| `401` | 未带 `Authorization: Bearer`，或 token 不是 admin 角色 |
+| `401` | 未带 `Authorization: Bearer`，或 token 不是高级 Token |
 | `405` | 用了 `GET`，`/mcp` 只支持 `POST` |
 | `-32601 不支持的方法` | 方法名拼错；支持 `initialize`/`ping`/`tools/list`/`tools/call` |
 | `-32602 未知工具` | 工具名不存在，用 `tools/list` 核对 |

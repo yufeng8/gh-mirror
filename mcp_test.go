@@ -25,21 +25,23 @@ func newTestServer(t *testing.T) *Server {
 		HF:              config.HFConfig{Enabled: false},
 	}
 	s := &Server{
-		cfg:     cfg,
-		cache:   NewCache(cfg.CacheDir, time.Duration(cfg.CacheTTLMinutes)*time.Minute, cfg.MaxCacheMB),
-		store:   NewStore(cfg.TokensFile),
-		timeout: 30 * time.Second,
+		cfg:       cfg,
+		cache:     NewCache(cfg.CacheDir, time.Duration(cfg.CacheTTLMinutes)*time.Minute, cfg.MaxCacheMB),
+		store:     NewStore(cfg.TokensFile),
+		users:     NewUserStore(filepath.Join(dir, "users.json")),
+		adminUser: "admin",
+		timeout:   30 * time.Second,
 	}
 	s.store.Add("adm", "test", RoleAdmin, "")
 	s.store.Add("usr", "test", RoleUser, "")
 	return s
 }
 
-// mcpCall 发送一个 JSON-RPC 请求并返回全部响应。
+// mcpCall 发送一个 JSON-RPC 请求并返回全部响应（owner 传默认管理员 admin）。
 func mcpCall(t *testing.T, s *Server, body string) []*rpcResp {
 	t.Helper()
 	var out []*rpcResp
-	s.serveMCPRPC("http://127.0.0.1:18099", []byte(body), func(r *rpcResp) { out = append(out, r) })
+	s.serveMCPRPC("http://127.0.0.1:18099", "admin", []byte(body), func(r *rpcResp) { out = append(out, r) })
 	return out
 }
 

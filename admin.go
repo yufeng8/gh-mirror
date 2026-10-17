@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,45 +21,67 @@ import (
 const sessionCookie = "ghm_session"
 const sessionMaxAge = 7 * 24 * 3600
 
-// parseSession 校验会话 Cookie 的签名与过期时间，返回会话内的随机 sid。
-func (s *Server) parseSession(r *http.Request) (sid string, ok bool) {
+// parseSession 校验会话 Cookie 的签名、过期时间与用户是否仍存在，
+// 返回 (sid, 用户名, 角色, ok)。会话格式：sid.<base64url(user)>.<exp>.<sig>（4 段）。
+func (s *Server) parseSession(r *http.Request) (sid, user, role string, ok bool) {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
-		return "", false
+		return "", "", "", false
 	}
-	parts := strings.SplitN(c.Value, ".", 3)
-	if len(parts) != 3 {
-		return "", false
+	parts := strings.SplitN(c.Value, ".", 4)
+	if len(parts) != 4 {
+		return "", "", "", false
 	}
 	mac := hmac.New(sha256.New, s.secret)
-	mac.Write([]byte(parts[0] + "." + parts[1]))
+	mac.Write([]byte(parts[0] + "." + parts[1] + "." + parts[2]))
 	sig := hex.EncodeToString(mac.Sum(nil))
-	if subtle.ConstantTimeCompare([]byte(sig), []byte(parts[2])) != 1 {
-		return "", false
+	if subtle.ConstantTimeCompare([]byte(sig), []byte(parts[3])) != 1 {
+		return "", "", "", false
 	}
-	exp, err := strconv.ParseInt(parts[1], 10, 64)
+	exp, err := strconv.ParseInt(parts[2], 10, 64)
 	if err != nil {
-		return "", false
+		return "", "", "", false
 	}
 	if time.Now().Unix() >= exp {
-		return "", false
+		return "", "", "", false
 	}
-	return parts[0], true
+	ub, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", "", "", false
+	}
+	username := string(ub)
+	u, exists := s.users.Get(username)
+	if !exists {
+		return "", "", "", false
+	}
+	return parts[0], username, u.Role, true
 }
 
 // isAuthed 校验请求是否携带有效会话 Cookie。
 func (s *Server) isAuthed(r *http.Request) bool {
-	_, ok := s.parseSession(r)
+	_, _, _, ok := s.parseSession(r)
 	return ok
 }
 
-// signSession 生成带随机 sid、过期时间与 HMAC 签名的会话值。
-func (s *Server) signSession() string {
+// currentUser 从会话解析当前用户名与角色。
+func (s *Server) currentUser(r *http.Request) (username, role string, ok bool) {
+	_, username, role, ok = s.parseSession(r)
+	return
+}
+
+// requireSuper 判断当前会话是否为超级管理员。
+func (s *Server) requireSuper(r *http.Request) bool {
+	_, _, role, ok := s.parseSession(r)
+	return ok && role == RoleSuper
+}
+
+// signSession 生成带随机 sid、用户名、过期时间与 HMAC 签名的会话值。
+func (s *Server) signSession(user string) string {
 	buf := make([]byte, 16)
 	_, _ = rand.Read(buf)
 	sid := hex.EncodeToString(buf)
 	exp := time.Now().Add(sessionMaxAge * time.Second).Unix()
-	payload := sid + "." + strconv.FormatInt(exp, 10)
+	payload := sid + "." + base64.RawURLEncoding.EncodeToString([]byte(user)) + "." + strconv.FormatInt(exp, 10)
 	mac := hmac.New(sha256.New, s.secret)
 	mac.Write([]byte(payload))
 	return payload + "." + hex.EncodeToString(mac.Sum(nil))
@@ -126,6 +149,36 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
+	case sub == "users":
+		if s.requireSuper(r) {
+			s.renderUsersPage(w, r)
+			return
+		}
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+	case sub == "users/add":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doAddUser(w, r)
+	case sub == "users/del":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doDelUser(w, r)
+	case sub == "users/role":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doSetUserRole(w, r)
+	case sub == "users/pass":
+		if !s.requireSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.doResetUserPass(w, r)
 	case sub == "service":
 		if !s.isAuthed(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
@@ -159,11 +212,10 @@ func (s *Server) doLogin(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	user := r.FormValue("user")
 	pass := r.FormValue("pass")
-	if subtle.ConstantTimeCompare([]byte(user), []byte(s.adminUser)) == 1 &&
-		subtle.ConstantTimeCompare([]byte(pass), []byte(s.adminPass)) == 1 {
+	if s.users.Verify(user, pass) {
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookie,
-			Value:    s.signSession(),
+			Value:    s.signSession(user),
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
@@ -187,7 +239,7 @@ func (s *Server) doLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, user, _, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
@@ -207,15 +259,15 @@ func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 	if s.store.Has(tok) {
 		code = "token_exists"
 	} else {
-		// 新 token 归属当前登录用户（多用户预留：每位用户各自管理自己的 token）
-		s.store.Add(tok, note, role, s.adminUser)
+		// 新 token 归属当前登录用户（多用户：每位用户各自管理自己的 token）
+		s.store.Add(tok, note, role, user)
 	}
 	// 跳回 Token 管理页（该页才是操作上下文），并带上一次性反馈码
 	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
 }
 
 func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, user, role, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
@@ -227,9 +279,12 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := r.FormValue("token")
 	code := "token_missing"
-	if tok != "" && s.store.Has(tok) {
-		s.store.Delete(tok)
-		code = "token_deleted"
+	if tok != "" {
+		// 归属校验：normal 只能删自己的；无权时保持 token_missing，不泄露他人 token 是否存在
+		if t, exists := s.store.Get(tok); exists && s.tokenVisible(t, user, role) {
+			s.store.Delete(tok)
+			code = "token_deleted"
+		}
 	}
 	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
 }
@@ -242,13 +297,13 @@ func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg stri
 }
 
 func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, user, role, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
 	csrf := s.csrfToken(sid)
-	tokens := s.store.All()
+	tokens := s.tokensForUser(s.store.All(), user, role)
 	var totalHits, totalBytes int64
 	for _, t := range tokens {
 		totalHits += t.Hits
@@ -274,12 +329,12 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		// 离线包必须带 token：没有 token 时给引导文案，不能拼出字面 "token" 占位（否则像是已经固定好了）
 		offlineEx := "请先到「Token 管理」创建一个 token（离线包必须带 token）"
 		if tk != "" {
-			offlineEx = base + "/offline/" + tokSlot(tk) + "/library/nginx:1.25"
+			offlineEx = base + "/offline/" + dockerSegment(user) + "/" + tokSlot(tk) + "/library/nginx:1.25"
 		}
 		// 拉取路径固定为 <用户名>[/<自定义路径>]，因此 registry-mirrors 不再适用，统一用带路径的 pull
 		dockerEx = "离线 tar（需 token）：" + offlineEx +
 			" ；registry 加速（无需 token，按带路径方式 pull）：<code>docker pull " + base + "/" +
-			html.EscapeString(s.dockerV2Prefix()) + "/library/nginx:1.25</code>"
+			html.EscapeString(s.dockerV2PrefixFor(user)) + "/library/nginx:1.25</code>"
 	}
 	var ex strings.Builder
 	ex.WriteString(`<div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">`)
@@ -361,18 +416,18 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 			`<div class="svccard-foot">` + foot + `</div></div>`
 	}
 	// Docker 卡片的用法说明：路径固定带 <用户名>[/<自定义路径>]
-	ownerSeg := s.dockerUserSegment()
+	ownerSeg := dockerSegment(user)
 	dockerUsage := "docker pull &lt;域名&gt;/" + html.EscapeString(ownerSeg) +
-		"/library/nginx:1.25（用户名段必带）；/offline/&lt;token&gt;/&lt;image&gt;"
+		"/library/nginx:1.25（用户名段必带）；/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;image&gt;"
 	if c := s.dockerPath(); c != "" {
 		dockerUsage = "docker pull &lt;域名&gt;/" + html.EscapeString(ownerSeg) + "/" + html.EscapeString(c) +
-			"/library/nginx:1.25；/offline/&lt;token&gt;/&lt;image&gt;"
+			"/library/nginx:1.25；/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;image&gt;"
 	}
 	services := `<div class="svcgrid">` +
 		svcCard("GH", "GitHub 资源加速", "覆盖 blob / raw、Releases、仓库打包 archive 与短链，支持 Range 断点续传。始终可用。", "/g/&lt;token&gt;/https://github.com/owner/repo", true, "") +
 		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", dockerUsage, s.dockerEnabled(), "docker") +
 		svcCard("HF", "HuggingFace 权重", "加速模型与 LFS 大文件下载，token 模式下需带 token。", "/hf/&lt;token&gt;/owner/repo/resolve/main/file", s.hfEnabled(), "hf") +
-		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.dockerPath(), s.dockerUserSegment())
+		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.dockerPath(), dockerSegment(user))
 	// 缓存管理：已用总量 / 单文件上限 / 总上限 / 时效，均热改；超限与过期自动清理；可一键清除
 	maxFileMB := int(s.cache.MaxBytes() / (1024 * 1024))
 	maxTotalMB := int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -551,13 +606,13 @@ func (s *Server) tokenFoot() string {
 
 // renderTokensPage 渲染 Token 管理独立页面（/admin/tokens）。
 func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, user, role, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
 	csrf := s.csrfToken(sid)
-	tokens := s.store.All()
+	tokens := s.tokensForUser(s.store.All(), user, role)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: aside, topbarRight, flash, rows, addForm, foot
 	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
@@ -565,12 +620,34 @@ func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
 }
 
-// adminTokensFor 过滤出「归属某用户」且 role=admin（高级 Token）的 token。
-// owner 为空视为归属默认管理员（兼容旧数据）——为多用户预留：每位用户只看到自己的高级 Token。
-func adminTokensFor(tokens []*Token, user string) []*Token {
+// tokenVisible 判断某 token 是否对当前用户可见：super 全量；normal 只看归属自己的；
+// 空 owner（旧数据）归属默认管理员 adminUser（多用户迁移兼容）。
+func (s *Server) tokenVisible(t *Token, user, role string) bool {
+	if role == RoleSuper {
+		return true
+	}
+	return t.Owner == user || (t.Owner == "" && user == s.adminUser)
+}
+
+// tokensForUser 按当前用户过滤 token 列表（super 全量、normal 仅自己）。
+func (s *Server) tokensForUser(tokens []*Token, user, role string) []*Token {
+	if role == RoleSuper {
+		return tokens
+	}
+	out := make([]*Token, 0, len(tokens))
+	for _, t := range tokens {
+		if s.tokenVisible(t, user, role) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// adminTokensFor 过滤出 role=admin（高级 Token）的 token（调用方需先按用户过滤）。
+func adminTokensFor(tokens []*Token) []*Token {
 	var out []*Token
 	for _, t := range tokens {
-		if normRole(t.Role) == RoleAdmin && (t.Owner == user || t.Owner == "") {
+		if normRole(t.Role) == RoleAdmin {
 			out = append(out, t)
 		}
 	}
@@ -579,8 +656,8 @@ func adminTokensFor(tokens []*Token, user string) []*Token {
 
 // mcpTokenSelector 生成 MCP 页的 Token 选择器（只列「归属当前用户」的 admin token，默认选中第一个）。
 // 用 .gmtok class 复用全局联动：切换后同步本页所有 .tslot（HTTP/stdio 示例里的 token）。
-func (s *Server) mcpTokenSelector(tokens []*Token, user string) string {
-	adm := adminTokensFor(tokens, user)
+func (s *Server) mcpTokenSelector(tokens []*Token) string {
+	adm := adminTokensFor(tokens)
 	var sb strings.Builder
 	sb.WriteString(`<div class="tsel"><label>用于 MCP 接入的高级 Token</label><select class="gmtok" onchange="gmApplyToken(this.value)" aria-label="选择用于 MCP 接入的 Token">`)
 	if len(adm) == 0 {
@@ -626,15 +703,14 @@ func mcpToolsTable() string {
 // renderMCPPage 渲染 MCP 接入介绍页（/admin/mcp）。
 // 核心：根据当前是否有 admin 角色 token 动态给出「就绪状态」与可复制的接入配置。
 func (s *Server) renderMCPPage(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, user, role, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
 	_ = sid
-	tokens := s.store.All()
-	user := s.adminUser
-	adm := adminTokensFor(tokens, user)
+	tokens := s.tokensForUser(s.store.All(), user, role)
+	adm := adminTokensFor(tokens)
 	base := baseOf(r)
 	tk := ""
 	if len(adm) > 0 {
@@ -646,7 +722,7 @@ func (s *Server) renderMCPPage(w http.ResponseWriter, r *http.Request) {
 	if len(adm) > 0 {
 		status = `<div class="flash ok"><strong style="flex:0 0 auto">✓</strong><span>已就绪：当前用户 <code>` + html.EscapeString(user) + `</code> 名下共有 ` +
 			strconv.Itoa(len(adm)) + ` 个「高级 Token」可用于 MCP 接入。切换下方选择器，下方命令里的 Token 会同步更新，复制即用。</span></div>` +
-			s.mcpTokenSelector(tokens, user)
+			s.mcpTokenSelector(tokens)
 	} else {
 		status = `<div class="flash err"><strong style="flex:0 0 auto">!</strong><span>未就绪：当前用户 <code>` + html.EscapeString(user) + `</code> 名下还没有「高级 Token」。MCP 鉴权要求 admin 角色（高级 Token），请先到「Token 管理」创建一个。</span></div>` +
 			`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">去创建高级 Token</a></div>`
@@ -680,19 +756,189 @@ GM_MCP_TOKEN=` + tokSlot(tk) + ` gh-mirror mcp</code></pre></div>`
 }
 
 // consoleAside 渲染后台侧栏（各页面共用；小屏为抽屉，唤出入口见顶栏 ☰ 按钮）。
+// renderUsersPage 渲染用户管理页（仅超级管理员可访问）。
+func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
+	sid, user, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	csrf := s.csrfToken(sid)
+	users := s.users.All()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	body := fmt.Sprintf(usersBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
+		s.userRows(users, csrf, user), s.userAddForm(csrf))
+	_, _ = w.Write([]byte(pageApp("用户管理 - gh-mirror", "gh-mirror 用户管理", body)))
+}
+
+// toggleRole 返回与当前角色相反的角色（用于「设为管理员/设为普通」切换按钮）。
+func toggleRole(role string) string {
+	if role == RoleSuper {
+		return RoleNormal
+	}
+	return RoleSuper
+}
+
+// userRows 渲染用户列表（当前登录用户标注「我」；改角色/重置密码/删除为行内操作）。
+func (s *Server) userRows(users []*User, csrf, current string) string {
+	var rows strings.Builder
+	for _, u := range users {
+		roleTxt, roleCls := "普通", "badge"
+		btnTxt := "设为管理员"
+		if u.Role == RoleSuper {
+			roleTxt, roleCls = "超级管理员", "badge role-admin"
+			btnTxt = "设为普通"
+		}
+		me := ""
+		if u.Username == current {
+			me = ` <span class="muted small">（我）</span>`
+		}
+		esc := html.EscapeString(u.Username)
+		rows.WriteString(fmt.Sprintf(
+			`<tr><td data-label="用户名"><code>%s</code>%s</td>`+
+				`<td data-label="角色"><span class="%s">%s</span></td>`+
+				`<td data-label="创建时间">%s</td>`+
+				`<td data-label="操作"><span class="ops">`+
+				`<form method="post" action="%s/users/role" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><input type="hidden" name="role" value="%s"><button type="submit" class="btn outline" onclick="return confirm('确定%s该用户？')">%s</button></form>`+
+				`<form method="post" action="%s/users/pass" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><input type="password" name="pass" placeholder="新密码" required><button type="submit" class="btn outline">重置密码</button></form>`+
+				`<form method="post" action="%s/users/del" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><button type="submit" class="danger" onclick="return confirm('确定删除该用户？其 Token 不会被删除。')">删除</button></form>`+
+				`</span></td></tr>`,
+			esc, me, roleCls, roleTxt,
+			time.Unix(u.CreatedAt, 0).Format("2006-01-02 15:04"),
+			s.adminPath, csrf, esc, toggleRole(u.Role), btnTxt, btnTxt,
+			s.adminPath, csrf, esc,
+			s.adminPath, csrf, esc))
+	}
+	if len(users) == 0 {
+		rows.WriteString(`<tr><td colspan="4" class="muted">暂无用户</td></tr>`)
+	}
+	return rows.String()
+}
+
+// userAddForm 新增用户表单（用户名 + 密码 + 角色）。
+func (s *Server) userAddForm(csrf string) string {
+	return `<form method="post" action="` + s.adminPath + `/users/add" class="row">` +
+		`<input type="hidden" name="csrf" value="` + csrf + `">` +
+		`<input type="text" name="username" placeholder="用户名（2-32 位字母数字 . _ -）" required>` +
+		`<input type="password" name="pass" placeholder="密码（至少 4 位）" required>` +
+		`<select name="role" aria-label="角色"><option value="normal">普通用户</option><option value="super">超级管理员</option></select>` +
+		`<button type="submit" class="btn">创建用户</button></form>`
+}
+
+// doAddUser 创建用户（仅 super）。
+func (s *Server) doAddUser(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	username := strings.TrimSpace(r.FormValue("username"))
+	pass := r.FormValue("pass")
+	urole := r.FormValue("role")
+	if err := s.users.Add(username, pass, urole); err != nil {
+		log.Printf("创建用户失败: %v", err)
+		http.Redirect(w, r, s.adminPath+"/users?err=user_add_failed", http.StatusFound)
+		return
+	}
+	log.Printf("已创建用户: %s（角色 %s）", username, normUserRole(urole))
+	http.Redirect(w, r, s.adminPath+"/users?ok=user_added", http.StatusFound)
+}
+
+// doDelUser 删除用户（仅 super；不允许删除最后一个 super）。
+func (s *Server) doDelUser(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	username := r.FormValue("username")
+	if err := s.users.Delete(username); err != nil {
+		log.Printf("删除用户失败: %v", err)
+		http.Redirect(w, r, s.adminPath+"/users?err=user_del_failed", http.StatusFound)
+		return
+	}
+	log.Printf("已删除用户: %s", username)
+	http.Redirect(w, r, s.adminPath+"/users?ok=user_deleted", http.StatusFound)
+}
+
+// doSetUserRole 修改用户角色（仅 super；不允许降级最后一个 super）。
+func (s *Server) doSetUserRole(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	username := r.FormValue("username")
+	newRole := r.FormValue("role")
+	if err := s.users.UpdateRole(username, newRole); err != nil {
+		log.Printf("修改用户角色失败: %v", err)
+		http.Redirect(w, r, s.adminPath+"/users?err=user_role_failed", http.StatusFound)
+		return
+	}
+	log.Printf("用户角色已更新: %s -> %s", username, normUserRole(newRole))
+	http.Redirect(w, r, s.adminPath+"/users?ok=user_role", http.StatusFound)
+}
+
+// doResetUserPass 重置用户密码（仅 super）。
+func (s *Server) doResetUserPass(w http.ResponseWriter, r *http.Request) {
+	sid, _, role, ok := s.parseSession(r)
+	if !ok || role != RoleSuper {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
+		return
+	}
+	username := r.FormValue("username")
+	pass := r.FormValue("pass")
+	if err := s.users.ResetPassword(username, pass); err != nil {
+		log.Printf("重置密码失败: %v", err)
+		http.Redirect(w, r, s.adminPath+"/users?err=user_add_failed", http.StatusFound)
+		return
+	}
+	log.Printf("已重置用户密码: %s", username)
+	http.Redirect(w, r, s.adminPath+"/users?ok=user_pass", http.StatusFound)
+}
+
 func (s *Server) consoleAside(r *http.Request) string {
-	n := len(s.store.All())
+	// Token 计数按当前用户可见范围（super 全量、normal 仅自己）
+	_, user, role, _ := s.parseSession(r)
+	n := len(s.tokensForUser(s.store.All(), user, role))
 	tokensNav := "Token 管理"
 	if n > 0 {
 		tokensNav = fmt.Sprintf("Token 管理（%d）", n)
 	}
-	// 高亮互斥：/admin/tokens 或 /admin/mcp 各自高亮，其余情况高亮概览
-	overviewActive, tokensActive, mcpActive := " active", "", ""
+	// 高亮互斥：/admin/tokens、/admin/mcp、/admin/users 各自高亮，其余高亮概览
+	overviewActive, tokensActive, mcpActive, usersActive := " active", "", "", ""
 	switch {
 	case strings.HasSuffix(r.URL.Path, "/tokens"):
 		overviewActive, tokensActive = "", " active"
 	case strings.HasSuffix(r.URL.Path, "/mcp"):
 		overviewActive, mcpActive = "", " active"
+	case strings.HasSuffix(r.URL.Path, "/users"):
+		overviewActive, usersActive = "", " active"
+	}
+	// 「用户管理」仅超级管理员可见
+	usersNav := ""
+	if role == RoleSuper {
+		usersNav = `<a class="navitem` + usersActive + `" href="` + s.adminPath + `/users"><span class="ic">👥</span>用户管理</a>`
 	}
 	return `<aside id="gmNav">` +
 		`<a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>` +
@@ -700,6 +946,7 @@ func (s *Server) consoleAside(r *http.Request) string {
 		`<a class="navitem` + overviewActive + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
 		`<a class="navitem` + tokensActive + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
 		`<a class="navitem` + mcpActive + `" href="` + s.adminPath + `/mcp"><span class="ic">🤖</span>MCP 接入</a>` +
+		usersNav +
 		`<a class="navitem" href="` + s.adminPath + `#services"><span class="ic">⚙️</span>服务管理</a>` +
 		`<a class="navitem" href="` + s.adminPath + `#cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<span class="navsep"></span>` +
@@ -722,7 +969,7 @@ func (s *Server) asideFoot() string {
 
 // doEditToken 修改 Token 的备注与角色（登录 + CSRF；token 值本身不可改）。
 func (s *Server) doEditToken(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, user, userRole, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
@@ -734,12 +981,17 @@ func (s *Server) doEditToken(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := strings.TrimSpace(r.FormValue("token"))
 	note := strings.TrimSpace(r.FormValue("note"))
-	role := normRole(r.FormValue("role"))
-	if !s.store.Update(tok, note, role) {
+	tokenRole := normRole(r.FormValue("role"))
+	// 归属校验：normal 只能编辑自己的；无权时按不存在处理，不泄露他人 token
+	if t, exists := s.store.Get(tok); !exists || !s.tokenVisible(t, user, userRole) {
 		http.Redirect(w, r, s.adminPath+"/tokens?err=token_missing", http.StatusFound)
 		return
 	}
-	log.Printf("Token 已更新: 类型=%s", role)
+	if !s.store.Update(tok, note, tokenRole) {
+		http.Redirect(w, r, s.adminPath+"/tokens?err=token_missing", http.StatusFound)
+		return
+	}
+	log.Printf("Token 已更新: 类型=%s", tokenRole)
 	http.Redirect(w, r, s.adminPath+"/tokens?ok=token_updated", http.StatusFound)
 }
 
@@ -753,15 +1005,22 @@ var flashOK = map[string]string{
 	"service_off":   "服务已关闭",
 	"cache_saved":   "缓存设置已保存，即时生效",
 	"cache_cleared": "缓存已清除",
+	"user_added":    "用户已创建",
+	"user_deleted":  "用户已删除",
+	"user_role":     "用户角色已更新",
+	"user_pass":     "用户密码已重置",
 }
 
 var flashErr = map[string]string{
-	"csrf":          "安全校验失败（会话可能已过期），请刷新页面后重试",
-	"token_missing": "Token 不存在或已被删除",
-	"bad_input":     "输入不合法，请检查后重试",
-	"svc_unknown":   "未知服务，仅支持 Docker / HuggingFace",
-	"svc_failed":    "服务开关调整失败，请查看日志",
-	"path_invalid":  "自定义路径不合法（仅支持字母、数字、-、_、/，最长 64 字符）",
+	"csrf":            "安全校验失败（会话可能已过期），请刷新页面后重试",
+	"token_missing":   "Token 不存在或已被删除",
+	"bad_input":       "输入不合法，请检查后重试",
+	"svc_unknown":     "未知服务，仅支持 Docker / HuggingFace",
+	"svc_failed":      "服务开关调整失败，请查看日志",
+	"path_invalid":    "自定义路径不合法（仅支持字母、数字、-、_、/，最长 64 字符）",
+	"user_add_failed": "创建用户失败（用户名需 2-32 位字母数字 . _ -，密码至少 4 位，且用户名不可重复）",
+	"user_del_failed": "不能删除最后一个超级管理员",
+	"user_role_failed": "不能降级最后一个超级管理员",
 }
 
 // flashHTML 渲染一次性操作反馈条（保存 / 创建 / 开关等操作后的即时提示）。
@@ -846,7 +1105,7 @@ func baseOf(r *http.Request) string {
 
 // doToggleService 运行时切换 Docker / HuggingFace 开关（登录 + CSRF，即时生效并持久化）。
 func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, _, _, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
@@ -890,7 +1149,7 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 
 // doSetCache 运行时调整缓存参数（单文件上限 / 总上限 / 时效），即时生效并持久化。
 func (s *Server) doSetCache(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, _, _, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
@@ -915,7 +1174,7 @@ func (s *Server) doSetCache(w http.ResponseWriter, r *http.Request) {
 
 // doClearCache 清空缓存目录内的所有文件（不影响 Token 与设置）。
 func (s *Server) doClearCache(w http.ResponseWriter, r *http.Request) {
-	sid, ok := s.parseSession(r)
+	sid, _, _, ok := s.parseSession(r)
 	if !ok {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return

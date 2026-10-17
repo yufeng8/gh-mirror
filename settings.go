@@ -148,10 +148,10 @@ func (s *Server) dockerPath() string {
 	return s.dockerPrefix
 }
 
-// dockerUserSegment 返回 /v2 路径里的用户名段：小写化 + 非法字符替换为 -（Docker 仓库路径必须小写）。
-func (s *Server) dockerUserSegment() string {
+// dockerSegment 把用户名规范化为 Docker 路径段：小写化 + 非法字符替换为 -（Docker 仓库路径必须小写）。
+func dockerSegment(name string) string {
 	var b strings.Builder
-	for _, r := range strings.ToLower(strings.TrimSpace(s.adminUser)) {
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
 			b.WriteRune(r)
@@ -166,11 +166,20 @@ func (s *Server) dockerUserSegment() string {
 	return seg
 }
 
-// dockerV2Prefix 返回 /v2 的**完整**路径前缀：<用户名>[/<自定义路径>]。
-// 用户名段强制存在、不可省略——这样每个用户天然拥有独立路径，
-// 也是后续多用户模式（每用户一条 /v2 路径）的基础。
-func (s *Server) dockerV2Prefix() string {
-	owner := s.dockerUserSegment()
+// userByDockerSegment 反查 Docker 段对应的用户名（大小写不敏感），不存在返回 false。
+func (s *Server) userByDockerSegment(seg string) (string, bool) {
+	for _, u := range s.users.All() {
+		if dockerSegment(u.Username) == seg {
+			return u.Username, true
+		}
+	}
+	return "", false
+}
+
+// dockerV2PrefixFor 返回某用户的 /v2 **完整**路径前缀：<用户名段>[/<自定义路径>]。
+// 用户名段强制存在、不可省略——这样每个用户天然拥有独立路径。自定义路径全局共享（所有用户同一后缀）。
+func (s *Server) dockerV2PrefixFor(user string) string {
+	owner := dockerSegment(user)
 	custom := s.dockerPath()
 	// 兼容历史数据：若自定义路径里已包含用户名段，剥掉避免出现 <owner>/<owner>/...
 	if strings.HasPrefix(custom, owner+"/") {
