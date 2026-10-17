@@ -48,7 +48,7 @@ var tagsTmpl = template.Must(template.New("tags").Parse(`<!doctype html>
 <p><a href="/search">← 返回搜索</a></p>
 <h2>{{.Repo}}</h2>
 <p class="hint">拉取：<code>docker pull {{.Repo}}:&lt;tag&gt;</code>（Docker Hub 走 registry-mirror 加速）</p>
-<p class="hint"><a href="/offline/{{.Repo}}">离线打包该镜像（tar，docker load 可用）</a></p>
+<p class="hint">离线打包：<code>/offline/&lt;token&gt;/{{.Repo}}</code>（tar，docker load 可用；token 在管理后台「Token 管理」创建，链接需带 token）</p>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 {{if .Results}}
 <ul class="tags">

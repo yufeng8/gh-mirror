@@ -95,11 +95,11 @@ curl -fsS $B/healthz                                            # ok
 # GitHub 代理（双斜杠必须保留）
 curl -fsSI "$B/g/<TK>/https://raw.githubusercontent.com/octocat/Hello-World/master/README"
 # 搜索 / tags
-curl -fsS "$B/search?q=nginx" | head;  curl -fsS "$B/tags?image=library/nginx" | head
+curl -fsS "$B/search?q=nginx" | head;  curl -fsS "$B/tags?repo=library/nginx" | head
 # HuggingFace 代理（需 HF_ENABLED=true 且主机出网）
 curl -fsSL "$B/hf/<repo>/<path>" -o part.bin -w "hf:%{http_code} size:%{size_download}\n"
 # 离线 tar（P5 关键）：产出后本机 docker load 能载入
-curl -fsS "$B/offline/library/nginx:1.25" -o nginx.tar && docker load -i nginx.tar && docker images | grep nginx
+curl -fsS "$B/offline/$TOKEN/library/nginx:1.25" -o nginx.tar && docker load -i nginx.tar && docker images | grep nginx
 ```
 **Docker 加速（registry-mirror）**：
 ```bash

@@ -264,7 +264,8 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	dockerEx := "Docker 加速未开启（可在「服务管理」开启）"
 	if s.dockerEnabled() {
-		dockerEx = "离线 tar：" + base + "/offline/library/nginx:1.25 ；或 registry 加速：daemon.json 加 \"registry-mirrors\": [\"" + base + "\"] 后 systemctl restart docker"
+		dockerEx = "离线 tar（需 token）：" + base + "/offline/" + tokSlot(tk) + "/library/nginx:1.25" +
+			" ；registry 加速（无需 token，Docker 客户端直连 /v2）：daemon.json 加 \"registry-mirrors\": [\"" + base + "\"] 后 systemctl restart docker"
 	}
 	var ex strings.Builder
 	ex.WriteString(`<div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">`)
@@ -273,7 +274,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	ex.WriteString(`</div>`)
 	ex.WriteString(`<p><strong>GitHub 资源</strong>（需 token）：<br><code>` + ghEx + `</code></p>`)
 	ex.WriteString(`<p><strong>HuggingFace 权重</strong>（需 token）：<br><code>` + hfEx + `</code></p>`)
-	ex.WriteString(`<p><strong>Docker 镜像</strong>（无需 token）：<br><code>` + dockerEx + `</code></p>`)
+	ex.WriteString(`<p><strong>Docker 镜像</strong>（仅离线 tar 需 token；registry 加速走 <code>/v2</code> 由 Docker 客户端直连、无法带 token）：<br><code>` + dockerEx + `</code></p>`)
 	example := ex.String()
 	// 操作反馈条（保存 / 创建 / 开关等）；Docker 风险说明改由弹窗承载，不再常驻页面
 	flashHTML := s.flashHTML(r)
@@ -304,7 +305,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`<button type="button" id="gmconv-copy" class="btn outline" onclick="gmCopyConv()">复制</button>` +
 		`<button type="button" class="btn outline" onclick="gmDownloadConv()">下载</button>` +
 		`<button type="button" class="btn outline" onclick="gmOpenConv()">访问</button></div>` +
-		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出 <code>/offline</code> 离线 tar 地址）。</p>`
+		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出<strong>需带 token</strong> 的 <code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址）。registry 加速走 <code>/v2</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>`
 	// 链接转换卡片的 Token 快捷切换器（与「用法示例」的切换器联动，共用 .gmtok）
 	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
 	// 服务管理三卡：GitHub 恒开；Docker / HuggingFace 即时开关（持锁内存 + settings.json 持久化）
@@ -337,19 +338,16 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	services := `<div class="svcgrid">` +
 		svcCard("GH", "GitHub 资源加速", "覆盖 blob / raw、Releases、仓库打包 archive 与短链，支持 Range 断点续传。始终可用。", "/g/&lt;token&gt;/https://github.com/owner/repo", true, "") +
-		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", "daemon.json → registry-mirrors；/offline/&lt;image&gt;", s.dockerEnabled(), "docker") +
+		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", "daemon.json → registry-mirrors（/v2，无需 token）；/offline/&lt;token&gt;/&lt;image&gt;", s.dockerEnabled(), "docker") +
 		svcCard("HF", "HuggingFace 权重", "加速模型与 LFS 大文件下载，token 模式下需带 token。", "/hf/&lt;token&gt;/owner/repo/resolve/main/file", s.hfEnabled(), "hf") +
 		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModal
 	// 缓存管理：已用总量 / 单文件上限 / 总上限 / 时效，均热改；超限与过期自动清理；可一键清除
 	maxFileMB := int(s.cache.MaxBytes() / (1024 * 1024))
 	maxTotalMB := int(s.cache.MaxTotalBytes() / (1024 * 1024))
 	ttlMin := int(s.cache.TTL() / time.Minute)
-	totalTxt, ttlTxt := "不限", "永不过期"
+	totalTxt := "不限"
 	if maxTotalMB > 0 {
 		totalTxt = formatBytes(s.cache.MaxTotalBytes())
-	}
-	if ttlMin > 0 {
-		ttlTxt = fmt.Sprintf("%d 分钟", ttlMin)
 	}
 	// 磁盘可用空间：低于 1 GiB 时缓存也会按最旧优先自动清理
 	freeBytes := s.cache.DiskFree()
@@ -364,9 +362,8 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	cacheMgmt := `<div class="stats">` +
 		statCard("缓存已用", formatBytes(s.cache.UsageBytes()), "总上限 "+totalTxt) +
 		statCard("单文件上限", fmt.Sprintf("%d MB", maxFileMB), "超过则不缓存") +
-		statCard("缓存时效", ttlTxt, "到期自动失效") +
 		statCard("磁盘可用", diskTxt, diskSub) +
-		statCardCls("缓存目录", html.EscapeString(s.cfg.CacheDir), "", "sm") +
+		statCardCls("缓存目录", html.EscapeString(s.cfg.CacheDir), "服务端本地路径", "sm") +
 		`</div>
 <form method="post" action="` + s.adminPath + `/cache" class="row" style="margin-top:16px;align-items:flex-end">
   <input type="hidden" name="csrf" value="` + csrf + `">
@@ -855,7 +852,11 @@ func (s *Server) buildAccelURL(base, raw, tk string) accelResult {
 		if !s.dockerEnabled() {
 			return accelResult{Kind: "docker", Hint: "Docker 加速未开启，请先在「服务管理」开启"}
 		}
-		return accelResult{Kind: "docker", URL: base + "/offline/" + raw}
+		if tk == "" {
+			return accelResult{Kind: "docker", Hint: "离线 tar 需要 token，请先在「Token 管理」添加一个 token"}
+		}
+		// 离线包地址必须带 token（/offline/<token>/<image>）
+		return accelResult{Kind: "docker", URL: base + "/offline/" + tk + "/" + raw}
 	}
 	return accelResult{Hint: "无法识别：支持 github.com / huggingface.co 链接，或 Docker 镜像名如 library/nginx:1.25"}
 }
