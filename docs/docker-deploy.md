@@ -55,7 +55,7 @@ docker compose -f docker-compose.yml -f docker-compose.hostcert.yml --profile pr
 
 ## 快速开始
 ```bash
-git clone -b feat/hubproxy https://github.com/yufeng8/gh-mirror.git
+git clone https://github.com/yufeng8/gh-mirror.git
 cd gh-mirror
 cp .env.example .env
 # 编辑 .env：设置 ADMIN_PASS 与 ADMIN_SECRET（openssl rand -hex 32）

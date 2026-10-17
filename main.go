@@ -77,8 +77,13 @@ func main() {
 	var secret []byte
 	if secretStr == "" {
 		secret = genSecret()
+		log.Printf("⚠️ 安全提醒：未设置 ADMIN_SECRET，已随机生成会话密钥——重启后所有登录会话失效，多实例间也不一致。生产环境请显式设置固定值（如 openssl rand -hex 32）。")
 	} else {
 		secret = []byte(secretStr)
+	}
+	// 安全默认值告警（按既定策略：只提醒、不阻断启动）
+	if adminPass == "admin" {
+		log.Printf("⚠️ 安全提醒：管理后台正在使用默认弱口令 admin/admin。公网部署请务必通过 ADMIN_PASS（或 config.toml 的 admin.pass）设置强口令。")
 	}
 
 	store := NewStore(cfg.TokensFile)

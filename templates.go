@@ -746,11 +746,11 @@ const homeTmpl = `
 
 <section class="section" id="deploy">
   <div class="sec-head"><span class="sec-num">03</span><div><span class="sec-en">Deploy</span><h2>快速部署</h2></div></div>
-  <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>git clone -b feat/hubproxy https://github.com/yufeng8/gh-mirror.git &amp;&amp; cd gh-mirror
+  <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>git clone https://github.com/yufeng8/gh-mirror.git &amp;&amp; cd gh-mirror
 cp .env.example .env   # 设 ADMIN_PASS / ADMIN_SECRET
 docker compose up -d --build
 curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
-  <p class="muted" style="margin-top:12px">也可用预构建镜像不编译直接跑：镜像 <code>ghcr.io/yufeng8/gh-mirror</code> 搭配 <a href="` + repoURL + `/releases" target="_blank" rel="noopener">GitHub Releases</a> 里的<strong>最新正式版 tag</strong>。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/docker-deploy.md" target="_blank" rel="noopener">docs/docker-deploy.md</a> 与 <a href="` + repoURL + `/blob/feat/hubproxy/docs/deploy-runbook.md" target="_blank" rel="noopener">docs/deploy-runbook.md</a>。</p>
+  <p class="muted" style="margin-top:12px">也可用预构建镜像不编译直接跑：镜像 <code>ghcr.io/yufeng8/gh-mirror</code> 搭配 <a href="` + repoURL + `/releases" target="_blank" rel="noopener">GitHub Releases</a> 里的<strong>最新正式版 tag</strong>。详见 <a href="` + repoURL + `/blob/main/docs/docker-deploy.md" target="_blank" rel="noopener">docs/docker-deploy.md</a> 与 <a href="` + repoURL + `/blob/main/docs/deploy-runbook.md" target="_blank" rel="noopener">docs/deploy-runbook.md</a>。</p>
 </section>
 
 <section class="section" id="updates">
@@ -770,12 +770,12 @@ curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
   </div>
   <p class="muted">把下面这段提示词整体复制，交给你的 AI Agent（CodeBuddy / Cursor / Claude 等），它就能照着仓库文档自动完成部署与验证。提示词中的 <code>&lt;你的域名&gt;</code> 是通用占位符，<strong>请先替换为你要部署的实际域名</strong>（或让 Agent 先向你确认）：</p>
   <div class="term folded" id="agentPromptTerm"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">prompt · 默认折叠，展开可见全文</span><button type="button" class="fold-btn" onclick="togglePromptExpand()">展开</button><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{{AGENT_PROMPT}}</code></pre></div>
-  <p class="muted" style="margin-top:12px">本服务同时支持 <strong>MCP 接入</strong>：AI Agent 可通过标准 MCP 协议直接管理 Token、服务开关与缓存，无需再猜接口。详见 <a href="` + repoURL + `/blob/feat/hubproxy/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。提示词内容与仓库 <code>docs/agent-prompt.md</code> 保持一致，随版本更新。</p>
+  <p class="muted" style="margin-top:12px">本服务同时支持 <strong>MCP 接入</strong>：AI Agent 可通过标准 MCP 协议直接管理 Token、服务开关与缓存，无需再猜接口。详见 <a href="` + repoURL + `/blob/main/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。提示词内容与仓库 <code>docs/agent-prompt.md</code> 保持一致，随版本更新。</p>
 </section>
 
 <div class="footer">
   <details><summary>合规与免责声明</summary><p>本项目仅用于加速你有权访问的资源。严禁用于盗用他人私有仓库、规避付费、绕过访问限制或任何违反服务条款及所在地法律法规的行为。使用者须自行承担因不当使用产生的全部责任；本项目不缓存或记录请求内容，亦不对加速资源的版权与合规性负责。</p></details>
-  <p class="muted">© 2026 gh-mirror · <a href="` + repoURL + `/blob/feat/hubproxy/LICENSE" target="_blank" rel="noopener">MIT License</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a></p>
+  <p class="muted">© 2026 gh-mirror · <a href="` + repoURL + `/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a></p>
 </div>
 `
 

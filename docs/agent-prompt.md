@@ -5,7 +5,7 @@
 
 【硬性要求】
 1. 先读仓库文档，并严格按其中的「环境适配与冲突排查表」选型，不要盲目执行：
-   git clone -b feat/hubproxy https://github.com/yufeng8/gh-mirror.git
+   git clone https://github.com/yufeng8/gh-mirror.git
    - docs/docker-deploy.md：通用 Docker 部署、域名前置 CDN（EdgeOne/Cloudflare）的正确接法、Docker 加速安全
    - docs/deploy-runbook.md：先探测 → 选型 → 执行 → 端到端验证的完整流程
 2. 优先使用预构建镜像，不要编译：ghcr.io/yufeng8/gh-mirror:<最新正式版 tag>（多架构、含全部特性）。

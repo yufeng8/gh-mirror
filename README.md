@@ -44,7 +44,7 @@
   </tr>
   <tr>
     <td><img src="docs/images/admin-services.png" alt="服务管理"><br><sub><b>服务管理</b>：开关即时生效并持久化</sub></td>
-    <td><img src="docs/images/admin-tokens.png" alt="Token 管理"><br><sub><b>Token 管理</b>：独立页面，角色 / 复制 / 行内编辑</sub></td>
+    <td><img src="docs/images/admin-tokens.png" alt="Token 管理"><br><sub><b>Token 管理</b>：独立页面，类型 / 复制 / 行内编辑</sub></td>
   </tr>
   <tr>
     <td><img src="docs/images/admin-conv-result.png" alt="链接转换"><br><sub><b>链接转换</b>：粘贴原始地址即得加速链接</sub></td>
@@ -78,7 +78,7 @@
 - 🔒 **访问可控**：Token 鉴权（默认开启）+ IP（CIDR）/ 仓库（通配符）黑白名单 + 令牌桶限流（IPv6 按 `/64` 归并）。
 - 💾 **真磁盘缓存**：Layer / 文件落盘，命中直接返回 `X-Cache: HIT`；缓存总量、单文件上限、TTL 都能在后台热改，超限与磁盘余量不足自动按最旧优先清理。
 - 🤖 **AI Agent 友好**：内置 MCP 服务端（`POST /mcp` 与 `gh-mirror mcp` stdio），12 个工具覆盖 Token、服务开关、缓存、链接转换、镜像搜索。
-- 🎛️ **后台可视化**：服务状态、统计、链接转换、Token 管理、缓存管理全在网页里，开关即时生效并持久化到 `gm-data/settings.json`。
+- 🎛️ **后台可视化**：服务状态、统计、链接转换、Token 管理、MCP 接入、缓存管理全在网页里，开关即时生效并持久化到 `gm-data/settings.json`。
 
 ---
 
@@ -87,14 +87,14 @@
 内置 MCP（Model Context Protocol）服务端，Agent 不必猜接口，直接用标准协议操作网关：
 
 ```bash
-# 方式一：HTTP（推荐，配 admin / 高级 Token）
+# 方式一：HTTP（推荐，配高级 Token）
 curl -sX POST https://mirror.example.com/mcp \
   -H "Authorization: Bearer <高级Token>" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
-# 方式二：stdio（本地或跳板机）
-gh-mirror mcp
+# 方式二：stdio（本地或跳板机；token 必填）
+gh-mirror mcp --token <高级Token>
 ```
 
 | 类别 | 工具 |
@@ -105,7 +105,7 @@ gh-mirror mcp
 | 缓存 | `get_cache_stats` · `set_cache_limits` · `clear_cache` |
 | 链接与镜像 | `convert_link` · `search_images` · `list_tags` |
 
-> 详见 [docs/mcp.md](docs/mcp.md)。首页还提供「一键交给 AI Agent 部署」的完整提示词，复制给 CodeBuddy / Cursor / Claude 即可照着仓库文档完成部署与验证。
+> 详见 [docs/mcp.md](docs/mcp.md)。管理后台的「MCP 接入」页会按当前高级 Token 自动生成可复制的接入命令。首页还提供「一键交给 AI Agent 部署」的完整提示词，复制给 CodeBuddy / Cursor / Claude 即可照着仓库文档完成部署与验证。
 
 ---
 
