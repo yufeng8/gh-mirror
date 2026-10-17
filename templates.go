@@ -874,20 +874,50 @@ var dashboardBody = `
       <div class="card-head"><h2>链接转换</h2>%s</div>
       %s
     </section>
-    <section class="card" id="services">
-      <h2>服务管理</h2>
-      %s
-    </section>
-    <section class="card" id="cache">
-      <h2>缓存管理</h2>
-      %s
-    </section>
     <section class="card" id="usage">
       <h2>用法示例</h2>
       %s
     </section>
     <section class="card" id="tokens">
       <h2>Token 管理</h2>
+      %s
+    </section>
+  </div>
+</div>`
+
+// servicesBody 是服务管理独立页面的 body 片段（/admin/services）。
+// 动词：aside / topbarRight / flash / services
+var servicesBody = `
+<div class="console" id="top">
+  %s
+  <div class="main">
+    <div class="topbar">
+      <button class="btn outline nav-toggle" type="button" onclick="toggleNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+      <h1>服务管理</h1>
+      <div class="spacer">%s</div>
+    </div>
+    %s
+    <section class="card">
+      <h2>服务开关</h2>
+      %s
+    </section>
+  </div>
+</div>`
+
+// cacheBody 是缓存管理独立页面的 body 片段（/admin/cache）。
+// 动词：aside / topbarRight / flash / cacheMgmt
+var cacheBody = `
+<div class="console" id="top">
+  %s
+  <div class="main">
+    <div class="topbar">
+      <button class="btn outline nav-toggle" type="button" onclick="toggleNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+      <h1>缓存管理</h1>
+      <div class="spacer">%s</div>
+    </div>
+    %s
+    <section class="card">
+      <h2>缓存管理</h2>
       %s
     </section>
   </div>

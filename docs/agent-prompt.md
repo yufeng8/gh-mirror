@@ -10,7 +10,7 @@
    - docs/deploy-runbook.md：先探测 → 选型 → 执行 → 端到端验证的完整流程
 2. 优先使用预构建镜像，不要编译：ghcr.io/yufeng8/gh-mirror:<最新正式版 tag>（多架构、含全部特性）。
    **不要写死版本号**：动手前先从 GitHub Releases（https://github.com/yufeng8/gh-mirror/releases）确认当前最新正式版 tag，再拼进镜像名。
-   不要用 :latest（它跟踪 main，不含 HuggingFace 与 hubproxy 分支特性）。
+   `:latest` 跟随最新正式版，但为了升级可控，请显式使用具体 tag。
 3. 数据持久化用命名卷：gm-data（token 与设置）、gm-cache（缓存）。重建容器不得丢数据。
 4. ADMIN_PASS 与 ADMIN_SECRET 现场生成强随机值并妥善记录（勿写进任何提交或日志）。
    ADMIN_PATH 默认 /admin，LISTEN 默认 0.0.0.0:8080。
@@ -37,7 +37,7 @@
 - 在后台添加 token 后：curl -fsSI "https://<你的域名>/g/<token>/https://raw.githubusercontent.com/octocat/Hello-World/master/README" → 200
 - 镜像搜索：curl -fsS "https://<你的域名>/search?q=nginx" 能返回结果
 - 若开启 Docker 加速：`docker pull <你的域名>/<ADMIN_USER>/library/nginx:1.25` 能正常拉取并命中缓存（路径必须带用户名段；后台可再加自定义路径）；
-  curl -fsS "https://<你的域名>/offline/<ADMIN_TOKEN>/library/nginx:1.25" -o nginx.tar 且本机 docker load -i nginx.tar 能载入（离线包需 token）
+  curl -fsS "https://<你的域名>/offline/<ADMIN_USER>/<ADMIN_TOKEN>/library/nginx:1.25" -o nginx.tar 且本机 docker load -i nginx.tar 能载入（离线包路径必须带用户名段与 token）
 
 【遇到错误】
 不要盲目重试。先读 docs/docker-deploy.md 的「已知坑 / 故障排查」，仍无法解决时，

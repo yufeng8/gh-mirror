@@ -179,6 +179,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.doResetUserPass(w, r)
+	case sub == "services":
+		if s.isAuthed(r) {
+			s.renderServicesPage(w, r)
+			return
+		}
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
 	case sub == "service":
 		if !s.isAuthed(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
@@ -186,11 +192,16 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		s.doToggleService(w, r)
 	case sub == "cache":
+		// GET 渲染缓存管理页；POST 保存设置（同一路径按方法分发）
 		if !s.isAuthed(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
-		s.doSetCache(w, r)
+		if r.Method == http.MethodPost {
+			s.doSetCache(w, r)
+			return
+		}
+		s.renderCachePage(w, r)
 	case sub == "cache/clear":
 		if !s.isAuthed(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
@@ -377,6 +388,27 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出<strong>需带 token</strong> 的 <code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址）。registry 加速走 <code>/v2</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>`
 	// 链接转换卡片的 Token 快捷切换器（与「用法示例」的切换器联动，共用 .gmtok）
 	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
+	// Token / 服务管理 / 缓存管理均已独立成页，这里只放引导卡
+	tokensGuide := `<p class="muted">Token 的创建、复制、删除与角色管理已独立成页，便于统一维护。</p>` +
+		`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">前往 Token 管理` +
+		`（` + strconv.Itoa(len(tokens)) + `）</a></div>`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// verbs: aside, topbarRight, flash, badges, stats, convSel, converter, examples, tokensGuide
+	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
+	body := fmt.Sprintf(dashboardBody, aside, topbarRight, flashHTML, badges, stats, convSel, conv, example, tokensGuide)
+	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
+}
+
+// renderServicesPage 渲染服务管理独立页（/admin/services）：GitHub / Docker / HuggingFace 三卡开关。
+func (s *Server) renderServicesPage(w http.ResponseWriter, r *http.Request) {
+	sid, user, _, ok := s.parseSession(r)
+	if !ok {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	csrf := s.csrfToken(sid)
+	base := baseOf(r)
 	// 服务管理三卡：GitHub 恒开；Docker / HuggingFace 即时开关（持锁内存 + settings.json 持久化）
 	svcCard := func(tag, name, desc, usage string, on bool, svc string) string {
 		// 三张卡的底部标识统一宽高，视觉一致；GitHub 恒开用「默认开启」标识代替按钮
@@ -428,6 +460,21 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", dockerUsage, s.dockerEnabled(), "docker") +
 		svcCard("HF", "HuggingFace 权重", "加速模型与 LFS 大文件下载，token 模式下需带 token。", "/hf/&lt;token&gt;/owner/repo/resolve/main/file", s.hfEnabled(), "hf") +
 		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.dockerPath(), dockerSegment(user))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// verbs: aside, topbarRight, flash, services
+	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services)
+	_, _ = w.Write([]byte(pageApp("服务管理 - gh-mirror", "gh-mirror 服务管理", body)))
+}
+
+// renderCachePage 渲染缓存管理独立页（/admin/cache）：已用 / 上限 / 时效热改 + 一键清除。
+func (s *Server) renderCachePage(w http.ResponseWriter, r *http.Request) {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	csrf := s.csrfToken(sid)
+	base := baseOf(r)
 	// 缓存管理：已用总量 / 单文件上限 / 总上限 / 时效，均热改；超限与过期自动清理；可一键清除
 	maxFileMB := int(s.cache.MaxBytes() / (1024 * 1024))
 	maxTotalMB := int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -464,16 +511,10 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
   <button type="submit" class="btn outline">清除缓存</button>
 </form>
 <p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。<strong>磁盘可用空间低于 1 GB 时，即使没到总上限也会按最旧优先清理</strong>（缓存是临时的，避免写满磁盘拖垮整机）。时效：到期文件由后台周期任务自动删除。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
-	// Token 区块已独立成页，这里只放引导卡
-	tokensGuide := `<p class="muted">Token 的创建、复制、删除与角色管理已独立成页，便于统一维护。</p>` +
-		`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">前往 Token 管理` +
-		`（` + strconv.Itoa(len(tokens)) + `）</a></div>`
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, flash, badges, stats, convSel, converter, services, cacheMgmt, examples, tokensGuide
-	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
-	body := fmt.Sprintf(dashboardBody, aside, topbarRight, flashHTML, badges, stats, convSel, conv, services, cacheMgmt, example, tokensGuide)
-	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
+	// verbs: aside, topbarRight, flash, cacheMgmt
+	body := fmt.Sprintf(cacheBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), cacheMgmt)
+	_, _ = w.Write([]byte(pageApp("缓存管理 - gh-mirror", "gh-mirror 缓存管理", body)))
 }
 
 // tokSlot 把示例里的 token 包成可被前端替换的片段（切换 Token 选择器时更新）。
@@ -795,7 +836,7 @@ func (s *Server) userRows(users []*User, csrf, current string) string {
 		}
 		esc := html.EscapeString(u.Username)
 		rows.WriteString(fmt.Sprintf(
-			`<tr><td data-label="用户名"><code>%s</code>%s</td>`+
+			`<tr class="tok-row"><td data-label="用户名"><code>%s</code>%s</td>`+
 				`<td data-label="角色"><span class="%s">%s</span></td>`+
 				`<td data-label="创建时间">%s</td>`+
 				`<td data-label="操作"><span class="ops">`+
@@ -925,8 +966,8 @@ func (s *Server) consoleAside(r *http.Request) string {
 	if n > 0 {
 		tokensNav = fmt.Sprintf("Token 管理（%d）", n)
 	}
-	// 高亮互斥：/admin/tokens、/admin/mcp、/admin/users 各自高亮，其余高亮概览
-	overviewActive, tokensActive, mcpActive, usersActive := " active", "", "", ""
+	// 高亮互斥：各独立子页各自高亮，其余高亮概览
+	overviewActive, tokensActive, mcpActive, usersActive, svcActive, cacheActive := " active", "", "", "", "", ""
 	switch {
 	case strings.HasSuffix(r.URL.Path, "/tokens"):
 		overviewActive, tokensActive = "", " active"
@@ -934,6 +975,10 @@ func (s *Server) consoleAside(r *http.Request) string {
 		overviewActive, mcpActive = "", " active"
 	case strings.HasSuffix(r.URL.Path, "/users"):
 		overviewActive, usersActive = "", " active"
+	case strings.HasSuffix(r.URL.Path, "/services"):
+		overviewActive, svcActive = "", " active"
+	case strings.HasSuffix(r.URL.Path, "/cache"):
+		overviewActive, cacheActive = "", " active"
 	}
 	// 「用户管理」仅超级管理员可见
 	usersNav := ""
@@ -947,8 +992,8 @@ func (s *Server) consoleAside(r *http.Request) string {
 		`<a class="navitem` + tokensActive + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
 		`<a class="navitem` + mcpActive + `" href="` + s.adminPath + `/mcp"><span class="ic">🤖</span>MCP 接入</a>` +
 		usersNav +
-		`<a class="navitem" href="` + s.adminPath + `#services"><span class="ic">⚙️</span>服务管理</a>` +
-		`<a class="navitem" href="` + s.adminPath + `#cache"><span class="ic">💾</span>缓存管理</a>` +
+		`<a class="navitem` + svcActive + `" href="` + s.adminPath + `/services"><span class="ic">⚙️</span>服务管理</a>` +
+		`<a class="navitem` + cacheActive + `" href="` + s.adminPath + `/cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<span class="navsep"></span>` +
 		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
 		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">` + githubSVG + `</span>GitHub</a>` +
@@ -1112,12 +1157,12 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Redirect(w, r, s.adminPath+"?err=csrf#services", http.StatusFound)
+		http.Redirect(w, r, s.adminPath+"/services?err=csrf", http.StatusFound)
 		return
 	}
 	name := strings.ToLower(strings.TrimSpace(r.FormValue("name")))
 	if name != "docker" && name != "hf" {
-		http.Redirect(w, r, s.adminPath+"?err=svc_unknown#services", http.StatusFound)
+		http.Redirect(w, r, s.adminPath+"/services?err=svc_unknown", http.StatusFound)
 		return
 	}
 	on := r.FormValue("on") == "1" || strings.EqualFold(r.FormValue("on"), "true") || strings.EqualFold(r.FormValue("on"), "on")
@@ -1129,14 +1174,14 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 				p = vals[0]
 			}
 			if err := s.setDockerPath(p); err != nil {
-				http.Redirect(w, r, s.adminPath+"?err=path_invalid#services", http.StatusFound)
+				http.Redirect(w, r, s.adminPath+"/services?err=path_invalid", http.StatusFound)
 				return
 			}
 			log.Printf("Docker 自定义路径已更新: %q", s.dockerPath())
 		}
 	}
 	if err := s.setService(name, on); err != nil {
-		http.Redirect(w, r, s.adminPath+"?err=svc_failed#services", http.StatusFound)
+		http.Redirect(w, r, s.adminPath+"/services?err=svc_failed", http.StatusFound)
 		return
 	}
 	log.Printf("服务开关已调整: %s -> %v", name, on)
@@ -1144,7 +1189,7 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 	if on {
 		code = "service_on"
 	}
-	http.Redirect(w, r, s.adminPath+"?ok="+code+"#services", http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"/services?ok="+code, http.StatusFound)
 }
 
 // doSetCache 运行时调整缓存参数（单文件上限 / 总上限 / 时效），即时生效并持久化。
@@ -1156,20 +1201,20 @@ func (s *Server) doSetCache(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Redirect(w, r, s.adminPath+"?err=csrf#cache", http.StatusFound)
+		http.Redirect(w, r, s.adminPath+"/cache?err=csrf", http.StatusFound)
 		return
 	}
 	maxFileMB := atoiOr(r.FormValue("maxFileMB"), -1)
 	maxTotalMB := atoiOr(r.FormValue("maxTotalMB"), -1)
 	ttlMinutes := atoiOr(r.FormValue("ttlMinutes"), -1)
 	if maxFileMB < -1 || maxTotalMB < -1 || ttlMinutes < -1 {
-		http.Redirect(w, r, s.adminPath+"?err=bad_input#cache", http.StatusFound)
+		http.Redirect(w, r, s.adminPath+"/cache?err=bad_input", http.StatusFound)
 		return
 	}
 	_ = s.setCacheLimits(maxFileMB, maxTotalMB, ttlMinutes)
 	log.Printf("缓存参数已调整: 单文件=%dMB 总计=%dMB 时效=%d分钟",
 		int(s.cache.MaxBytes()/(1024*1024)), int(s.cache.MaxTotalBytes()/(1024*1024)), int(s.cache.TTL()/time.Minute))
-	http.Redirect(w, r, s.adminPath+"?ok=cache_saved#cache", http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"/cache?ok=cache_saved", http.StatusFound)
 }
 
 // doClearCache 清空缓存目录内的所有文件（不影响 Token 与设置）。
@@ -1181,12 +1226,12 @@ func (s *Server) doClearCache(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Redirect(w, r, s.adminPath+"?err=csrf#cache", http.StatusFound)
+		http.Redirect(w, r, s.adminPath+"/cache?err=csrf", http.StatusFound)
 		return
 	}
 	files, bytes := s.cache.Clear()
 	log.Printf("缓存已清除: %d 个文件，%s", files, formatBytes(bytes))
-	http.Redirect(w, r, s.adminPath+"?ok=cache_cleared#cache", http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"/cache?ok=cache_cleared", http.StatusFound)
 }
 
 // convertResp 是链接转换 API（POST /admin/api/convert）的 JSON 响应。
