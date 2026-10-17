@@ -1226,8 +1226,8 @@ func (s *Server) renderMCPPage(w http.ResponseWriter, r *http.Request) {
 	// 两种接入方式的示例命令（token 段为 .tslot，随选择器联动）
 	httpEx, stdioEx := "", ""
 	if tk != "" {
-		httpEx = `<p class="muted">endpoint：<code>` + html.EscapeString(base) + `/mcp</code>（仅支持 <code>POST</code>，鉴权用 <code>Authorization: Bearer &lt;token&gt;</code>）</p>` +
-			`<div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -sX POST ` + html.EscapeString(base) + `/mcp \
+		httpEx = `<p class="muted">endpoint：<code>` + html.EscapeString(base) + `/ai/` + html.EscapeString(dockerSegment(user)) + `/mcp</code>（仅支持 <code>POST</code>；用户名段为你的登录用户名，鉴权用 <code>Authorization: Bearer &lt;token&gt;</code>，Token 必须归属该用户）</p>` +
+			`<div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -sX POST ` + html.EscapeString(base) + `/ai/` + html.EscapeString(dockerSegment(user)) + `/mcp \
   -H "Authorization: Bearer ` + tokSlot(tk) + `" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</code></pre></div>`

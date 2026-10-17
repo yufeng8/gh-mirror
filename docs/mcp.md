@@ -3,7 +3,7 @@
 gh-mirror 内置 **MCP（Model Context Protocol）服务端**：AI Agent 可通过标准 MCP 协议直接管理网关——查/建/删 Token、开关 Docker/HuggingFace 加速、查看与调整缓存、把原链接转成加速链接、健康检查、镜像搜索与标签查询。
 
 - 协议：**JSON-RPC 2.0**，标准库手写，**零第三方依赖**
-- 传输：**HTTP `POST /mcp`** 与 **stdio 子命令 `gh-mirror mcp`**，两者共用同一套工具实现
+- 传输：**HTTP `POST /ai/<用户名>/mcp`** 与 **stdio 子命令 `gh-mirror mcp`**，两者共用同一套工具实现
 - 方法：`initialize` / `ping` / `tools/list` / `tools/call`（通知类 `notifications/initialized` 不回响应）
 
 ## 1. 准备：签发一个高级 Token
@@ -19,7 +19,7 @@ MCP 鉴权要求 **高级 Token**（内部角色值 `admin`，与普通代理用
 ## 2. 接入方式一：HTTP（远程 / 已部署的网关）
 
 ```bash
-curl -sS -X POST https://<你的域名>/mcp \
+curl -sS -X POST https://<你的域名>/ai/<用户名>/mcp \
   -H 'Authorization: Bearer <高级Token>' \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -28,7 +28,9 @@ curl -sS -X POST https://<你的域名>/mcp \
 - 仅支持 `POST`（`GET` 返回 405）
 - 单次请求/响应，**不做 SSE 流式**
 - 支持 JSON-RPC 批量（请求体为数组）
-- 未带 token / token 非高级 → `401`
+- 路径里的 `<用户名>` 为后台登录用户名；`<高级Token>` **必须归属该用户**
+- 用户名不存在 → `404`；未带 token / token 非高级 / token 不归属该用户 → `401`
+- 旧端点 `POST /mcp` 已废弃（返回 `401` 并提示新格式）
 
 ## 3. 接入方式二：stdio（本地 Agent，推荐桌面端）
 
@@ -85,19 +87,19 @@ Claude Desktop / CodeBuddy / 其它支持 `mcpServers` 的客户端：
 
 ```bash
 # 列出工具
-curl -sS -X POST https://<域名>/mcp -H 'Authorization: Bearer <tok>' \
+curl -sS -X POST https://<域名>/ai/<用户名>/mcp -H 'Authorization: Bearer <tok>' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
 # 查服务状态
-curl -sS -X POST https://<域名>/mcp -H 'Authorization: Bearer <tok>' \
+curl -sS -X POST https://<域名>/ai/<用户名>/mcp -H 'Authorization: Bearer <tok>' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_services","arguments":{}}}'
 
 # 开启 HuggingFace 加速（即时生效）
-curl -sS -X POST https://<域名>/mcp -H 'Authorization: Bearer <tok>' \
+curl -sS -X POST https://<域名>/ai/<用户名>/mcp -H 'Authorization: Bearer <tok>' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_service","arguments":{"name":"hf","enabled":true}}}'
 
 # 把 GitHub 链接转成加速链接
-curl -sS -X POST https://<域名>/mcp -H 'Authorization: Bearer <tok>' \
+curl -sS -X POST https://<域名>/ai/<用户名>/mcp -H 'Authorization: Bearer <tok>' \
   -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"convert_link","arguments":{"url":"https://github.com/owner/repo/releases/download/v1.0/app.zip"}}}'
 
 # stdio 方式
@@ -107,7 +109,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | gh-mirror mcp --token <t
 ## 6. 安全建议
 
 1. **按归属与角色授权**：普通用户的高级 Token 只能管理自己的 Token、转换链接、查询服务状态；服务开关与缓存管理仅超级管理员的高级 Token 可调。请按信任范围签发。
-2. **不要暴露在公共网络无保护**：`/mcp` 会经过现有限流与 IP ACL 中间件；若网关经公网暴露，建议在 CDN（EdgeOne）对 `/mcp` 配置速率限制。
+2. **不要暴露在公共网络无保护**：`/ai/` 会经过现有限流与 IP ACL 中间件；若网关经公网暴露，建议在 CDN（EdgeOne）对 `/ai/` 配置速率限制。
 3. **stdio 模式更安全**：不经网络，token 只在本地进程与配置文件中（注意配置文件的读取权限）。
 4. **定期轮换**：在后台删除旧高级 Token、签发新的。
 5. **审计**：写操作（建/删 token、开关服务、改缓存、清缓存）都会写入服务日志。
@@ -118,7 +120,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | gh-mirror mcp --token <t
 | 现象 | 原因 / 处理 |
 |------|-------------|
 | `401` | 未带 `Authorization: Bearer`，或 token 不是高级 Token |
-| `405` | 用了 `GET`，`/mcp` 只支持 `POST` |
+| `405` | 用了 `GET`，`/ai/<用户名>/mcp` 只支持 `POST` |
 | `-32601 不支持的方法` | 方法名拼错；支持 `initialize`/`ping`/`tools/list`/`tools/call` |
 | `-32602 未知工具` | 工具名不存在，用 `tools/list` 核对 |
 | stdio 无响应 | 确认 token 有效；查看 **stderr** 日志（stdout 只有协议 JSON） |

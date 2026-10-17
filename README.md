@@ -87,7 +87,7 @@
 - 🚀 **单二进制、零依赖**：`CGO_ENABLED=0` 静态编译，多架构镜像，扔进 1 核 512M 的机器就能跑。
 - 🔒 **访问可控**：Token 鉴权（默认开启）+ IP（CIDR）/ 仓库（通配符）黑白名单 + 令牌桶限流（IPv6 按 `/64` 归并）。
 - 💾 **真磁盘缓存**：Layer / 文件落盘，命中直接返回 `X-Cache: HIT`；缓存总量、单文件上限、TTL 都能在后台热改，超限与磁盘余量不足自动按最旧优先清理。
-- 🤖 **AI Agent 友好**：内置 MCP 服务端（`POST /mcp` 与 `gh-mirror mcp` stdio），12 个工具覆盖 Token、服务开关、缓存、链接转换、镜像搜索。
+- 🤖 **AI Agent 友好**：内置 MCP 服务端（`POST /ai/<用户名>/mcp` 与 `gh-mirror mcp` stdio），12 个工具覆盖 Token、服务开关、缓存、链接转换、镜像搜索。
 - 🎛️ **后台可视化**：服务状态、统计、链接转换、Token 管理、MCP 接入、缓存管理全在网页里，开关即时生效并持久化到 `gm-data/settings.json`。
 
 ---
@@ -98,7 +98,7 @@
 
 ```bash
 # 方式一：HTTP（推荐，配高级 Token）
-curl -sX POST https://mirror.example.com/mcp \
+curl -sX POST https://mirror.example.com/ai/<用户名>/mcp \
   -H "Authorization: Bearer <高级Token>" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -194,7 +194,7 @@ gh-mirror mcp --token <高级Token>
 - 🛡️ **安全管控**：Token 鉴权（默认）+ 可选开放模式；IP（CIDR）/ 仓库（通配符）黑白名单；按真实客户端 IP 的令牌桶限流（IPv6 归并 `/64`）。
 - ⚙️ **统一配置**：`config.toml` + 环境变量覆盖，平滑兼容旧的环境变量部署。
 - 🧦 **可选 SOCKS5 出站**：为 GitHub/HF/Docker 回源统一走 SOCKS5 代理。
-- 🤖 **MCP 接入（AI Agent 友好）**：内置 MCP 服务端，AI Agent 可通过标准协议调用网关能力——管理 Token、开关 Docker/HuggingFace 加速、查看与调整缓存、链接转换、健康检查、镜像搜索与标签。支持 `POST /mcp` 与 `gh-mirror mcp` stdio 两种接入（需归属自己的高级 Token），详见 `docs/mcp.md`。
+- 🤖 **MCP 接入（AI Agent 友好）**：内置 MCP 服务端，AI Agent 可通过标准协议调用网关能力——管理 Token、开关 Docker/HuggingFace 加速、查看与调整缓存、链接转换、健康检查、镜像搜索与标签。支持 `POST /ai/<用户名>/mcp` 与 `gh-mirror mcp` stdio 两种接入（需归属自己的高级 Token），详见 `docs/mcp.md`。
 - 🎛️ **后台可视化运维**：服务状态徽标、概览统计（Token 数 / 命中 / 流量 / 缓存占用 / 运行时长）、服务开关即时生效、缓存上限与时效可调 + 自动失效、链接转换工具。
 
 > 文档示例域名为 `mirror.example.com`，请替换为你自己的域名。
@@ -222,7 +222,7 @@ docker run -d --name gh-mirror \
   ghcr.io/yufeng8/gh-mirror:v1.2.0
 ```
 
-启动后：**超级管理员**访问 `http://<域名>/admin` 登录（仅 super 账号可登录）；**普通用户**访问 `http://<域名>/user` 登录（`USER_PATH` 可改，注意不要与 `/g` `/hf` `/offline` `/v2` `/search` `/mcp` `/healthz` 等保留路径冲突，冲突时启动即报错）。
+启动后：**超级管理员**访问 `http://<域名>/admin` 登录（仅 super 账号可登录）；**普通用户**访问 `http://<域名>/user` 登录（`USER_PATH` 可改，注意不要与 `/g` `/hf` `/offline` `/v2` `/ai` `/mcp` `/search` `/healthz` 等保留路径冲突，冲突时启动即报错）。
 
 ### 🧩 方式二：docker-compose
 
@@ -482,7 +482,7 @@ settings.go    # 运行时设置持久化（开关 + 缓存 + SMTP/注册/验证
 - `docs/deploy-runbook.md`：目标机实测部署 Runbook（先探测 → 选型 → 执行 → 端到端验证 → 更新/回滚）
 - `docs/upgrade-runbook.md`：升级 / 回滚镜像的一键脚本
 - `docs/agent-prompt.md`：**给 AI Agent 的部署提示词**（首页「一键交给 AI Agent 部署」直接渲染此文件，随版本更新；可用 `AGENT_PROMPT_FILE` 或 `gm-data/agent-prompt.md` 覆盖）
-- `docs/mcp.md`：**MCP 接入指南**（HTTP `POST /mcp` 与 `gh-mirror mcp` stdio 两种接入、工具清单、鉴权、安全建议、故障排查）
+- `docs/mcp.md`：**MCP 接入指南**（HTTP `POST /ai/<用户名>/mcp` 与 `gh-mirror mcp` stdio 两种接入、工具清单、鉴权、安全建议、故障排查）
 
 ## 🙏 致谢 / Acknowledgements
 
