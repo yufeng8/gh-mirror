@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="gh-mirror · 自托管多服务加速网关">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#05100b"/>
+      <stop offset="0.5" stop-color="#0a2a1c"/>
+      <stop offset="1" stop-color="#06222f"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4ade80"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.04"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#22c55e" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#22c55e" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#bg)"/>
+  <ellipse cx="118" cy="150" rx="200" ry="150" fill="url(#glow)"/>
+
+  <!-- 项目 logo：gh-mirror 渐变圆角方块 + 白色循环箭头（与站内 logoSVG 完全一致） -->
+  <g transform="translate(60,92) scale(2.0714)">
+    <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#logoGrad)"/>
+    <g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round">
+      <path d="M21 32 A11 11 0 0 1 43 32"/>
+      <path d="M43 32 A11 11 0 0 1 21 32"/>
+    </g>
+    <path d="M43 32 L37 30 L41 36 Z" fill="#ffffff"/>
+    <path d="M21 32 L27 34 L23 28 Z" fill="#ffffff"/>
+  </g>
+
+  <text x="206" y="146" font-family="'PingFang SC','Microsoft YaHei',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"
+        font-size="58" font-weight="800" letter-spacing="-1" fill="url(#title)">gh-mirror</text>
+  <text x="208" y="186" font-family="'PingFang SC','Microsoft YaHei',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"
+        font-size="21" fill="#d7f5e5" fill-opacity="0.92">自托管多服务加速网关 · Docker / GitHub / HuggingFace</text>
+  <text x="208" y="228" font-family="'PingFang SC','Microsoft YaHei',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"
+        font-size="15" fill="#8ee7bf" fill-opacity="0.85">单二进制 · 零第三方依赖 · 内置 MCP（AI Agent 友好）</text>
+
+  <!-- 右侧服务卡片 -->
+  <g font-family="'PingFang SC','Microsoft YaHei',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif">
+    <g>
+      <rect x="760" y="72" width="380" height="48" rx="14" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
+      <circle cx="790" cy="96" r="12" fill="#2496ED"/>
+      <text x="816" y="102" font-size="17" fill="#ffffff" fill-opacity="0.94">Docker 镜像加速</text>
+      <text x="1112" y="102" font-size="13" fill="#9fe8c4" text-anchor="end">/v2</text>
+    </g>
+    <g>
+      <rect x="760" y="128" width="380" height="48" rx="14" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
+      <circle cx="790" cy="152" r="12" fill="#e6edf3"/>
+      <text x="816" y="158" font-size="17" fill="#ffffff" fill-opacity="0.94">GitHub 资源加速</text>
+      <text x="1112" y="158" font-size="13" fill="#9fe8c4" text-anchor="end">/g</text>
+    </g>
+    <g>
+      <rect x="760" y="184" width="380" height="48" rx="14" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
+      <circle cx="790" cy="208" r="12" fill="#FFD21E"/>
+      <text x="816" y="214" font-size="17" fill="#ffffff" fill-opacity="0.94">HuggingFace 权重</text>
+      <text x="1112" y="214" font-size="13" fill="#9fe8c4" text-anchor="end">/hf</text>
+    </g>
+  </g>
+</svg>
