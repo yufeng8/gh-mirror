@@ -320,7 +320,7 @@ var mcpRegistry = []mcpTool{
 			if toks := s.store.All(); len(toks) > 0 {
 				tk = toks[0].Token
 			}
-			res := s.buildAccelURL(base, raw, tk)
+			res := s.buildAccelURL(base, raw, tk, owner)
 			if res.URL == "" {
 				return errorResult(res.Hint)
 			}

@@ -385,7 +385,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		`<button type="button" id="gmconv-copy" class="btn outline" onclick="gmCopyConv()">复制</button>` +
 		`<button type="button" class="btn outline" onclick="gmDownloadConv()">下载</button>` +
 		`<button type="button" class="btn outline" onclick="gmOpenConv()">访问</button></div>` +
-		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出<strong>需带 token</strong> 的 <code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址）。registry 加速走 <code>/v2</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>`
+		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出<strong>需带用户名段与 token</strong> 的 <code>/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址，用户名段取当前登录用户）。registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>`
 	// 链接转换卡片的 Token 快捷切换器（与「用法示例」的切换器联动，共用 .gmtok）
 	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
 	// Token / 服务管理 / 缓存管理均已独立成页，这里只放引导卡
@@ -1253,7 +1253,13 @@ func (s *Server) doConvertAPI(w http.ResponseWriter, r *http.Request) {
 	} else if len(toks) > 0 {
 		tk = toks[0].Token
 	}
-	res := s.buildAccelURL(baseOf(r), raw, tk)
+	// 当前用户用于离线包路径的用户名段（多用户隔离）
+	_, user, _, ok := s.parseSession(r)
+	if !ok {
+		s.writeJSON(w, http.StatusUnauthorized, convertResp{OK: false, Hint: "未登录或会话已过期"})
+		return
+	}
+	res := s.buildAccelURL(baseOf(r), raw, tk, user)
 	if res.URL == "" {
 		hint := res.Hint
 		if hint == "" {
@@ -1287,9 +1293,10 @@ var (
 )
 
 // buildAccelURL 把用户粘贴的原始链接 / Docker 镜像名转换为本站加速链接。
+// user 为归属用户名：Docker 离线包路径必须带用户名段（/offline/<用户名>/<token>/<镜像>，多用户隔离）。
 // 这是后台「链接转换」与 MCP convert_link 的唯一实现（一个实现、两个消费者）。
 // base 为当前访问基地址，tk 为要嵌入的 token（HF / GitHub 需要）。
-func (s *Server) buildAccelURL(base, raw, tk string) accelResult {
+func (s *Server) buildAccelURL(base, raw, tk, user string) accelResult {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return accelResult{Hint: "请输入 GitHub / HuggingFace 链接，或 Docker 镜像名"}
@@ -1326,8 +1333,8 @@ func (s *Server) buildAccelURL(base, raw, tk string) accelResult {
 		if tk == "" {
 			return accelResult{Kind: "docker", Hint: "离线 tar 需要 token，请先在「Token 管理」添加一个 token"}
 		}
-		// 离线包地址必须带 token（/offline/<token>/<image>）
-		return accelResult{Kind: "docker", URL: base + "/offline/" + tk + "/" + raw}
+		// 离线包地址必须带用户名段与 token（/offline/<用户名>/<token>/<镜像>，多用户隔离）
+		return accelResult{Kind: "docker", URL: base + "/offline/" + dockerSegment(user) + "/" + tk + "/" + raw}
 	}
 	return accelResult{Hint: "无法识别：支持 github.com / huggingface.co 链接，或 Docker 镜像名如 library/nginx:1.25"}
 }
