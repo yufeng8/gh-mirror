@@ -65,19 +65,21 @@ Claude Desktop / CodeBuddy / 其它支持 `mcpServers` 的客户端：
 | 工具 | 参数 | 说明 |
 |------|------|------|
 | `health` | — | 服务状态与运行时长 |
-| `list_tokens` | — | 列出全部 token（角色、命中、流量、时间） |
-| `create_token` | `token?`, `note?`, `role?` | 创建 token（role: `user` / `admin`） |
-| `delete_token` | `token` | 删除 token |
+| `list_tokens` | — | 列出你可查看的 token（普通用户仅自己的，超级管理员全部） |
+| `create_token` | `token?`, `note?`, `role?` | 创建 token（归属当前调用用户；role: `user` / `admin`） |
+| `delete_token` | `token` | 删除 token（仅自己的；超级管理员可删全部） |
 | `get_services` | — | GitHub / Docker / HF 启用状态 |
-| `set_service` | `name`(`docker`\|`hf`), `enabled` | **即时生效**开关并持久化 |
-| `get_cache_stats` | — | 已用 / 单文件上限 / 总上限 / 时效 / 目录 |
-| `set_cache_limits` | `maxFileMB?`, `maxTotalMB?`, `ttlMinutes?` | 热改缓存参数并持久化 |
-| `clear_cache` | — | 清空缓存（不影响 token 与设置） |
-| `convert_link` | `url` | 原链接 / 镜像名 → 加速链接（与后台「链接转换」同一实现） |
+| `set_service` | `name`(`docker`\|`hf`), `enabled` | **即时生效**开关并持久化（**仅超级管理员**） |
+| `get_cache_stats` | — | 已用 / 单文件上限 / 总上限 / 时效 / 目录（**仅超级管理员**） |
+| `set_cache_limits` | `maxFileMB?`, `maxTotalMB?`, `ttlMinutes?` | 热改缓存参数并持久化（**仅超级管理员**） |
+| `clear_cache` | — | 清空缓存（**仅超级管理员**；不影响 token 与设置） |
+| `convert_link` | `url` | 原链接 / 镜像名 → 加速链接（与后台「链接转换」同一实现，生成带你自己用户名段的 `/g/<用户名>/<token>/`、`/hf/<用户名>/<token>/`、`/offline/<用户名>/<token>/` 链接） |
 | `search_images` | `q`, `page?` | Docker Hub 镜像搜索 |
 | `list_tags` | `repo` | Docker Hub 标签列表 |
 
 `tools/call` 返回结构：`{"content":[{"type":"text","text":"…"}],"isError":false}`；失败时 `isError:true` 且 `text` 为原因。
+
+> **多用户权限模型**：MCP 入口要求高级 Token，按 Token 归属定位调用用户。Token 管理按归属隔离（普通用户只能管理自己的）；服务开关与缓存管理为实例级操作，仅超级管理员可调（与网页端 `/admin` 权限一致）；`convert_link` 使用调用者自己的 Token 生成带其用户名段的加速链接。
 
 ## 5. 调用示例
 
@@ -104,7 +106,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | gh-mirror mcp --token <t
 
 ## 6. 安全建议
 
-1. **只给需要的工具权限**：高级 Token 能建/删 token 与改设置，按信任范围签发。
+1. **按归属与角色授权**：普通用户的高级 Token 只能管理自己的 Token、转换链接、查询服务状态；服务开关与缓存管理仅超级管理员的高级 Token 可调。请按信任范围签发。
 2. **不要暴露在公共网络无保护**：`/mcp` 会经过现有限流与 IP ACL 中间件；若网关经公网暴露，建议在 CDN（EdgeOne）对 `/mcp` 配置速率限制。
 3. **stdio 模式更安全**：不经网络，token 只在本地进程与配置文件中（注意配置文件的读取权限）。
 4. **定期轮换**：在后台删除旧高级 Token、签发新的。

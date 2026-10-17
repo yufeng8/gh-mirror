@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.svg" alt="gh-mirror · 自托管多服务加速网关" width="100%">
+  <img src="social-preview-zh.svg" alt="gh-mirror · 自托管多服务加速网关" width="100%">
 </p>
 
 <p align="center">
@@ -68,9 +68,19 @@
 | 服务 | 加速端点 | 鉴权方式 | 亮点 |
 |------|----------|----------|------|
 | 🐳 **Docker 镜像** | `/v2/<用户名>[/<自定义路径>]/…` | 路径前缀（协议无法带 Token） | 多源回源（Docker Hub / GHCR / Quay / GCR / k8s）、Manifest+Token 内存缓存、Layer 磁盘缓存 |
-| 🐙 **GitHub 资源** | `/g/<token>/https://github.com/…` | Token | 覆盖 blob/raw、archive、releases、API，支持 `Range` 续传 |
-| 🤗 **HuggingFace 权重** | `/hf/<token>/<owner>/<repo>/resolve/<rev>/<file>` | Token | 自动跟随 302 到 CDN，模型 / LFS 大文件流式 + 缓存 |
+| 🐙 **GitHub 资源** | `/g/<用户名>/<token>/https://github.com/…` | 用户名段 + Token | 覆盖 blob/raw、archive、releases、API，支持 `Range` 续传 |
+| 🤗 **HuggingFace 权重** | `/hf/<用户名>/<token>/<owner>/<repo>/resolve/<rev>/<file>` | 用户名段 + Token | 自动跟随 302 到 CDN，模型 / LFS 大文件流式 + 缓存 |
 | 📦 **离线镜像 tar** | `/offline/<用户名>/<token>/<image>` | 用户名段 + Token | 不需要本地 Docker，直接产出 `docker load` 可用的 tar |
+
+> **多用户隔离**：`<用户名>` 为后台登录用户名，`<token>` 必须是该用户名自己的 Token（归属校验，无效或错配一律 404）；三类加速端点格式完全统一。
+
+### 👥 多用户与账号体系
+
+- 🔀 **双入口强隔离**：超管入口 `/admin` 与普通用户入口 `/user`（`USER_PATH` 可配、可隐藏）分离，各自独立会话 Cookie；普通用户登录超管入口会被拒绝。
+- ✉️ **自主注册 / 找回密码**：超管配置 SMTP 后，可开放「邮箱验证码注册」；忘记密码可邮箱验证码自助重置（仅普通用户，超管密码只能服务器后台修改）。
+- 🎟️ **邀请码注册**：可选「仅邀请码注册」，支持批量生成 / 自定义 / 导出（占位符格式）/ 备注 / 有效期 / 使用追踪。
+- 🔐 **图形验证码**：登录 / 注册 / 管理员登录页均支持，用户入口与管理入口开关分别可控。
+- 👤 **角色与归属**：超级管理员 / 普通用户两级角色；Token、Docker 自定义路径按用户隔离。
 
 ### 💡 为什么值得自托管
 
@@ -78,7 +88,7 @@
 - 🔒 **访问可控**：Token 鉴权（默认开启）+ IP（CIDR）/ 仓库（通配符）黑白名单 + 令牌桶限流（IPv6 按 `/64` 归并）。
 - 💾 **真磁盘缓存**：Layer / 文件落盘，命中直接返回 `X-Cache: HIT`；缓存总量、单文件上限、TTL 都能在后台热改，超限与磁盘余量不足自动按最旧优先清理。
 - 🤖 **AI Agent 友好**：内置 MCP 服务端（`POST /mcp` 与 `gh-mirror mcp` stdio），12 个工具覆盖 Token、服务开关、缓存、链接转换、镜像搜索。
-- 🎛️ **后台可视化**：服务状态、统计、链接转换、Token 管理、MCP 接入、缓存管理全在网页里，开关即时生效并持久化到 `gm-data/settings.json`；适配移动端（393px）——抽屉式导航、Token 卡片式列表、点击「编辑」就地展开表单。
+- 🎛️ **后台可视化**：服务状态、统计、链接转换、Token 管理、MCP 接入、缓存管理全在网页里，开关即时生效并持久化到 `gm-data/settings.json`。
 
 ---
 
@@ -105,6 +115,8 @@ gh-mirror mcp --token <高级Token>
 | 缓存 | `get_cache_stats` · `set_cache_limits` · `clear_cache` |
 | 链接与镜像 | `convert_link` · `search_images` · `list_tags` |
 
+> **多用户权限**：MCP 入口要求高级 Token（按 Token 归属定位调用用户）。Token 管理按归属隔离——普通用户只能查看 / 创建 / 删除自己的 Token；服务开关与缓存管理仅超级管理员可调（与网页端一致）；`convert_link` 生成带自己用户名段的加速链接。
+>
 > 详见 [docs/mcp.md](docs/mcp.md)。管理后台的「MCP 接入」页会按当前高级 Token 自动生成可复制的接入命令。
 
 ## 🤖 一键交给 AI Agent 部署
@@ -151,7 +163,7 @@ gh-mirror mcp --token <高级Token>
 - curl -fsS https://<你的域名>/healthz                     → ok（全链路通）
 - 浏览器 https://<你的域名>/ 能打开（多服务宣传页）
 - https://<你的域名>/admin 能登录（ADMIN_USER / ADMIN_PASS）
-- 在后台添加 token 后：curl -fsSI "https://<你的域名>/g/<token>/https://raw.githubusercontent.com/octocat/Hello-World/master/README" → 200
+- 在后台添加 token 后：curl -fsSI "https://<你的域名>/g/<ADMIN_USER>/<ADMIN_TOKEN>/https://raw.githubusercontent.com/octocat/Hello-World/master/README" → 200
 - 镜像搜索：curl -fsS "https://<你的域名>/search?q=nginx" 能返回结果
 - 若开启 Docker 加速：docker pull <你的域名>/<ADMIN_USER>/library/nginx:1.25 能正常拉取并命中缓存（路径必须带用户名段；后台可再加自定义路径）；
   curl -fsS "https://<你的域名>/offline/<ADMIN_USER>/<ADMIN_TOKEN>/library/nginx:1.25" -o nginx.tar 且本机 docker load -i nginx.tar 能载入（离线包路径必须带用户名段与 token）
@@ -175,8 +187,8 @@ gh-mirror mcp --token <高级Token>
 <p align="center"><img src="docs/images/home-features.png" alt="通用特性"></p>
 
 - 🐳 **Docker 镜像加速**：兼容 Registry API v2，内置 Docker Hub / GHCR / Quay / GCR / registry.k8s.io 多源；Manifest/Token 内存缓存、Layer 写透磁盘缓存、流式传输、`Range` 断点续传。
-- 🐙 **GitHub 资源加速**：`/g/<token>/` + 完整 GitHub 地址，覆盖 blob/raw、archive、releases、API，自带磁盘缓存。
-- 🤗 **HuggingFace 加速**：`/hf/<token>/<owner>/<repo>/resolve/<rev>/<file>`，自动跟随 302 到 CDN，模型/LFS 流式 + 缓存。
+- 🐙 **GitHub 资源加速**：`/g/<用户名>/<token>/` + 完整 GitHub 地址，覆盖 blob/raw、archive、releases、API，自带磁盘缓存。
+- 🤗 **HuggingFace 加速**：`/hf/<用户名>/<token>/<owner>/<repo>/resolve/<rev>/<file>`，自动跟随 302 到 CDN，模型/LFS 流式 + 缓存。
 - 📦 **离线镜像 tar**：`/offline/<用户名>/<token>/<image>` 无需本地 Docker，把镜像打包成 `docker load` 可用的 tar（流式 + 同镜像并发防抖；**需用户名段与 token**，避免公开暴露被白嫖流量）。
 - 🔍 **镜像搜索**：Docker Hub 搜索 / 标签浏览，服务端渲染轻量页面（`/search`、`/tags`）与 JSON API（`/api/search`、`/api/tags`）。
 - 🛡️ **安全管控**：Token 鉴权（默认）+ 可选开放模式；IP（CIDR）/ 仓库（通配符）黑白名单；按真实客户端 IP 的令牌桶限流（IPv6 归并 `/64`）。
@@ -203,11 +215,14 @@ docker run -d --name gh-mirror \
   -e ADMIN_USER=admin \
   -e ADMIN_PASS='change-me' \
   -e ADMIN_SECRET="$(openssl rand -hex 32)" \
+  -e USER_PATH=/user \
   -e DOCKER_ENABLED=true \
   -e HF_ENABLED=true \
   -v gm-data:/data \
-  ghcr.io/yufeng8/gh-mirror:latest
+  ghcr.io/yufeng8/gh-mirror:v1.2.0
 ```
+
+启动后：**超级管理员**访问 `http://<域名>/admin` 登录（仅 super 账号可登录）；**普通用户**访问 `http://<域名>/user` 登录（`USER_PATH` 可改，注意不要与 `/g` `/hf` `/offline` `/v2` `/search` `/mcp` `/healthz` 等保留路径冲突，冲突时启动即报错）。
 
 ### 🧩 方式二：docker-compose
 
@@ -245,6 +260,7 @@ tokens_file = "./tokens.json"
 
 [admin]
 path = "/admin"
+user_path = "/user"    # 普通用户入口路径（与超管入口及保留路径冲突会启动报错）
 user = "admin"
 pass = "admin"
 secret = ""            # 会话签名密钥，建议固定
@@ -289,7 +305,8 @@ socks5 = ""            # 如 "socks5://user:pass@127.0.0.1:1080"
 | `UPSTREAM_TIMEOUT` | `60` | 回源超时（秒） |
 | `USE_JSDELIVER` | `0` | `1` 让 GitHub blob/raw 走 jsDelivr 边缘缓存 |
 | `TOKENS_FILE` | `./tokens.json` | Token 持久化文件 |
-| `ADMIN_PATH` | `/admin` | 管理后台路径 |
+| `ADMIN_PATH` | `/admin` | 管理后台（超管）路径 |
+| `USER_PATH` | `/user` | 普通用户入口路径（与 `ADMIN_PATH` 及 `/g` `/hf` `/offline` `/v2` 等保留路径冲突会启动报错） |
 | `ADMIN_USER` | `admin` | 管理员账号 |
 | `ADMIN_PASS` | `admin` | 管理员密码 |
 | `ADMIN_SECRET` | 随机 | 会话签名密钥（建议固定，重启不致失效） |
@@ -305,25 +322,25 @@ socks5 = ""            # 如 "socks5://user:pass@127.0.0.1:1080"
 
 <p align="center"><img src="docs/images/home-usage.png" alt="基本使用：三种服务的命令直接复制"></p>
 
-### 🐙 GitHub 资源加速（`/g/<token>/`）
+### 🐙 GitHub 资源加速（`/g/<用户名>/<token>/`）
 
 ```
-https://mirror.example.com/g/<token>/<完整 GitHub 地址>
+https://mirror.example.com/g/<用户名>/<token>/<完整 GitHub 地址>
 ```
 
 | 场景 | 访问地址 |
 |------|----------|
-| 仓库文件 | `.../g/<token>/https://github.com/owner/repo/blob/main/path/file.txt` |
-| Raw 文件 | `.../g/<token>/https://raw.githubusercontent.com/owner/repo/main/file.txt` |
-| Releases | `.../g/<token>/https://github.com/owner/repo/releases/download/v1.0/app.zip` |
-| 仓库打包 | `.../g/<token>/https://github.com/owner/repo/archive/refs/heads/main.zip` |
-| 短链 | `.../g/<token>/gh/owner/repo/raw/main/file.txt` |
+| 仓库文件 | `.../g/<用户名>/<token>/https://github.com/owner/repo/blob/main/path/file.txt` |
+| Raw 文件 | `.../g/<用户名>/<token>/https://raw.githubusercontent.com/owner/repo/main/file.txt` |
+| Releases | `.../g/<用户名>/<token>/https://github.com/owner/repo/releases/download/v1.0/app.zip` |
+| 仓库打包 | `.../g/<用户名>/<token>/https://github.com/owner/repo/archive/refs/heads/main.zip` |
+| 短链 | `.../g/<用户名>/<token>/gh/owner/repo/raw/main/file.txt` |
 
 ```bash
-curl -L -o app.zip "https://mirror.example.com/g/<token>/https://github.com/owner/repo/releases/download/v1.0/app.zip"
+curl -L -o app.zip "https://mirror.example.com/g/<用户名>/<token>/https://github.com/owner/repo/releases/download/v1.0/app.zip"
 ```
 
-响应头 `X-Cache: HIT` 命中缓存，`MISS` 回源。
+`<用户名>` 为后台登录用户名，`<token>` 必须是该用户自己的 Token（归属校验，无效或错配一律 404）。响应头 `X-Cache: HIT` 命中缓存，`MISS` 回源。
 
 ### 🐳 Docker 镜像加速（`/v2/<用户名>[/<自定义路径>]/…`、`/token`）
 
@@ -339,20 +356,20 @@ docker pull mirror.example.com/admin/library/nginx:1.25
 
 > 因为路径带前缀，`registry-mirrors` **不再适用**（docker daemon 不支持带路径的 mirror）。这种「用户名 + 自定义路径」的写法则相当于给 `/v2` 加了一道只有知道路径才能用的保护，也为多用户各自独立路径预留了规则。
 
-多 Registry（GHCR/Quay/GCR/k8s 等）用域名前缀形式：
+多 Registry（GHCR/Quay/GCR/k8s 等）用域名前缀形式（用户名段在最前）：
 
 ```
-https://mirror.example.com/v2/ghcr.io/<owner>/<repo>/manifests/<tag>
+https://mirror.example.com/v2/<用户名>/ghcr.io/<owner>/<repo>/manifests/<tag>
 ```
 
-### 🤗 HuggingFace 加速（`/hf/`）
+### 🤗 HuggingFace 加速（`/hf/<用户名>/<token>/`）
 
 开启 `[hf] enabled=true` 后：
 
 ```bash
-# token 模式（默认）
-curl -L -o model.bin "https://mirror.example.com/hf/<token>/<owner>/<repo>/resolve/main/model.bin"
-# 开放模式（[auth] mode=open）可省略 <token>
+# token 模式（默认，用户名段 + token）
+curl -L -o model.bin "https://mirror.example.com/hf/<用户名>/<token>/<owner>/<repo>/resolve/main/model.bin"
+# 开放模式（[auth] mode=open）可省略用户名段与 token
 curl -L -o model.bin "https://mirror.example.com/hf/<owner>/<repo>/resolve/main/model.bin"
 ```
 
@@ -378,9 +395,13 @@ docker load -i nginx.tar
 
 ## 🎛️ 管理后台
 
-- 默认路径 `/admin`，默认账号/密码 `admin`/`admin`（务必修改）。
-- 登录后基于签名 Session Cookie（HMAC + HttpOnly + SameSite=Strict）保持会话。
-- 能力：查看 / 新增 / 删除 Token，页面直接给出本实例代理示例地址。
+**双入口**：超管入口 `/admin`（仅超级管理员可登录）+ 普通用户入口 `/user`（`USER_PATH` 可配、可隐藏），各自独立会话 Cookie，普通用户登录超管入口会被拒绝。账号密码由 `ADMIN_USER` / `ADMIN_PASS` 环境变量设置（务必修改默认值）；登录后基于签名 Session Cookie（HMAC + HttpOnly + SameSite=Strict）保持会话。
+
+**超管能力**（`/admin`）：服务管理（Docker / HuggingFace 开关 + Docker 自定义路径）、缓存管理（上限 / 时效 / 清除 + 离线包文件管理 + 磁盘满自动清理）、用户管理（创建 / 删除 / 改角色 / 重置密码 + SMTP 与注册开关 + 邀请码管理）、Token 全量管理、MCP 接入。
+
+**普通用户能力**（`/user`）：管理自己的 Token、设置自己的 Docker 自定义路径（Docker 开启时）、MCP 接入；服务未开启时对应入口提示「请联系超级管理员开启」。
+
+后台适配移动端（393px）：抽屉式导航、Token 卡片式列表、点击「编辑」就地展开表单。
 
 ---
 
@@ -399,7 +420,7 @@ docker load -i nginx.tar
 
 - **反代 + HTTPS**：nginx 反代到 `127.0.0.1:8080`，用 Let's Encrypt 签证书；`COOKIE_SECURE=true`。
 - **数据落盘**：`CACHE_DIR` 与 `TOKENS_FILE` 指向持久化卷/目录，避免写入容器 overlay 层。
-- **缓存清理**：缓存按 TTL 过期但不自动删除，建议配置定时任务清理（见「部署脚本」自动生成的 `/etc/cron.d/github-mirror`）。
+- **缓存清理**：缓存由后台周期任务**自动失效**——每 10 分钟按 TTL 过期、超总上限、磁盘可用不足（<1 GB）三级策略自动清理，无需额外定时任务；部署脚本另生成 cron 每天清理 7 天前的缓存文件兜底。
 - **固定 `ADMIN_SECRET`**：避免重启后会话全部失效。
 - **内存**：单二进制常驻内存很低；Docker 模式注意守护进程开销，小内存实例可选原生部署。
 
@@ -430,21 +451,27 @@ bash <(curl -fsSL https://raw.githubusercontent.com/yufeng8/gh-mirror/main/unins
 ```
 main.go        # 入口、配置加载、service group 路由、入口中间件
 config/        # config.go（TOML 解析 + env 覆盖）+ config.toml 样例
-proxy.go       # GitHub 代理 + 共用 serveTarget/回源/缓存
+proxy.go       # GitHub 代理（/g/<用户名>/<token>/）+ 共用 serveTarget/回源/缓存
 docker.go      # Docker Registry v2 缓存反向代理
-hf.go          # HuggingFace 加速
+hf.go          # HuggingFace 加速（/hf/<用户名>/<token>/）
 search.go      # 镜像搜索/标签 API + 服务端渲染页面
-offline.go     # 离线镜像 tar 打包
+offline.go     # 离线镜像 tar 打包（内容寻址缓存）
+offlinecache.go # 离线包缓存数据层（清单 JSON / 任务状态 / 磁盘清理钩子）
 clientip.go    # 真实客户端 IP + IPv6 /64 归并
 ratelimit.go   # 令牌桶限流
 acl.go         # IP/仓库黑白名单
 socks5.go      # 最小 SOCKS5 拨号器
 cache.go       # 磁盘缓存（TTL / 单文件上限 / 总上限 均可运行时热改 + 自动失效）
-store.go       # Token 持久化 + 统计
+store.go       # Token 持久化 + 统计（owner 归属）
+users.go       # 用户持久化（users.json，角色 + 邮箱 + Docker 路径）
+mail.go        # SMTP 发信 + 邮箱验证码
+captcha.go     # 图形验证码（点阵渲染 + 校验）
+invite.go      # 邀请码数据层（生成 / 导出 / 有效期 / 使用追踪）
+mcp.go         # MCP 服务端（HTTP / stdio，多用户权限边界）
 rewrite.go     # 域名白名单 + URL 改写
-admin.go/templates.go  # 管理后台
-settings.go    # 运行时设置持久化（服务开关 + 缓存参数，gm-data/settings.json）
-cache_test.go  # 缓存自动失效 / 超限清理 / 清除 的单元测试
+admin.go/templates.go  # 管理后台（双入口 /admin + /user）
+settings.go    # 运行时设置持久化（开关 + 缓存 + SMTP/注册/验证码，gm-data/settings.json）
+*_test.go      # 单元测试（缓存 / 用户 / 邀请码 / 验证码 / MCP / 代理用户名段等）
 ```
 
 ## 📚 文档

@@ -92,6 +92,22 @@ func (s *Server) mcpOwner(tok string) string {
 	return s.adminUser
 }
 
+// mcpUserRole 返回 MCP 调用者（owner 用户名）的用户角色；用户不存在时按默认管理员兜底为 super。
+func (s *Server) mcpUserRole(owner string) string {
+	if u, ok := s.users.Get(owner); ok {
+		return u.Role
+	}
+	if owner == s.adminUser {
+		return RoleSuper
+	}
+	return RoleNormal
+}
+
+// mcpIsSuper 判断 MCP 调用者是否为超级管理员（实例级操作的工具用，与网页端 requireSuper 对齐）。
+func (s *Server) mcpIsSuper(owner string) bool {
+	return s.mcpUserRole(owner) == RoleSuper
+}
+
 func textResult(text string) mcpCallResult {
 	return mcpCallResult{Content: []mcpToolContent{{Type: "text", Text: text}}}
 }
@@ -158,10 +174,10 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "list_tokens", Description: "列出全部 Token（含类型、命中数、流量、创建与最近使用时间）。",
+		Name: "list_tokens", Description: "列出你有权查看的 Token（含类型、命中数、流量、创建与最近使用时间；普通用户仅自己的，超级管理员可见全部）。",
 		InputSchema: objSchema(nil, nil),
 		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
-			toks := s.store.All()
+			toks := s.tokensForUser(s.store.All(), owner, s.mcpUserRole(owner))
 			type row struct {
 				Token     string `json:"token"`
 				Note      string `json:"note"`
@@ -206,12 +222,16 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "delete_token", Description: "删除指定 Token。",
+		Name: "delete_token", Description: "删除指定 Token（仅能删除自己的；超级管理员可删除全部）。",
 		InputSchema: objSchema(map[string]any{"token": propStr("要删除的 token")}, []string{"token"}),
 		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			tok := argStr(args, "token")
-			if !s.store.Has(tok) {
+			t, exists := s.store.Get(tok)
+			if !exists {
 				return errorResult("token 不存在")
+			}
+			if !s.tokenVisible(t, owner, s.mcpUserRole(owner)) {
+				return errorResult("无权删除该 token（仅能删除自己的）")
 			}
 			s.store.Delete(tok)
 			log.Printf("MCP 删除 token")
@@ -229,12 +249,15 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "set_service", Description: "开启或关闭 Docker / HuggingFace 加速（即时生效、无需重启，并持久化）。",
+		Name: "set_service", Description: "开启或关闭 Docker / HuggingFace 加速（仅超级管理员；即时生效、无需重启，并持久化）。",
 		InputSchema: objSchema(map[string]any{
 			"name":    propStr("服务名：docker 或 hf"),
 			"enabled": propBool("true 开启 / false 关闭"),
 		}, []string{"name", "enabled"}),
 		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
+			if !s.mcpIsSuper(owner) {
+				return errorResult("需要超级管理员权限（服务开关仅超级管理员可操作）")
+			}
 			name := strings.ToLower(argStr(args, "name"))
 			if name != "docker" && name != "hf" {
 				return errorResult("name 仅支持 docker 或 hf")
@@ -252,9 +275,12 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "get_cache_stats", Description: "查询缓存：已用容量、单文件上限、总上限、时效与缓存目录。",
+		Name: "get_cache_stats", Description: "查询缓存：已用容量、单文件上限、总上限、时效与缓存目录（仅超级管理员）。",
 		InputSchema: objSchema(nil, nil),
 		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
+			if !s.mcpIsSuper(owner) {
+				return errorResult("需要超级管理员权限（缓存管理仅超级管理员可操作）")
+			}
 			maxTotal := s.cache.MaxTotalBytes()
 			totalTxt := "不限"
 			if maxTotal > 0 {
@@ -277,13 +303,16 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "set_cache_limits", Description: "调整缓存参数（即时生效并持久化）。未提供某项则保持不变。",
+		Name: "set_cache_limits", Description: "调整缓存参数（仅超级管理员；即时生效并持久化）。未提供某项则保持不变。",
 		InputSchema: objSchema(map[string]any{
 			"maxFileMB":  propInt("单文件缓存上限 MB，0 = 不限制"),
 			"maxTotalMB": propInt("缓存总上限 MB，0 = 不限（超限按最旧优先清理）"),
 			"ttlMinutes": propInt("缓存时效分钟，0 = 永不过期"),
 		}, nil),
 		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
+			if !s.mcpIsSuper(owner) {
+				return errorResult("需要超级管理员权限（缓存管理仅超级管理员可操作）")
+			}
 			mf := argInt(args, "maxFileMB", -1)
 			mt := argInt(args, "maxTotalMB", -1)
 			tt := argInt(args, "ttlMinutes", -1)
@@ -298,9 +327,12 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "clear_cache", Description: "清空缓存目录内的所有文件（不影响 Token 与设置）。",
+		Name: "clear_cache", Description: "清空缓存目录内的所有文件（仅超级管理员；不影响 Token 与设置）。",
 		InputSchema: objSchema(nil, nil),
 		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
+			if !s.mcpIsSuper(owner) {
+				return errorResult("需要超级管理员权限（缓存管理仅超级管理员可操作）")
+			}
 			files, bytes := s.cache.Clear()
 			log.Printf("MCP 清除缓存: %d 个文件，%s", files, formatBytes(bytes))
 			return textResult(fmt.Sprintf("已清除缓存：%d 个文件，%s", files, formatBytes(bytes)))
@@ -316,8 +348,9 @@ var mcpRegistry = []mcpTool{
 			if raw == "" {
 				return errorResult("缺少参数 url")
 			}
+			// 取调用者自己的 token（按归属过滤），避免生成他人 token 的链接
 			tk := ""
-			if toks := s.store.All(); len(toks) > 0 {
+			if toks := s.tokensForUser(s.store.All(), owner, s.mcpUserRole(owner)); len(toks) > 0 {
 				tk = toks[0].Token
 			}
 			res := s.buildAccelURL(base, raw, tk, owner)

@@ -45,20 +45,21 @@
   <text x="68" y="344" font-size="88" font-weight="800" fill="url(#title)">gh-mirror</text>
   <rect x="72" y="370" width="212" height="5" rx="2.5" fill="url(#logoGrad)"/>
 
-  <text x="70" y="420" font-size="27" fill="#d7f5e5">Docker 镜像 · GitHub 资源 · HuggingFace 权重</text>
-  <text x="70" y="456" font-size="27" fill="#d7f5e5">一个网关，一站加速 · 内置 MCP（AI Agent 友好）</text>
+  <text x="70" y="418" font-size="27" fill="#d7f5e5">Docker 镜像 · GitHub 资源 · HuggingFace 权重</text>
+  <text x="70" y="452" font-size="27" fill="#d7f5e5">一个网关，一站加速 · 内置 MCP（AI Agent 友好）</text>
+  <text x="70" y="488" font-size="20" fill="#86efac">多用户隔离 · 邮箱 / 邀请码注册 · 找回密码</text>
 
   <!-- 功能标签 -->
   <g font-size="16" fill="#cbd5e1">
-    <rect x="70" y="488" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="507" r="5" fill="#22d3ee"/><text x="108" y="513">MCP 接入</text>
-    <rect x="258" y="488" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="280" cy="507" r="5" fill="#34d399"/><text x="296" y="513">Docker 加速</text>
-    <rect x="446" y="488" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="468" cy="507" r="5" fill="#a78bfa"/><text x="484" y="513">GitHub 加速</text>
-    <rect x="70" y="538" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="557" r="5" fill="#fbbf24"/><text x="108" y="563">HF 权重</text>
-    <rect x="258" y="538" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="280" cy="557" r="5" fill="#f472b6"/><text x="296" y="563">Token 鉴权</text>
-    <rect x="446" y="538" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="468" cy="557" r="5" fill="#38bdf8"/><text x="484" y="563">离线 tar</text>
+    <rect x="70" y="524" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="543" r="5" fill="#22d3ee"/><text x="108" y="549">MCP 接入</text>
+    <rect x="258" y="524" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="280" cy="543" r="5" fill="#34d399"/><text x="296" y="549">Docker 加速</text>
+    <rect x="446" y="524" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="468" cy="543" r="5" fill="#a78bfa"/><text x="484" y="549">GitHub 加速</text>
+    <rect x="70" y="574" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="92" cy="593" r="5" fill="#fbbf24"/><text x="108" y="599">HF 权重</text>
+    <rect x="258" y="574" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="280" cy="593" r="5" fill="#f472b6"/><text x="296" y="599">Token 鉴权</text>
+    <rect x="446" y="574" width="176" height="38" rx="19" fill="#111c33" stroke="#22304d"/><circle cx="468" cy="593" r="5" fill="#38bdf8"/><text x="484" y="599">离线 tar</text>
   </g>
 
-  <text x="70" y="608" font-size="16" fill="#94a3b8">Go 标准库 · 零第三方依赖 · 单二进制 · 离线可构建</text>
+  <text x="70" y="624" font-size="16" fill="#94a3b8">Go 标准库 · 零第三方依赖 · 单二进制 · 离线可构建</text>
 
   <!-- 右侧：MCP 终端窗口示意 -->
   <g>
@@ -69,11 +70,11 @@
     <rect x="700" y="250" width="500" height="120" rx="14" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
     <circle cx="730" cy="274" r="12" fill="#e6edf3"/>
     <text x="754" y="280" font-size="17" fill="#ffffff" fill-opacity="0.94">GitHub 资源加速</text>
-    <text x="1172" y="280" font-size="13" fill="#9fe8c4" text-anchor="end">/g/&lt;token&gt;/…</text>
+    <text x="1172" y="280" font-size="13" fill="#9fe8c4" text-anchor="end">/g/&lt;用户名&gt;/&lt;token&gt;/…</text>
     <rect x="700" y="380" width="500" height="120" rx="14" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.14"/>
     <circle cx="730" cy="404" r="12" fill="#FFD21E"/>
     <text x="754" y="410" font-size="17" fill="#ffffff" fill-opacity="0.94">HuggingFace 权重</text>
-    <text x="1172" y="410" font-size="13" fill="#9fe8c4" text-anchor="end">/hf/…</text>
+    <text x="1172" y="410" font-size="13" fill="#9fe8c4" text-anchor="end">/hf/&lt;用户名&gt;/&lt;token&gt;/…</text>
     <rect x="700" y="510" width="500" height="120" rx="14" fill="#6f42c1" fill-opacity="0.16" stroke="#a78bfa" stroke-opacity="0.4"/>
     <circle cx="730" cy="534" r="12" fill="#a78bfa"/>
     <text x="754" y="540" font-size="17" fill="#ffffff" fill-opacity="0.94">MCP 服务端（AI Agent 直接接管）</text>

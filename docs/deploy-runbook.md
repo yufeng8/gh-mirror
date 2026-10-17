@@ -62,7 +62,7 @@ curl -fsS http://127.0.0.1:8080/healthz     # 期望 ok
 面板建/改 `git.yufeng.site` 站点 → 反代目标 `http://127.0.0.1:8080`，`location /` 用：
 ```nginx
 location / {
-    merge_slashes off;                         # 必须：保留 /g/<token>/https:// 的双斜杠
+    merge_slashes off;                         # 必须：保留 /g/<用户名>/<token>/https:// 的双斜杠
     proxy_pass http://127.0.0.1:8080$request_uri;   # 必须带 $request_uri，不能写成 ...:8080/;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -186,7 +186,7 @@ docker volume rm gm-data gm-cache        # 彻底清数据（token/缓存都没�
 |------|-------------|
 | 点登录跳 `/%!s(MISSING)` 报 400 | 旧镜像 `v0.1.0` 的登录 bug；换 `v0.1.2-hubproxy` |
 | 经域名 502/521 | EdgeOne 回源地址/端口/Host 不对，或源站 80 未对 EdgeOne 放行 |
-| `/g/<token>/https://...` 变 404 | EdgeOne 缓存/URL 规范化没关，或源站缺 `merge_slashes off`/`$request_uri` |
+| `/g/<用户名>/<token>/https://...` 变 404 | EdgeOne 缓存/URL 规范化没关，或源站缺 `merge_slashes off`/`$request_uri` |
 | 后台登录无反应/反复跳登录 | 缺 `X-Forwarded-Proto https`，或 `COOKIE_SECURE` 与访问协议不符 |
 | 源站签 LE 报 521 | EdgeOne 前置所致；按本架构**源站不签证书**，证书交给 EdgeOne；确需源站持证用 DNS-01 |
 | `/hf/` 失败 | 未设 `HF_ENABLED=true`，或主机无出网 |

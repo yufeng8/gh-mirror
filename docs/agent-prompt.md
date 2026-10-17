@@ -34,7 +34,7 @@
 - curl -fsS https://<你的域名>/healthz                     → ok（全链路通）
 - 浏览器 https://<你的域名>/ 能打开（多服务宣传页）
 - https://<你的域名>/admin 能登录（ADMIN_USER / ADMIN_PASS）
-- 在后台添加 token 后：curl -fsSI "https://<你的域名>/g/<token>/https://raw.githubusercontent.com/octocat/Hello-World/master/README" → 200
+- 在后台添加 token 后：curl -fsSI "https://<你的域名>/g/<ADMIN_USER>/<ADMIN_TOKEN>/https://raw.githubusercontent.com/octocat/Hello-World/master/README" → 200
 - 镜像搜索：curl -fsS "https://<你的域名>/search?q=nginx" 能返回结果
 - 若开启 Docker 加速：`docker pull <你的域名>/<ADMIN_USER>/library/nginx:1.25` 能正常拉取并命中缓存（路径必须带用户名段；后台可再加自定义路径）；
   curl -fsS "https://<你的域名>/offline/<ADMIN_USER>/<ADMIN_TOKEN>/library/nginx:1.25" -o nginx.tar 且本机 docker load -i nginx.tar 能载入（离线包路径必须带用户名段与 token）
