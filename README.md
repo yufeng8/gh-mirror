@@ -2,8 +2,6 @@
   <img src="docs/images/banner.svg" alt="gh-mirror · 自托管多服务加速网关" width="100%">
 </p>
 
-<h1 align="center">gh-mirror</h1>
-
 <p align="center">
   <b>一个单二进制、零第三方依赖的自托管加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一站加速。</b><br>
   内置 Token 鉴权、磁盘缓存、镜像搜索与 <b>MCP 服务端</b>，让 AI Agent 也能直接接管运维。
