@@ -8,6 +8,10 @@
 </p>
 
 <p align="center">
+  <strong>中文</strong> | <a href="README_EN.md">English</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml"><img src="https://github.com/yufeng8/gh-mirror/actions/workflows/build.yml/badge.svg" alt="build"></a>
   <a href="https://github.com/yufeng8/gh-mirror/releases"><img src="https://img.shields.io/github/v/release/yufeng8/gh-mirror?include_prereleases&label=release" alt="release"></a>
   <img src="https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white" alt="Go">
