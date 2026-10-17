@@ -131,8 +131,8 @@ var dockerClient = &http.Client{
 
 // handleDocker 是 Docker 加速入口，由 main.handle 在 [docker].enabled=true 时按前缀分发进来。
 func (s *Server) handleDocker(w http.ResponseWriter, r *http.Request) {
-	// /v2 路径第一段是「用户名段」（小写化、对应一个真实用户），其后可选「全局自定义路径」。
-	// 这样每个用户天然拥有独立路径（多用户隔离），registry 协议无法携带 Token，路径前缀是唯一保护位。
+	// /v2 路径第一段是「用户名段」（小写化、对应一个真实用户），其后可选「该用户自己的自定义路径」。
+	// 每个用户天然拥有独立路径（多用户隔离），registry 协议无法携带 Token，路径前缀是唯一保护位。
 	if !strings.HasPrefix(r.URL.Path, "/token") {
 		switch {
 		case r.URL.Path == "/v2" || r.URL.Path == "/v2/":
@@ -145,12 +145,13 @@ func (s *Server) handleDocker(w http.ResponseWriter, r *http.Request) {
 				seg, rem = rest[:i], rest[i+1:]
 			}
 			// 用户名段反查用户表：不存在一律 404，不暴露端点/用户是否存在
-			if _, ok := s.userByDockerSegment(seg); !ok {
+			username, ok := s.userByDockerSegment(seg)
+			if !ok {
 				s.render404(w, r)
 				return
 			}
-			// 剥掉全局自定义路径（可选、可含 /）
-			if p := s.dockerPath(); p != "" {
+			// 剥掉该用户自己的自定义路径（可选、可含 /）
+			if p := s.userDockerPath(username); p != "" {
 				switch {
 				case rem == p:
 					rem = ""

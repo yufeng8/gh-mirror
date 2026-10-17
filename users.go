@@ -30,12 +30,14 @@ const (
 )
 
 // User 代表一个后台登录账号。PassHash/Salt 为 hex 编码。
+// DockerPath 是该用户自己的 Docker 拉取路径后缀（多用户隔离；空=只用用户名段）。
 type User struct {
-	Username  string `json:"username"`
-	PassHash  string `json:"pass_hash"`
-	Salt      string `json:"salt"`
-	Role      string `json:"role"` // super / normal
-	CreatedAt int64  `json:"created_at"`
+	Username   string `json:"username"`
+	PassHash   string `json:"pass_hash"`
+	Salt       string `json:"salt"`
+	Role       string `json:"role"` // super / normal
+	DockerPath string `json:"docker_path,omitempty"`
+	CreatedAt  int64  `json:"created_at"`
 }
 
 // normUserRole 归一化用户角色：空值或非法值按 normal 处理（super 需显式指定）。
@@ -194,6 +196,22 @@ func (us *UserStore) UpdateRole(username, role string) error {
 		}
 	}
 	u.Role = role
+	return us.saveLocked()
+}
+
+// SetDockerPath 设置某用户的 Docker 自定义路径后缀（规范化后落盘）。
+func (us *UserStore) SetDockerPath(username, path string) error {
+	np, ok := normDockerPath(path)
+	if !ok {
+		return fmt.Errorf("自定义路径不合法（仅支持字母、数字、-、_、/，最长 64 字符）")
+	}
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[username]
+	if !ok {
+		return fmt.Errorf("用户不存在: %s", username)
+	}
+	u.DockerPath = np
 	return us.saveLocked()
 }
 

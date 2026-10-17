@@ -28,6 +28,7 @@ type Config struct {
 
 type AdminConfig struct {
 	Path         string
+	UserPath     string // 普通用户入口路径（默认 /user），与超管入口 Path 分离
 	User         string
 	Pass         string
 	Secret       string
@@ -88,7 +89,7 @@ func defaultConfig() *Config {
 		MaxCacheMB:         200,
 		UpstreamTimeoutSec: 60,
 		TokensFile:         "./tokens.json",
-		Admin:              AdminConfig{Path: "/admin", User: "admin", Pass: "admin", CookieSecure: true},
+		Admin:              AdminConfig{Path: "/admin", UserPath: "/user", User: "admin", Pass: "admin", CookieSecure: true},
 		Auth:               AuthConfig{Mode: "token"},
 		Docker:             DockerConfig{Enabled: false, Upstreams: []string{"https://registry-1.docker.io"}, CacheTTLMinutes: 1440},
 		HF:                 HFConfig{Enabled: false, CacheTTLMinutes: 1440},
@@ -131,6 +132,7 @@ func (c *Config) applyEnv() {
 	c.UseJsdelivr = getenvBool("USE_JSDELIVR", c.UseJsdelivr)
 	c.TokensFile = getenv("TOKENS_FILE", c.TokensFile)
 	c.Admin.Path = getenv("ADMIN_PATH", c.Admin.Path)
+	c.Admin.UserPath = getenv("USER_PATH", c.Admin.UserPath)
 	c.Admin.User = getenv("ADMIN_USER", c.Admin.User)
 	c.Admin.Pass = getenv("ADMIN_PASS", c.Admin.Pass)
 	c.Admin.Secret = getenv("ADMIN_SECRET", c.Admin.Secret)
@@ -216,6 +218,7 @@ func (c *Config) applyRoot(m map[string]string) {
 
 func (c *Config) applyAdmin(m map[string]string) {
 	setStr(m, "path", &c.Admin.Path)
+	setStr(m, "user_path", &c.Admin.UserPath)
 	setStr(m, "user", &c.Admin.User)
 	setStr(m, "pass", &c.Admin.Pass)
 	setStr(m, "secret", &c.Admin.Secret)
