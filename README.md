@@ -17,7 +17,7 @@
 - **Docker 镜像加速**：兼容 Registry API v2，内置 Docker Hub / GHCR / Quay / GCR / registry.k8s.io 多源；Manifest/Token 内存缓存、Layer 写透磁盘缓存、流式传输、`Range` 断点续传。
 - **GitHub 资源加速**：`/g/<token>/` + 完整 GitHub 地址，覆盖 blob/raw、archive、releases、API，自带磁盘缓存。
 - **HuggingFace 加速**：`/hf/<token>/<owner>/<repo>/resolve/<rev>/<file>`，自动跟随 302 到 CDN，模型/LFS 流式 + 缓存。
-- **离线镜像 tar**：`/offline/<image>` 无需本地 Docker，把镜像打包成 `docker load` 可用的 tar（流式 + 同镜像并发防抖）。
+- **离线镜像 tar**：`/offline/<token>/<image>` 无需本地 Docker，把镜像打包成 `docker load` 可用的 tar（流式 + 同镜像并发防抖；**需 token**，避免公开暴露被白嫖流量）。
 - **镜像搜索**：Docker Hub 搜索 / 标签浏览，服务端渲染轻量页面（`/search`、`/tags`）与 JSON API（`/api/search`、`/api/tags`）。
 - **安全管控**：Token 鉴权（默认）+ 可选开放模式；IP（CIDR）/ 仓库（通配符）黑白名单；按真实客户端 IP 的令牌桶限流（IPv6 归并 `/64`）。
 - **统一配置**：`config.toml` + 环境变量覆盖，平滑兼容旧的环境变量部署。
@@ -160,19 +160,16 @@ curl -L -o app.zip "https://mirror.example.com/g/<token>/https://github.com/owne
 
 响应头 `X-Cache: HIT` 命中缓存，`MISS` 回源。
 
-### Docker 镜像加速（`/v2/`、`/token`）
+### Docker 镜像加速（`/v2/<用户名>[/<自定义路径>]/…`、`/token`）
 
-开启 `[docker] enabled=true`（或 `DOCKER_ENABLED=true`）后，在 Docker 守护进程配置镜像加速器：
-
-```json
-// /etc/docker/daemon.json
-{ "registry-mirrors": ["https://mirror.example.com"] }
-```
+开启 `[docker] enabled=true`（或 `DOCKER_ENABLED=true`）后，`/v2` 的拉取路径**固定带用户名段**（管理后台可再填一段自定义路径）：
 
 ```bash
-sudo systemctl restart docker
-docker pull nginx:latest   # 自动走加速器
+# 用户名段 = 后台登录用户名；自定义路径在「服务管理 → Docker 镜像加速」里可选填写
+docker pull mirror.example.com/admin/library/nginx:1.25
 ```
+
+> 因为路径带前缀，`registry-mirrors` **不再适用**（docker daemon 不支持带路径的 mirror）。这种「用户名 + 自定义路径」的写法则相当于给 `/v2` 加了一道只有知道路径才能用的保护，也为多用户各自独立路径预留了规则。
 
 多 Registry（GHCR/Quay/GCR/k8s 等）用域名前缀形式：
 
@@ -201,7 +198,7 @@ curl -L -o model.bin "https://mirror.example.com/hf/<owner>/<repo>/resolve/main/
 开启 `[docker] enabled=true` 后，按需把镜像打包成 `docker load` 可用的 tar，**无需本地 Docker**：
 
 ```bash
-curl -L -o nginx.tar "https://mirror.example.com/offline/library/nginx:1.25"
+curl -L -o nginx.tar "https://mirror.example.com/offline/<token>/library/nginx:1.25"
 docker load -i nginx.tar
 ```
 

@@ -102,6 +102,21 @@ func (s *Store) Add(token, note, role string) {
 	s.mu.Unlock()
 }
 
+// Update 修改 token 的备注与角色（token 值本身不可改，确保已有链接不失效）。
+// 返回是否命中（false 表示 token 不存在）。持锁写入并落盘。
+func (s *Store) Update(token, note, role string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tokens[token]
+	if !ok {
+		return false
+	}
+	t.Note = note
+	t.Role = normRole(role)
+	_ = s.saveLocked()
+	return true
+}
+
 // IsAdmin 判断 token 存在且具备 admin 角色（MCP 鉴权使用）。
 func (s *Store) IsAdmin(token string) bool {
 	s.mu.RLock()

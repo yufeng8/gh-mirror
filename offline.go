@@ -181,14 +181,26 @@ func (s *Server) fetchManifest(r *http.Request, m registryMapping, repo, ref, to
 	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 }
 
-// handleOffline /offline/<image> 打包镜像为 docker-load 可用 tar 并流式下载。
+// handleOffline /offline/<token>/<image> 打包镜像为 docker-load 可用 tar 并流式下载。
+// 出于安全考虑，离线包地址同样需要有效 token（与 /g/、/hf/ 一致）：
+// 地址里第一段必须是已签发的 token，缺失或无效一律按 404 处理，避免网关暴露后被白嫖带宽。
+// 也兼容 /offline/<token>?image=<镜像名> 的查询串写法。
 func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
-	image := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/offline/"))
-	if image == "" {
+	rest := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/offline/"))
+	tok, image := "", ""
+	if idx := strings.IndexByte(rest, '/'); idx > 0 {
+		tok, image = rest[:idx], strings.TrimSpace(rest[idx+1:])
+	} else {
+		tok = rest
 		image = strings.TrimSpace(r.URL.Query().Get("image"))
 	}
+	if tok == "" || !s.store.Has(tok) {
+		// 与 /g/ 保持一致：不泄露「token 是否存在」，统一 404
+		s.render404(w, r)
+		return
+	}
 	if image == "" {
-		http.Error(w, "缺少镜像名，用法：/offline/library/nginx:1.25", http.StatusBadRequest)
+		http.Error(w, "缺少镜像名，用法：/offline/<token>/library/nginx:1.25", http.StatusBadRequest)
 		return
 	}
 	m, repo, ref := parseImageRef(image)

@@ -36,8 +36,8 @@
 - https://<你的域名>/admin 能登录（ADMIN_USER / ADMIN_PASS）
 - 在后台添加 token 后：curl -fsSI "https://<你的域名>/g/<token>/https://raw.githubusercontent.com/octocat/Hello-World/master/README" → 200
 - 镜像搜索：curl -fsS "https://<你的域名>/search?q=nginx" 能返回结果
-- 若开启 Docker 加速：配置 registry-mirrors 后 docker pull 能命中缓存；
-  curl -fsS "https://<你的域名>/offline/library/nginx:1.25" -o nginx.tar 且本机 docker load -i nginx.tar 能载入
+- 若开启 Docker 加速：`docker pull <你的域名>/<ADMIN_USER>/library/nginx:1.25` 能正常拉取并命中缓存（路径必须带用户名段；后台可再加自定义路径）；
+  curl -fsS "https://<你的域名>/offline/<ADMIN_TOKEN>/library/nginx:1.25" -o nginx.tar 且本机 docker load -i nginx.tar 能载入（离线包需 token）
 
 【遇到错误】
 不要盲目重试。先读 docs/docker-deploy.md 的「已知坑 / 故障排查」，仍无法解决时，
