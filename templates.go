@@ -639,6 +639,7 @@ func htmlHead(title, desc string) string {
 <meta property="og:description" content="` + desc + `">
 <meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="` + faviconHref + `">
+<link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
 <meta name="theme-color" content="#16a34a">
 <script>try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>
 ` + pageStyle + `

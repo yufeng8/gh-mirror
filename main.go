@@ -275,6 +275,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleCaptcha(w, r)
 	case path == "/captcha/new":
 		s.handleCaptchaNew(w, r)
+	case path == "/favicon.ico":
+		s.handleFavicon(w, r)
 	case path == "/":
 		s.renderHome(w, r)
 	case strings.HasPrefix(path, s.adminPath):
