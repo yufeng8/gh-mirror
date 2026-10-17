@@ -10,6 +10,10 @@ import (
 // newTestCache 在 t.TempDir 中创建一个缓存实例。
 func newTestCache(t *testing.T, ttl time.Duration) *Cache {
 	t.Helper()
+	// 关闭磁盘余量清理规则：避免单测结果依赖跑测机器当时的磁盘可用空间
+	old := diskFreeMin
+	diskFreeMin = 0
+	t.Cleanup(func() { diskFreeMin = old })
 	return NewCache(filepath.Join(t.TempDir(), "cache"), ttl, 200)
 }
 
@@ -36,7 +40,7 @@ func TestCacheEvictExpired(t *testing.T) {
 	}
 	time.Sleep(60 * time.Millisecond)
 	// 过期清理会删除数据文件及其 .meta 旁路文件，故至少应删除 1 个
-	expired, over := c.Evict()
+	expired, over, _ := c.Evict()
 	if expired < 1 {
 		t.Fatalf("期望至少删除 1 个过期文件，实际 expired=%d over=%d", expired, over)
 	}
@@ -53,7 +57,7 @@ func TestCacheTTLZeroNeverExpires(t *testing.T) {
 	c := newTestCache(t, 0)
 	writeCacheFile(t, c, "k1", 128)
 	time.Sleep(30 * time.Millisecond)
-	expired, _ := c.Evict()
+	expired, _, _ := c.Evict()
 	if expired != 0 {
 		t.Fatalf("TTL=0 不应删除过期文件，实际 expired=%d", expired)
 	}
@@ -75,12 +79,35 @@ func TestCacheEvictOverQuota(t *testing.T) {
 	// 总上限 2KB：当前 3KB（含 .meta 旁路文件），应触发超限清理
 	c.SetMaxTotalMB(0) // MB 粒度不支持 2KB，直接按字节设置
 	c.maxTotalBytes.Store(2 * 1024)
-	_, over := c.Evict()
+	_, over, _ := c.Evict()
 	if over == 0 {
 		t.Fatal("超出总上限时应删除文件，实际 over=0")
 	}
 	if used := c.UsageBytes(); used > 2*1024 {
 		t.Fatalf("清理后仍超出上限: %d > 2048", used)
+	}
+}
+
+// TestCacheEvictLowDisk 验证「磁盘可用空间低于阈值时也会自动清理」：
+// 通过把阈值抬到极大值模拟磁盘余量不足，即使未超总上限也应清理到尽量腾出空间。
+func TestCacheEvictLowDisk(t *testing.T) {
+	c := newTestCache(t, time.Hour)
+	for _, k := range []string{"old", "mid", "new"} {
+		writeCacheFile(t, c, k, 1024)
+		time.Sleep(20 * time.Millisecond) // 人为拉开 mtime，验证按最旧优先
+	}
+	before := c.UsageBytes()
+	if before == 0 {
+		t.Fatal("前置条件失败：缓存目录应有文件")
+	}
+	// 写入完成后再模拟「磁盘余量不足」，否则 Commit 的异步清理会提前把文件删掉
+	diskFreeMin = 1 << 50
+	expired, over, low := c.Evict()
+	if low == 0 {
+		t.Fatalf("磁盘余量低于阈值时应触发清理，实际 expired=%d over=%d low=%d", expired, over, low)
+	}
+	if used := c.UsageBytes(); used != 0 {
+		t.Fatalf("磁盘余量不足时应尽量清理，剩余 %d 字节（清理前 %d）", used, before)
 	}
 }
 

@@ -34,10 +34,15 @@ type Server struct {
 	svcMu        sync.RWMutex
 	dockerOn     bool
 	hfOn         bool
+	dockerPrefix string // /v2 自定义路径前缀（空=未启用），持 svcMu 保护；读取用 dockerPath()
 }
 
 // processStart 记录进程启动时间，用于后台展示运行时长。
 var processStart = time.Now()
+
+// version 是当前程序版本号，构建时由 -ldflags "-X main.version=<tag>" 注入；
+// 本地 go build / go run 时为 "dev"。
+var version = "dev"
 
 // cacheSweepInterval 是缓存自动失效（过期清理 + 超限清理）的执行周期。
 const cacheSweepInterval = 10 * time.Minute
@@ -123,9 +128,10 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(cacheSweepInterval)
 		for range ticker.C {
-			if expired, over := cache.Evict(); expired > 0 || over > 0 {
-				log.Printf("缓存自动失效: 过期 %d 个、超限 %d 个，当前占用 %s",
-					expired, over, formatBytes(cache.UsageBytes()))
+			expired, over, low := cache.Evict()
+			if expired > 0 || over > 0 || low > 0 {
+				log.Printf("缓存自动失效: 过期 %d 个、超限 %d 个、磁盘余量 %d 个，当前占用 %s（磁盘可用 %s）",
+					expired, over, low, formatBytes(cache.UsageBytes()), formatBytes(cache.DiskFree()))
 			}
 		}
 	}()

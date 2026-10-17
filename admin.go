@@ -114,6 +114,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
+	case sub == "tokens/edit":
+		if s.isAuthed(r) {
+			s.doEditToken(w, r)
+			return
+		}
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
 	case sub == "service":
 		if !s.isAuthed(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
@@ -182,7 +188,7 @@ func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
 	tok := strings.TrimSpace(r.FormValue("token"))
@@ -191,10 +197,14 @@ func (s *Server) doAddToken(w http.ResponseWriter, r *http.Request) {
 	if tok == "" {
 		tok = GenToken()
 	}
-	if !s.store.Has(tok) {
+	code := "token_added"
+	if s.store.Has(tok) {
+		code = "token_exists"
+	} else {
 		s.store.Add(tok, note, role)
 	}
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	// 跳回 Token 管理页（该页才是操作上下文），并带上一次性反馈码
+	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
 }
 
 func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
@@ -205,14 +215,16 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
 	tok := r.FormValue("token")
-	if tok != "" {
+	code := "token_missing"
+	if tok != "" && s.store.Has(tok) {
 		s.store.Delete(tok)
+		code = "token_deleted"
 	}
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"/tokens?ok="+code, http.StatusFound)
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
@@ -252,22 +264,27 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	dockerEx := "Docker 加速未开启（可在「服务管理」开启）"
 	if s.dockerEnabled() {
-		dockerEx = "离线 tar：" + base + "/offline/library/nginx:1.25 ；或 registry 加速：daemon.json 加 \"registry-mirrors\": [\"" + base + "\"] 后 systemctl restart docker"
+		// 离线包必须带 token：没有 token 时给引导文案，不能拼出字面 "token" 占位（否则像是已经固定好了）
+		offlineEx := "请先到「Token 管理」创建一个 token（离线包必须带 token）"
+		if tk != "" {
+			offlineEx = base + "/offline/" + tokSlot(tk) + "/library/nginx:1.25"
+		}
+		// 拉取路径固定为 <用户名>[/<自定义路径>]，因此 registry-mirrors 不再适用，统一用带路径的 pull
+		dockerEx = "离线 tar（需 token）：" + offlineEx +
+			" ；registry 加速（无需 token，按带路径方式 pull）：<code>docker pull " + base + "/" +
+			html.EscapeString(s.dockerV2Prefix()) + "/library/nginx:1.25</code>"
 	}
 	var ex strings.Builder
 	ex.WriteString(`<div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">`)
 	ex.WriteString(`<p class="muted" style="margin:0;flex:1;min-width:220px">已自动填入当前访问地址；下方示例与「链接转换」都会使用这里选定的 Token。</p>`)
-	ex.WriteString(s.tokenSelector(tokens))
+	ex.WriteString(s.tokenSelector(tokens, "示例使用的 Token"))
 	ex.WriteString(`</div>`)
 	ex.WriteString(`<p><strong>GitHub 资源</strong>（需 token）：<br><code>` + ghEx + `</code></p>`)
 	ex.WriteString(`<p><strong>HuggingFace 权重</strong>（需 token）：<br><code>` + hfEx + `</code></p>`)
-	ex.WriteString(`<p><strong>Docker 镜像</strong>（无需 token）：<br><code>` + dockerEx + `</code></p>`)
+	ex.WriteString(`<p><strong>Docker 镜像</strong>（仅离线 tar 需 token；registry 加速走 <code>/v2</code> 由 Docker 客户端直连、无法带 token）：<br><code>` + dockerEx + `</code></p>`)
 	example := ex.String()
-	// Docker 开启时在后台顶部强提醒：/v2、/offline 端点无 Token 鉴权，公网暴露有滥用/带宽风险
-	warnHTML := ""
-	if s.dockerEnabled() {
-		warnHTML = `<div class="alert danger"><strong>⚠️ 安全提醒：Docker 加速/离线镜像已开启</strong>（<code>DOCKER_ENABLED=true</code>）。端点 <code>/v2</code> 与 <code>/offline</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token）。<br>· 若网关经公网/CDN 暴露，<strong>任何人都能使用你的镜像加速、拉取离线 tar</strong>，耗费上游带宽。<br>· 置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只见 CDN 回源 IP，X-Forwarded-For 可伪造）。<br><strong>降低风险（任选）：</strong>1) 不需要公网 Docker 加速就设 <code>DOCKER_ENABLED=false</code>；2) 公网反代挡掉裸路径 <code>location ^~ /v2/ { return 404; }</code>、<code>location ^~ /offline/ { return 404; }</code>，/offline 改用带秘密前缀的地址；3) registry 用「不走 CDN 的难猜子域名」直连源站 + 云安全组按来源 IP 放行；4) 在 CDN（EdgeOne）对 <code>/v2</code>、<code>/offline</code> 配速率限制与带宽封顶（CDN 看得到真实客户端 IP）。详见 <code>docs/docker-deploy.md</code>「Docker 加速安全」。</div>`
-	}
+	// 操作反馈条（保存 / 创建 / 开关等）；Docker 风险说明改由弹窗承载，不再常驻页面
+	flashHTML := s.flashHTML(r)
 	// 侧栏与顶栏（各页面共用组件；小屏侧栏为抽屉）
 	aside := s.consoleAside(r)
 	topbarRight := s.topbarRight(base)
@@ -282,61 +299,96 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		svcBadge(s.dockerEnabled(), "Docker 加速", "已开启", "未开启 · 可配置") +
 		svcBadge(s.hfEnabled(), "HuggingFace", "已开启", "未开启 · 可配置")
 	// 概览统计卡（网关真实指标，不伪造主机监控）
+	// 概览只放与 token 流量相关的指标；缓存细节在下方「缓存管理」里展示，避免重复
 	stats := statCard("Token 数", fmt.Sprintf("%d", len(tokens)), "个") +
 		statCard("总命中", fmt.Sprintf("%d", totalHits), "次") +
 		statCard("总流量", formatBytes(totalBytes), "") +
-		statCard("缓存占用", formatBytes(s.cache.UsageBytes()), "上限 "+formatBytes(s.cache.MaxBytes())) +
 		statCard("运行时长", fmtDuration(time.Since(processStart)), "")
 	// 链接转换器：识别与生成统一在服务端 buildAccelURL（与 MCP convert_link 同一实现）
 	conv := `<div id="gmconv" data-api="` + s.adminPath + `/api/convert" data-csrf="` + csrf + `" hidden></div>` +
-		`<div class="conv-row"><input id="gmconv-in" type="text" autocomplete="off" placeholder="粘贴 GitHub / HuggingFace 原始链接，或 Docker 镜像名（如 library/nginx:1.25）">` +
+		`<div class="conv-row"><input id="gmconv-in" type="text" autocomplete="off" placeholder="粘贴原始链接或镜像名">` +
 		`<button type="button" class="btn" onclick="gmConvert()">获取加速链接</button></div>` +
 		`<div class="conv-row" style="margin-top:10px"><input id="gmconv-out" type="text" readonly placeholder="加速链接将显示在这里">` +
 		`<button type="button" id="gmconv-copy" class="btn outline" onclick="gmCopyConv()">复制</button>` +
 		`<button type="button" class="btn outline" onclick="gmDownloadConv()">下载</button>` +
 		`<button type="button" class="btn outline" onclick="gmOpenConv()">访问</button></div>` +
-		`<p class="muted small" style="margin-top:10px">基于当前访问地址与首个 token 生成；GitHub / HuggingFace 链接需 token，Docker 镜像名给出 <code>/offline</code> 离线 tar 地址。</p>`
+		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出<strong>需带 token</strong> 的 <code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址）。registry 加速走 <code>/v2</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>`
+	// 链接转换卡片的 Token 快捷切换器（与「用法示例」的切换器联动，共用 .gmtok）
+	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
 	// 服务管理三卡：GitHub 恒开；Docker / HuggingFace 即时开关（持锁内存 + settings.json 持久化）
 	svcCard := func(tag, name, desc, usage string, on bool, svc string) string {
 		// 三张卡的底部标识统一宽高，视觉一致；GitHub 恒开用「默认开启」标识代替按钮
 		state, foot := `<span class="badge on">● 已开启</span>`, `<span class="svccard-tag">默认开启</span>`
 		if svc != "" {
-			form := `<form method="post" action="` + s.adminPath + `/service" class="svc-toggle">` +
+			form := `<form method="post" action="` + s.adminPath + `/service" class="svc-toggle"` +
+				` id="gmSvcForm-` + svc + `">` +
 				`<input type="hidden" name="csrf" value="` + csrf + `">` +
 				`<input type="hidden" name="name" value="` + svc + `">`
-			if on {
+			switch {
+			case svc == "docker" && on:
+				// 已开启：提供「自定义路径」（弹窗内改前缀，提交时 on=1 幂等，仅更新路径）+「关闭」
 				state = `<span class="badge on">● 已开启</span>`
-				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn svccard-btn">关闭</button></form>`
-			} else {
+				off := `<form method="post" action="` + s.adminPath + `/service" class="svc-toggle" id="gmSvcForm-docker-off">` +
+					`<input type="hidden" name="csrf" value="` + csrf + `">` +
+					`<input type="hidden" name="name" value="docker">` +
+					`<input type="hidden" name="on" value="0">`
+				foot = form + `<input type="hidden" name="on" value="1">` +
+					`<button type="button" class="btn outline svccard-btn" onclick="gmOpenModal('gmDockerModal','gmSvcForm-docker','保存路径')">自定义路径</button></form>` +
+					off + `<button type="submit" class="btn svccard-btn is-off">关闭</button></form>`
+			case on:
+				// 关闭按钮用另一套配色，和「开启」形成状态区分
+				state = `<span class="badge on">● 已开启</span>`
+				foot = form + `<input type="hidden" name="on" value="0"><button type="submit" class="btn svccard-btn is-off">关闭</button></form>`
+			case svc == "docker":
+				// 开启 Docker 前先弹安全确认（风险说明 + 可选自定义路径），确认后才真正开启
+				state = `<span class="badge off">○ 未开启</span>`
+				foot = form + `<input type="hidden" name="on" value="1">` +
+					`<button type="button" class="btn svccard-btn" onclick="gmOpenModal('gmDockerModal','gmSvcForm-docker','我已知晓，确认开启')">开启</button></form>`
+			default:
 				state = `<span class="badge off">○ 未开启</span>`
 				foot = form + `<input type="hidden" name="on" value="1"><button type="submit" class="btn svccard-btn">开启</button></form>`
 			}
 		}
-		return `<div class="svccard"><div class="svccard-head"><span class="tag">` + tag + `</span><h3>` + name + `</h3>` + state + `</div>` +
+		return `<div class="svccard"><div class="svccard-head">` + svcTagHTML(tag) + `<h3>` + name + `</h3>` + state + `</div>` +
 			`<p>` + desc + `</p><p><code>` + usage + `</code></p>` +
 			`<div class="svccard-foot">` + foot + `</div></div>`
 	}
+	// Docker 卡片的用法说明：路径固定带 <用户名>[/<自定义路径>]
+	ownerSeg := s.dockerUserSegment()
+	dockerUsage := "docker pull &lt;域名&gt;/" + html.EscapeString(ownerSeg) +
+		"/library/nginx:1.25（用户名段必带）；/offline/&lt;token&gt;/&lt;image&gt;"
+	if c := s.dockerPath(); c != "" {
+		dockerUsage = "docker pull &lt;域名&gt;/" + html.EscapeString(ownerSeg) + "/" + html.EscapeString(c) +
+			"/library/nginx:1.25；/offline/&lt;token&gt;/&lt;image&gt;"
+	}
 	services := `<div class="svcgrid">` +
 		svcCard("GH", "GitHub 资源加速", "覆盖 blob / raw、Releases、仓库打包 archive 与短链，支持 Range 断点续传。始终可用。", "/g/&lt;token&gt;/https://github.com/owner/repo", true, "") +
-		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启后请阅读顶部安全提醒。", "daemon.json → registry-mirrors；/offline/&lt;image&gt;", s.dockerEnabled(), "docker") +
+		svcCard("DK", "Docker 镜像加速", "registry-mirror 回源 Docker Hub / GHCR，并可产出可 docker load 的离线 tar。开启前请先阅读安全说明。", dockerUsage, s.dockerEnabled(), "docker") +
 		svcCard("HF", "HuggingFace 权重", "加速模型与 LFS 大文件下载，token 模式下需带 token。", "/hf/&lt;token&gt;/owner/repo/resolve/main/file", s.hfEnabled(), "hf") +
-		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>`
+		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.dockerPath(), s.dockerUserSegment())
 	// 缓存管理：已用总量 / 单文件上限 / 总上限 / 时效，均热改；超限与过期自动清理；可一键清除
 	maxFileMB := int(s.cache.MaxBytes() / (1024 * 1024))
 	maxTotalMB := int(s.cache.MaxTotalBytes() / (1024 * 1024))
 	ttlMin := int(s.cache.TTL() / time.Minute)
-	totalTxt, ttlTxt := "不限", "永不过期"
+	totalTxt := "不限"
 	if maxTotalMB > 0 {
 		totalTxt = formatBytes(s.cache.MaxTotalBytes())
 	}
-	if ttlMin > 0 {
-		ttlTxt = fmt.Sprintf("%d 分钟", ttlMin)
+	// 磁盘可用空间：低于 1 GiB 时缓存也会按最旧优先自动清理
+	freeBytes := s.cache.DiskFree()
+	diskTxt, diskSub := "—", "探测不可用"
+	if freeBytes > 0 {
+		diskTxt = formatBytes(freeBytes)
+		diskSub = "充裕"
+		if freeBytes < diskFreeMin {
+			diskSub = "偏低，缓存会自动清理"
+		}
 	}
 	cacheMgmt := `<div class="stats">` +
 		statCard("缓存已用", formatBytes(s.cache.UsageBytes()), "总上限 "+totalTxt) +
 		statCard("单文件上限", fmt.Sprintf("%d MB", maxFileMB), "超过则不缓存") +
-		statCard("缓存时效", ttlTxt, "到期自动失效") +
-		statCard("缓存目录", html.EscapeString(s.cfg.CacheDir), "") +
+		statCard("磁盘可用", diskTxt, diskSub) +
+		statCardCls("缓存目录", html.EscapeString(s.cfg.CacheDir), "服务端本地路径", "sm") +
 		`</div>
 <form method="post" action="` + s.adminPath + `/cache" class="row" style="margin-top:16px;align-items:flex-end">
   <input type="hidden" name="csrf" value="` + csrf + `">
@@ -349,25 +401,27 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
   <input type="hidden" name="csrf" value="` + csrf + `">
   <button type="submit" class="btn outline">清除缓存</button>
 </form>
-<p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。时效：到期文件由后台周期任务自动删除。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
+<p class="muted small" style="margin-top:12px">单文件上限：单个响应超过该大小则只透传、不缓存。总上限：超出后<strong>按最旧优先</strong>自动清理。<strong>磁盘可用空间低于 1 GB 时，即使没到总上限也会按最旧优先清理</strong>（缓存是临时的，避免写满磁盘拖垮整机）。时效：到期文件由后台周期任务自动删除。设置即时生效并持久化，优先于环境变量 <code>MAX_CACHE_MB</code> / <code>CACHE_TTL_MINUTES</code>。</p>`
 	// Token 区块已独立成页，这里只放引导卡
 	tokensGuide := `<p class="muted">Token 的创建、复制、删除与角色管理已独立成页，便于统一维护。</p>` +
 		`<div class="row" style="margin-top:12px"><a class="btn" href="` + s.adminPath + `/tokens">前往 Token 管理` +
 		`（` + strconv.Itoa(len(tokens)) + `）</a></div>`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, warn, badges, stats, converter, services, cacheMgmt, examples, tokensGuide
+	// verbs: aside, topbarRight, flash, badges, stats, convSel, converter, services, cacheMgmt, examples, tokensGuide
 	// 只 Sprintf body 片段（无 CSS 的 %），再用 pageApp() 全幅包裹
-	body := fmt.Sprintf(dashboardBody, aside, topbarRight, warnHTML, badges, stats, conv, services, cacheMgmt, example, tokensGuide)
+	body := fmt.Sprintf(dashboardBody, aside, topbarRight, flashHTML, badges, stats, convSel, conv, services, cacheMgmt, example, tokensGuide)
 	_, _ = w.Write([]byte(pageApp("管理后台 - gh-mirror", "gh-mirror 管理后台", body)))
 }
 
 // tokSlot 把示例里的 token 包成可被前端替换的片段（切换 Token 选择器时更新）。
+// data-orig 记住服务端渲染时的值：前端切到空/失效 token 时回退到它，避免露出字面 "token" 占位。
 func tokSlot(tk string) string {
 	if tk == "" {
-		return `<span class="tslot">token</span>`
+		return `<span class="tslot" data-orig="">token</span>`
 	}
-	return `<span class="tslot">` + html.EscapeString(tk) + `</span>`
+	esc := html.EscapeString(tk)
+	return `<span class="tslot" data-orig="` + esc + `">` + esc + `</span>`
 }
 
 // shortTok 取 token 前 8 位用于展示，避免长串占满下拉框。
@@ -378,27 +432,29 @@ func shortTok(tk string) string {
 	return tk[:8]
 }
 
-// tokenSelector 生成「示例用 Token」下拉框：按列表序号 + 备注 + token 前 8 位展示，便于查找切换。
-func (s *Server) tokenSelector(tokens []*Token) string {
+// tokenSelector 生成 Token 快捷下拉框：按列表序号 + 备注 + token 前 8 位展示，便于查找切换。
+// 用 class="gmtok" 而非 id，使同一页面可放多个实例（链接转换 / 用法示例）并保持联动。
+func (s *Server) tokenSelector(tokens []*Token, label string) string {
 	var sb strings.Builder
-	sb.WriteString(`<div class="tsel"><label for="gmTokenSel">示例使用的 Token</label><select id="gmTokenSel" onchange="gmApplyToken(this.value)">`)
+	sb.WriteString(`<div class="tsel"><label>` + html.EscapeString(label) + `</label><select class="gmtok" onchange="gmApplyToken(this.value)" aria-label="` + html.EscapeString(label) + `">`)
 	if len(tokens) == 0 {
 		sb.WriteString(`<option value="">暂无 token</option>`)
 	} else {
 		for i, t := range tokens {
-			label := t.Note
-			if label == "" {
-				label = "（无备注）"
+			note := t.Note
+			if note == "" {
+				note = "（无备注）"
 			}
 			sb.WriteString(fmt.Sprintf(`<option value="%s">%d. %s · %s…</option>`,
-				html.EscapeString(t.Token), i+1, html.EscapeString(label), html.EscapeString(shortTok(t.Token))))
+				html.EscapeString(t.Token), i+1, html.EscapeString(note), html.EscapeString(shortTok(t.Token))))
 		}
 	}
 	sb.WriteString(`</select></div>`)
 	return sb.String()
 }
 
-// tokenRows 渲染 Token 表格行（含一键复制与删除）。
+// tokenRows 渲染 Token 表格行（复制 / 编辑 / 删除）。
+// 每个 td 带 data-label，窄屏下由 CSS 切换为卡片式布局；每行后跟一条隐藏的编辑行（行内表单）。
 func (s *Server) tokenRows(tokens []*Token, csrf string) string {
 	var rows strings.Builder
 	for _, t := range tokens {
@@ -406,28 +462,63 @@ func (s *Server) tokenRows(tokens []*Token, csrf string) string {
 		if t.LastUsed > 0 {
 			lastUsed = time.Unix(t.LastUsed, 0).Format("2006-01-02 15:04")
 		}
+		// 角色文案用「普通 / 高级」：避免与后续多用户系统里的"管理员"角色混淆（admin 为内部值，保持兼容）
 		roleTxt, roleCls := "普通", "badge"
 		if normRole(t.Role) == RoleAdmin {
-			roleTxt, roleCls = "管理员", "badge on"
+			roleTxt, roleCls = "高级", "badge role-admin"
+		}
+		esc := html.EscapeString(t.Token)
+		// 列表里只显示缩写（完整值放 title 并用「复制」按钮拿走），避免 32 位 token 把表格撑宽
+		shown := esc
+		if len(t.Token) > 10 {
+			shown = html.EscapeString(shortTok(t.Token)) + "…"
 		}
 		rows.WriteString(fmt.Sprintf(
-			`<tr><td><span class="tok-cell"><code>%s</code>`+
+			`<tr class="tok-row"><td data-label="Token"><span class="tok-cell"><code title="完整 Token：%s">%s</code>`+
 				`<button type="button" class="btn outline" title="复制 token" onclick="gmCopyText(this,&quot;%s&quot;)">复制</button></span></td>`+
-				`<td>%s</td><td><span class="%s">%s</span></td><td>%s</td><td class="num">%d</td><td class="num">%s</td><td>%s</td><td>
-<form method="post" action="%s/del" class="del-form">
+				`<td data-label="备注">%s</td>`+
+				`<td data-label="类型"><span class="%s">%s</span></td>`+
+				`<td data-label="创建时间">%s</td>`+
+				`<td data-label="访问次数" class="num">%d</td>`+
+				`<td data-label="流量" class="num">%s</td>`+
+				`<td data-label="最近使用">%s</td>`+
+				`<td data-label="操作"><span class="ops">`+
+				`<button type="button" class="btn outline edit-toggle" onclick="gmToggleEdit(this)" aria-expanded="false">编辑</button>`+
+				`<form method="post" action="%s/del" class="del-form">`+
+				`<input type="hidden" name="csrf" value="%s">`+
+				`<input type="hidden" name="token" value="%s">`+
+				`<button type="submit" class="danger" onclick="return confirm('确定删除该 token？')">删除</button>`+
+				`</form></span></td></tr>
+<tr class="edit-row" hidden><td colspan="8">
+<form method="post" action="%s/tokens/edit" class="edit-form">
 <input type="hidden" name="csrf" value="%s">
 <input type="hidden" name="token" value="%s">
-<button type="submit" class="danger" onclick="return confirm('确定删除该 token？')">删除</button>
-</form></td></tr>`,
-			html.EscapeString(t.Token), html.EscapeString(t.Token), html.EscapeString(t.Note), roleCls, roleTxt,
+<label class="fld">备注<input name="note" value="%s" placeholder="用于区分用途，如 CI / 个人笔记本"></label>
+<label class="fld">类型<select name="role" aria-label="Token 类型"><option value="user"%s>普通 Token（仅代理）</option><option value="admin"%s>高级 Token（可用于 MCP）</option></select></label>
+<button type="submit" class="btn">保存</button>
+<button type="button" class="btn outline" onclick="gmToggleEdit(this)">取消</button>
+<span class="muted small">Token 值不可修改，避免已发出的链接失效。</span>
+</form>
+</td></tr>`,
+			esc, shown, esc, html.EscapeString(t.Note), roleCls, roleTxt,
 			time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"),
 			t.Hits, formatBytes(t.Bytes), lastUsed,
-			s.adminPath, csrf, html.EscapeString(t.Token)))
+			s.adminPath, csrf, esc,
+			s.adminPath, csrf, esc, html.EscapeString(t.Note),
+			selAttr(normRole(t.Role) == RoleUser), selAttr(normRole(t.Role) == RoleAdmin)))
 	}
 	if len(tokens) == 0 {
 		rows.WriteString(`<tr><td colspan="8" class="muted">暂无 token，请在上方创建</td></tr>`)
 	}
 	return rows.String()
+}
+
+// selAttr 返回选中属性（供编辑表单里的角色下拉回显）。
+func selAttr(sel bool) string {
+	if sel {
+		return " selected"
+	}
+	return ""
 }
 
 // tokenAddForm Token 新增表单（角色选择供 MCP 使用）。
@@ -436,15 +527,19 @@ func (s *Server) tokenAddForm(csrf string) string {
 		`<input type="hidden" name="csrf" value="` + csrf + `">` +
 		`<input name="token" placeholder="留空则自动生成">` +
 		`<input name="note" placeholder="备注（可选）">` +
-		`<select name="role" title="角色：管理员可用于 MCP 接入" aria-label="Token 角色">` +
-		`<option value="user">普通用户</option><option value="admin">管理员（MCP）</option></select>` +
+		`<select name="role" title="Token 类型：高级 Token 可用于 MCP 接入" aria-label="Token 类型">` +
+		`<option value="user">普通 Token</option><option value="admin">高级 Token（可用于 MCP）</option></select>` +
 		`<button type="submit" class="btn">添加</button></form>` +
-		`<p class="muted small" style="margin-top:8px">角色说明：普通 token 仅用于代理访问；<strong>管理员 token</strong> 可用于 <code>MCP</code> 接入（<code>/mcp</code> 或 <code>gh-mirror mcp</code>），请勿随意外发。</p>`
+		`<p class="muted small" style="margin-top:8px">说明：<strong>普通 Token</strong>仅用于代理访问；<strong>高级 Token</strong> 另可用于 <code>MCP</code> 接入（<code>/mcp</code> 或 <code>gh-mirror mcp</code>），请勿随意外发。</p>`
 }
 
-// tokenFoot Token 页面页脚链接。
+// tokenFoot Token 页面页脚链接（各带适配图标，便于快速识别）。
 func (s *Server) tokenFoot() string {
-	return `<a href="` + s.adminPath + `/logout">退出登录</a> · <a href="/">返回首页</a> · <a href="` + repoURL + `" target="_blank" rel="noopener">GitHub</a>`
+	return `<a href="` + s.adminPath + `/logout">` + logoutSVG + `退出登录</a>` +
+		`<span class="foot-sep">·</span>` +
+		`<a href="/">` + homeSVG + `返回首页</a>` +
+		`<span class="foot-sep">·</span>` +
+		`<a href="` + repoURL + `" target="_blank" rel="noopener">` + githubSVG + `GitHub</a>`
 }
 
 // renderTokensPage 渲染 Token 管理独立页面（/admin/tokens）。
@@ -457,8 +552,8 @@ func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 	csrf := s.csrfToken(sid)
 	tokens := s.store.All()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, rows, addForm, foot
-	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)),
+	// verbs: aside, topbarRight, flash, rows, addForm, foot
+	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
 		s.tokenRows(tokens, csrf), s.tokenAddForm(csrf), s.tokenFoot())
 	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
 }
@@ -470,20 +565,107 @@ func (s *Server) consoleAside(r *http.Request) string {
 	if n > 0 {
 		tokensNav = fmt.Sprintf("Token 管理（%d）", n)
 	}
-	active := ""
+	// 高亮互斥：/admin/tokens 时只高亮 Token 管理，其余情况高亮概览
+	overviewActive, tokensActive := " active", ""
 	if strings.HasSuffix(r.URL.Path, "/tokens") {
-		active = " active"
+		overviewActive, tokensActive = "", " active"
 	}
-	return `<aside id="gmNav"><a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a><nav class="nav">` +
-		`<a class="navitem` + active + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
-		`<a class="navitem` + active + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
+	return `<aside id="gmNav">` +
+		`<a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>` +
+		`<nav class="nav">` +
+		`<a class="navitem` + overviewActive + `" href="` + s.adminPath + `"><span class="ic">▦</span>概览</a>` +
+		`<a class="navitem` + tokensActive + `" href="` + s.adminPath + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
 		`<a class="navitem" href="` + s.adminPath + `#services"><span class="ic">⚙️</span>服务管理</a>` +
 		`<a class="navitem" href="` + s.adminPath + `#cache"><span class="ic">💾</span>缓存管理</a>` +
 		`<span class="navsep"></span>` +
-		`<a class="navitem" href="` + repoURL + `/#文档" target="_blank" rel="noopener"><span class="ic">📄</span>文档</a>` +
-		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">✦</span>GitHub</a>` +
-		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">⎋</span>退出登录</a></nav></aside>` +
+		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
+		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">` + githubSVG + `</span>GitHub</a>` +
+		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">` + logoutSVG + `</span>退出登录</a>` +
+		`</nav>` + s.asideFoot() + `</aside>` +
 		`<button class="nav-mask" type="button" aria-label="关闭导航菜单" onclick="toggleNav()"></button>`
+}
+
+// asideFoot 渲染侧栏底部信息区：⭐ Star 引导 + 当前版本号 + Releases 链接。
+// 版本号由构建期注入（见 main.go 的 version），此处只做静态展示，不联网拉取最新版本。
+func (s *Server) asideFoot() string {
+	return `<div class="aside-foot">` +
+		`<a class="star-cta" href="` + repoURL + `" target="_blank" rel="noopener" title="在 GitHub 上 Star 本项目">⭐ Star 支持一下</a>` +
+		`<div class="ver">` + tagSVG + `当前版本 <code>` + html.EscapeString(version) + `</code></div>` +
+		`<a class="ver-link" href="` + repoURL + `/releases" target="_blank" rel="noopener">` + pkgSVG + `查看 Releases</a>` +
+		`</div>`
+}
+
+// doEditToken 修改 Token 的备注与角色（登录 + CSRF；token 值本身不可改）。
+func (s *Server) doEditToken(w http.ResponseWriter, r *http.Request) {
+	sid, ok := s.parseSession(r)
+	if !ok {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	r.ParseForm()
+	if !s.validCSRF(sid, r.FormValue("csrf")) {
+		http.Redirect(w, r, s.adminPath+"/tokens?err=csrf", http.StatusFound)
+		return
+	}
+	tok := strings.TrimSpace(r.FormValue("token"))
+	note := strings.TrimSpace(r.FormValue("note"))
+	role := normRole(r.FormValue("role"))
+	if !s.store.Update(tok, note, role) {
+		http.Redirect(w, r, s.adminPath+"/tokens?err=token_missing", http.StatusFound)
+		return
+	}
+	log.Printf("Token 已更新: 类型=%s", role)
+	http.Redirect(w, r, s.adminPath+"/tokens?ok=token_updated", http.StatusFound)
+}
+
+// flashOK / flashErr 把 POST 后重定向携带的 ok / err 码翻译成可读文案。
+var flashOK = map[string]string{
+	"token_added":   "Token 已创建，可立即用于代理访问",
+	"token_deleted": "Token 已删除",
+	"token_updated": "Token 已保存",
+	"token_exists":  "该 Token 已存在，未做改动",
+	"service_on":    "服务已开启，即时生效（已持久化）",
+	"service_off":   "服务已关闭",
+	"cache_saved":   "缓存设置已保存，即时生效",
+	"cache_cleared": "缓存已清除",
+}
+
+var flashErr = map[string]string{
+	"csrf":          "安全校验失败（会话可能已过期），请刷新页面后重试",
+	"token_missing": "Token 不存在或已被删除",
+	"bad_input":     "输入不合法，请检查后重试",
+	"svc_unknown":   "未知服务，仅支持 Docker / HuggingFace",
+	"svc_failed":    "服务开关调整失败，请查看日志",
+	"path_invalid":  "自定义路径不合法（仅支持字母、数字、-、_、/，最长 64 字符）",
+}
+
+// flashHTML 渲染一次性操作反馈条（保存 / 创建 / 开关等操作后的即时提示）。
+// 文案由重定向带上来的 ?ok= / ?err= 决定；前端会自动淡出并清理该查询参数。
+func (s *Server) flashHTML(r *http.Request) string {
+	q := r.URL.Query()
+	msg, kind := "", ""
+	if code := q.Get("ok"); code != "" {
+		if m, ok := flashOK[code]; ok {
+			msg, kind = m, "ok"
+		}
+	}
+	if msg == "" {
+		if code := q.Get("err"); code != "" {
+			if m, ok := flashErr[code]; ok {
+				msg, kind = m, "err"
+			}
+		}
+	}
+	if msg == "" {
+		return ""
+	}
+	icon := "✓"
+	if kind == "err" {
+		icon = "!"
+	}
+	return `<div class="flash ` + kind + `" id="gmFlash" role="status" aria-live="polite">` +
+		`<strong style="flex:0 0 auto">` + icon + `</strong><span>` + msg + `</span>` +
+		`<button type="button" class="flash-x" onclick="gmDismissFlash()" aria-label="关闭提示">✕</button></div>`
 }
 
 // topbarRight 渲染后台顶栏右侧按钮（各页面共用）。
@@ -512,7 +694,16 @@ func formatBytes(n int64) string {
 
 // statCard 生成一张概览统计卡（标题 / 数值 / 可选副标题）。
 func statCard(k, v, sub string) string {
-	out := `<div class="stat"><p class="k">` + k + `</p><p class="v">` + v + `</p>`
+	return statCardCls(k, v, sub, "")
+}
+
+// statCardCls 同 statCard，但可给数值附加样式类（如 "sm" 用于缓存目录这类长文本）。
+func statCardCls(k, v, sub, cls string) string {
+	vcls := "v"
+	if cls != "" {
+		vcls = "v " + cls
+	}
+	out := `<div class="stat"><p class="k">` + k + `</p><p class="` + vcls + `">` + v + `</p>`
 	if sub != "" {
 		out += `<p class="s">` + sub + `</p>`
 	}
@@ -537,21 +728,39 @@ func (s *Server) doToggleService(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"?err=csrf#services", http.StatusFound)
 		return
 	}
 	name := strings.ToLower(strings.TrimSpace(r.FormValue("name")))
 	if name != "docker" && name != "hf" {
-		http.Error(w, "未知服务（仅支持 docker / hf）", http.StatusBadRequest)
+		http.Redirect(w, r, s.adminPath+"?err=svc_unknown#services", http.StatusFound)
 		return
 	}
 	on := r.FormValue("on") == "1" || strings.EqualFold(r.FormValue("on"), "true") || strings.EqualFold(r.FormValue("on"), "on")
+	// 表单里存在 dockerPath 才更新自定义路径（只有 Docker 的开关表单会带该字段）
+	if name == "docker" {
+		if vals, ok := r.PostForm["dockerPath"]; ok {
+			p := ""
+			if len(vals) > 0 {
+				p = vals[0]
+			}
+			if err := s.setDockerPath(p); err != nil {
+				http.Redirect(w, r, s.adminPath+"?err=path_invalid#services", http.StatusFound)
+				return
+			}
+			log.Printf("Docker 自定义路径已更新: %q", s.dockerPath())
+		}
+	}
 	if err := s.setService(name, on); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Redirect(w, r, s.adminPath+"?err=svc_failed#services", http.StatusFound)
 		return
 	}
 	log.Printf("服务开关已调整: %s -> %v", name, on)
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	code := "service_off"
+	if on {
+		code = "service_on"
+	}
+	http.Redirect(w, r, s.adminPath+"?ok="+code+"#services", http.StatusFound)
 }
 
 // doSetCache 运行时调整缓存参数（单文件上限 / 总上限 / 时效），即时生效并持久化。
@@ -563,20 +772,20 @@ func (s *Server) doSetCache(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"?err=csrf#cache", http.StatusFound)
 		return
 	}
 	maxFileMB := atoiOr(r.FormValue("maxFileMB"), -1)
 	maxTotalMB := atoiOr(r.FormValue("maxTotalMB"), -1)
 	ttlMinutes := atoiOr(r.FormValue("ttlMinutes"), -1)
 	if maxFileMB < -1 || maxTotalMB < -1 || ttlMinutes < -1 {
-		http.Error(w, "参数不合法（应为非负整数）", http.StatusBadRequest)
+		http.Redirect(w, r, s.adminPath+"?err=bad_input#cache", http.StatusFound)
 		return
 	}
 	_ = s.setCacheLimits(maxFileMB, maxTotalMB, ttlMinutes)
 	log.Printf("缓存参数已调整: 单文件=%dMB 总计=%dMB 时效=%d分钟",
 		int(s.cache.MaxBytes()/(1024*1024)), int(s.cache.MaxTotalBytes()/(1024*1024)), int(s.cache.TTL()/time.Minute))
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"?ok=cache_saved#cache", http.StatusFound)
 }
 
 // doClearCache 清空缓存目录内的所有文件（不影响 Token 与设置）。
@@ -588,12 +797,12 @@ func (s *Server) doClearCache(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	if !s.validCSRF(sid, r.FormValue("csrf")) {
-		http.Error(w, "CSRF 校验失败", http.StatusForbidden)
+		http.Redirect(w, r, s.adminPath+"?err=csrf#cache", http.StatusFound)
 		return
 	}
 	files, bytes := s.cache.Clear()
 	log.Printf("缓存已清除: %d 个文件，%s", files, formatBytes(bytes))
-	http.Redirect(w, r, s.adminPath, http.StatusFound)
+	http.Redirect(w, r, s.adminPath+"?ok=cache_cleared#cache", http.StatusFound)
 }
 
 // convertResp 是链接转换 API（POST /admin/api/convert）的 JSON 响应。
@@ -685,7 +894,11 @@ func (s *Server) buildAccelURL(base, raw, tk string) accelResult {
 		if !s.dockerEnabled() {
 			return accelResult{Kind: "docker", Hint: "Docker 加速未开启，请先在「服务管理」开启"}
 		}
-		return accelResult{Kind: "docker", URL: base + "/offline/" + raw}
+		if tk == "" {
+			return accelResult{Kind: "docker", Hint: "离线 tar 需要 token，请先在「Token 管理」添加一个 token"}
+		}
+		// 离线包地址必须带 token（/offline/<token>/<image>）
+		return accelResult{Kind: "docker", URL: base + "/offline/" + tk + "/" + raw}
 	}
 	return accelResult{Hint: "无法识别：支持 github.com / huggingface.co 链接，或 Docker 镜像名如 library/nginx:1.25"}
 }

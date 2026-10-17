@@ -95,19 +95,17 @@ curl -fsS $B/healthz                                            # ok
 # GitHub 代理（双斜杠必须保留）
 curl -fsSI "$B/g/<TK>/https://raw.githubusercontent.com/octocat/Hello-World/master/README"
 # 搜索 / tags
-curl -fsS "$B/search?q=nginx" | head;  curl -fsS "$B/tags?image=library/nginx" | head
+curl -fsS "$B/search?q=nginx" | head;  curl -fsS "$B/tags?repo=library/nginx" | head
 # HuggingFace 代理（需 HF_ENABLED=true 且主机出网）
 curl -fsSL "$B/hf/<repo>/<path>" -o part.bin -w "hf:%{http_code} size:%{size_download}\n"
 # 离线 tar（P5 关键）：产出后本机 docker load 能载入
-curl -fsS "$B/offline/library/nginx:1.25" -o nginx.tar && docker load -i nginx.tar && docker images | grep nginx
+curl -fsS "$B/offline/$TOKEN/library/nginx:1.25" -o nginx.tar && docker load -i nginx.tar && docker images | grep nginx
 ```
-**Docker 加速（registry-mirror）**：
+**Docker 加速（带路径 pull）**：
 ```bash
-# /etc/docker/daemon.json 加：
-#   { "registry-mirrors": ["https://git.yufeng.site"] }
-systemctl restart docker
-docker pull nginx            # 再看网关日志是否命中缓存
-docker logs -f gh-mirror
+# 路径固定为 <用户名>[/<自定义路径>]，用户名 = ADMIN_USER（自定义路径在后台可选）
+docker pull git.yufeng.site/admin/library/nginx:1.25
+docker logs -f gh-mirror     # 看网关日志是否命中缓存
 ```
 > 若 docker 报 mirror 相关错误（EdgeOne/https 兼容问题），可临时改用 `http://127.0.0.1:8080` 在源站本机验证加速链路。
 

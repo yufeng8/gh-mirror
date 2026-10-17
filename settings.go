@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gh-mirror/config"
@@ -17,11 +18,37 @@ import (
 type settings struct {
 	Docker bool `json:"docker"`
 	HF     bool `json:"hf"`
-	Cache  struct {
+	// DockerPath 是 /v2 的「自定义路径」，只存用户填写部分（可含 /，如 team-a/9f3k2）。
+	// 实际路径前缀固定为 <用户名>[/<DockerPath>]（用户名段强制存在，见 dockerV2Prefix），
+	// 等同给 registry 端点加了一道「只有知道路径的人能用」的保护，也为多用户各自独立路径预留规则。
+	DockerPath string `json:"dockerPath"`
+	Cache      struct {
 		MaxFileMB  int `json:"maxFileMB"`  // 单文件缓存上限（MB），0 = 不限制
 		MaxTotalMB int `json:"maxTotalMB"` // 缓存总上限（MB），0 = 不限制
 		TTLMinutes int `json:"ttlMinutes"` // 缓存时效（分钟），0 = 永不过期
 	} `json:"cache"`
+}
+
+// normDockerPath 规范化 Docker 自定义路径：去首尾与重复斜杠，只允许 [A-Za-z0-9-_/]，最长 64 字符。
+// 返回 (规范化结果, 是否合法)；空串表示不启用前缀（合法）。
+func normDockerPath(p string) (string, bool) {
+	p = strings.Trim(strings.TrimSpace(p), "/")
+	parts := strings.FieldsFunc(p, func(r rune) bool { return r == '/' })
+	p = strings.Join(parts, "/")
+	if p == "" {
+		return "", true
+	}
+	if len(p) > 64 {
+		return "", false
+	}
+	for _, r := range p {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '/':
+		default:
+			return "", false
+		}
+	}
+	return p, true
 }
 
 // settingsPath 返回 settings.json 路径（tokens.json 同目录，即 gm-data 卷内）。
@@ -48,9 +75,16 @@ func loadSettings(s *Server, cfg *config.Config) {
 		log.Printf("settings.json 解析失败，忽略并使用部署基线: %v", err)
 		return
 	}
+	if p, ok := normDockerPath(st.DockerPath); ok {
+		st.DockerPath = p
+	} else {
+		log.Printf("settings.json 的 dockerPath 不合法，已忽略: %q", st.DockerPath)
+		st.DockerPath = ""
+	}
 	s.svcMu.Lock()
 	s.dockerOn = st.Docker
 	s.hfOn = st.HF
+	s.dockerPrefix = st.DockerPath
 	s.svcMu.Unlock()
 	s.cache.SetMaxFileMB(st.Cache.MaxFileMB)
 	s.cache.SetMaxTotalMB(st.Cache.MaxTotalMB)
@@ -75,7 +109,7 @@ func saveSettings(path string, st settings) error {
 // currentSettings 汇总当前生效的服务开关与缓存参数。
 func (s *Server) currentSettings() settings {
 	s.svcMu.RLock()
-	st := settings{Docker: s.dockerOn, HF: s.hfOn}
+	st := settings{Docker: s.dockerOn, HF: s.hfOn, DockerPath: s.dockerPrefix}
 	s.svcMu.RUnlock()
 	st.Cache.MaxFileMB = int(s.cache.MaxBytes() / (1024 * 1024))
 	st.Cache.MaxTotalMB = int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -102,6 +136,63 @@ func (s *Server) setService(name string, on bool) error {
 		s.svcMu.Unlock()
 		return fmt.Errorf("未知服务: %s", name)
 	}
+	s.svcMu.Unlock()
+	s.saveSettings()
+	return nil
+}
+
+// dockerPath 返回用户填写的「自定义路径」（不含用户名段；空表示只用用户名段）。
+func (s *Server) dockerPath() string {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.dockerPrefix
+}
+
+// dockerUserSegment 返回 /v2 路径里的用户名段：小写化 + 非法字符替换为 -（Docker 仓库路径必须小写）。
+func (s *Server) dockerUserSegment() string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(s.adminUser)) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	seg := strings.Trim(b.String(), "-")
+	if seg == "" {
+		seg = "user"
+	}
+	return seg
+}
+
+// dockerV2Prefix 返回 /v2 的**完整**路径前缀：<用户名>[/<自定义路径>]。
+// 用户名段强制存在、不可省略——这样每个用户天然拥有独立路径，
+// 也是后续多用户模式（每用户一条 /v2 路径）的基础。
+func (s *Server) dockerV2Prefix() string {
+	owner := s.dockerUserSegment()
+	custom := s.dockerPath()
+	// 兼容历史数据：若自定义路径里已包含用户名段，剥掉避免出现 <owner>/<owner>/...
+	if strings.HasPrefix(custom, owner+"/") {
+		custom = strings.TrimPrefix(custom, owner+"/")
+	}
+	if custom == owner {
+		custom = ""
+	}
+	if custom != "" {
+		return owner + "/" + custom
+	}
+	return owner
+}
+
+// setDockerPath 设置 /v2 的自定义路径前缀（持锁改内存 + 持久化）。空串表示不启用前缀。
+func (s *Server) setDockerPath(p string) error {
+	np, ok := normDockerPath(p)
+	if !ok {
+		return fmt.Errorf("自定义路径不合法（仅支持字母、数字、-、_、/，最长 64 字符）")
+	}
+	s.svcMu.Lock()
+	s.dockerPrefix = np
 	s.svcMu.Unlock()
 	s.saveSettings()
 	return nil

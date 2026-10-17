@@ -149,7 +149,7 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "list_tokens", Description: "列出全部 Token（含角色、命中数、流量、创建与最近使用时间）。",
+		Name: "list_tokens", Description: "列出全部 Token（含类型、命中数、流量、创建与最近使用时间）。",
 		InputSchema: objSchema(nil, nil),
 		handler: func(s *Server, base string, args map[string]any) mcpCallResult {
 			toks := s.store.All()
@@ -176,7 +176,7 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "create_token", Description: "创建新 Token。role 可为 user（默认，仅代理）或 admin（可用于 MCP 接入）。",
+		Name: "create_token", Description: "创建新 Token。类型 role 可为 user（默认，普通 Token，仅代理）或 admin（高级 Token，可用于 MCP 接入）。",
 		InputSchema: objSchema(map[string]any{
 			"token": propStr("指定 token 值，留空则自动生成"),
 			"note":  propStr("备注说明"),
@@ -584,7 +584,7 @@ func runMCPStdio(s *Server) {
 	}
 	if *token == "" {
 		fmt.Fprintln(os.Stderr, "缺少 admin token：请使用 --token <token> 或设置 GM_MCP_TOKEN")
-		fmt.Fprintln(os.Stderr, "提示：在管理后台创建 token 时把角色设为「管理员(admin)」。")
+		fmt.Fprintln(os.Stderr, "提示：在管理后台创建 token 时把类型选为「高级 Token（可用于 MCP）」（内部值 admin）。")
 		os.Exit(2)
 	}
 	// stdout 仅供协议使用

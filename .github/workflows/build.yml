@@ -40,7 +40,7 @@ jobs:
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
           OUT="gh-mirror-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}"
-          go build -o "$OUT" .
+          go build -ldflags "-X main.version=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}" -o "$OUT" .
           echo "OUT=$OUT" >> "$GITHUB_ENV"
 
       - name: Upload artifact
