@@ -71,7 +71,7 @@
 | 🐳 **Docker 镜像** | `/v2/<用户名>[/<自定义路径>]/…` | 路径前缀（协议无法带 Token） | 多源回源（Docker Hub / GHCR / Quay / GCR / k8s）、Manifest+Token 内存缓存、Layer 磁盘缓存 |
 | 🐙 **GitHub 资源** | `/g/<token>/https://github.com/…` | Token | 覆盖 blob/raw、archive、releases、API，支持 `Range` 续传 |
 | 🤗 **HuggingFace 权重** | `/hf/<token>/<owner>/<repo>/resolve/<rev>/<file>` | Token | 自动跟随 302 到 CDN，模型 / LFS 大文件流式 + 缓存 |
-| 📦 **离线镜像 tar** | `/offline/<token>/<image>` | Token | 不需要本地 Docker，直接产出 `docker load` 可用的 tar |
+| 📦 **离线镜像 tar** | `/offline/<用户名>/<token>/<image>` | 用户名段 + Token | 不需要本地 Docker，直接产出 `docker load` 可用的 tar |
 
 ### 💡 为什么值得自托管
 
@@ -178,7 +178,7 @@ gh-mirror mcp --token <高级Token>
 - 🐳 **Docker 镜像加速**：兼容 Registry API v2，内置 Docker Hub / GHCR / Quay / GCR / registry.k8s.io 多源；Manifest/Token 内存缓存、Layer 写透磁盘缓存、流式传输、`Range` 断点续传。
 - 🐙 **GitHub 资源加速**：`/g/<token>/` + 完整 GitHub 地址，覆盖 blob/raw、archive、releases、API，自带磁盘缓存。
 - 🤗 **HuggingFace 加速**：`/hf/<token>/<owner>/<repo>/resolve/<rev>/<file>`，自动跟随 302 到 CDN，模型/LFS 流式 + 缓存。
-- 📦 **离线镜像 tar**：`/offline/<token>/<image>` 无需本地 Docker，把镜像打包成 `docker load` 可用的 tar（流式 + 同镜像并发防抖；**需 token**，避免公开暴露被白嫖流量）。
+- 📦 **离线镜像 tar**：`/offline/<用户名>/<token>/<image>` 无需本地 Docker，把镜像打包成 `docker load` 可用的 tar（流式 + 同镜像并发防抖；**需用户名段与 token**，避免公开暴露被白嫖流量）。
 - 🔍 **镜像搜索**：Docker Hub 搜索 / 标签浏览，服务端渲染轻量页面（`/search`、`/tags`）与 JSON API（`/api/search`、`/api/tags`）。
 - 🛡️ **安全管控**：Token 鉴权（默认）+ 可选开放模式；IP（CIDR）/ 仓库（通配符）黑白名单；按真实客户端 IP 的令牌桶限流（IPv6 归并 `/64`）。
 - ⚙️ **统一配置**：`config.toml` + 环境变量覆盖，平滑兼容旧的环境变量部署。
@@ -367,7 +367,7 @@ curl -L -o model.bin "https://mirror.example.com/hf/<owner>/<repo>/resolve/main/
 开启 `[docker] enabled=true` 后，按需把镜像打包成 `docker load` 可用的 tar，**无需本地 Docker**：
 
 ```bash
-curl -L -o nginx.tar "https://mirror.example.com/offline/<token>/library/nginx:1.25"
+curl -L -o nginx.tar "https://mirror.example.com/offline/<用户名>/<token>/library/nginx:1.25"
 docker load -i nginx.tar
 ```
 

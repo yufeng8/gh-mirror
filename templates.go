@@ -83,7 +83,7 @@ func dockerModalHTML(cur, owner string) string {
         <p class="muted small">当前预览：<code id="gmDockerPathPreview">docker pull &lt;本服务域名&gt;/` + html.EscapeString(owner) + `/library/nginx:1.25</code></p>
         <p class="muted small">自定义路径仅支持字母、数字、<code>-</code>、<code>_</code>、<code>/</code>，最长 64 字符。<strong>注意：这种方式下 <code>registry-mirrors</code> 不再生效</strong>，必须按上面的带路径方式拉取。</p>
       </div>
-      端点 <code>/v2</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token），<code>&lt;用户名&gt;/&lt;自定义路径&gt;</code> 就是给它的「秘密前缀」式保护；<code>/offline</code> 离线包<strong>必须带 Token</strong>（<code>/offline/&lt;token&gt;/&lt;镜像名&gt;</code>，缺失或无效一律 404）。
+      端点 <code>/v2</code> <strong>不使用 Token 鉴权</strong>（Docker registry 协议无法携带 Token），<code>&lt;用户名&gt;/&lt;自定义路径&gt;</code> 就是给它的「秘密前缀」式保护；<code>/offline</code> 离线包<strong>必须带用户名段与 Token</strong>（<code>/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像名&gt;</code>，缺失或无效一律 404）。
       <ul>
         <li>若网关经<strong>公网 / CDN 暴露</strong>，任何人都能使用你的镜像加速、拉取离线 tar，<strong>耗费上游带宽</strong>。</li>
         <li>置于 CDN 后：<code>[acl] ip_allow</code> <strong>无法按真实客户端 IP 限制</strong>（源站只看到 CDN 回源 IP，X-Forwarded-For 可伪造）。</li>
@@ -720,7 +720,7 @@ const homeTmpl = `
   <div class="grid-features">
     <div class="feature">` + tagGH + `<h3>GitHub 全场景加速</h3><p>覆盖 blob/raw、Releases、仓库打包 archive、短链 gh/，支持 Range 断点续传。</p></div>
     <div class="feature">` + tagHF + `<h3>HuggingFace 权重</h3><p>加速模型 / LFS 大文件下载，config.toml 一键开启。</p></div>
-    <div class="feature">` + tagDK + `<h3>Docker 镜像加速</h3><p>registry-mirror 回源 Docker Hub / GHCR，另支持 /offline/<token>/<镜像> 产出可 docker load 的 tar（离线包需 token）。</p></div>
+    <div class="feature">` + tagDK + `<h3>Docker 镜像加速</h3><p>registry-mirror 回源 Docker Hub / GHCR，另支持 /offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像&gt; 产出可 docker load 的 tar（离线包需 token）。</p></div>
     <div class="feature"><span class="tag">SRC</span><h3>镜像搜索</h3><p>内置强大的镜像搜索：<code>/search</code>、<code>/tags</code> 页面与 API，并可通过 MCP 供 Agent 调用。</p></div>
     <div class="feature"><span class="tag">AI</span><h3>MCP 接入 · Agent 友好</h3><p>内置 MCP 服务端，AI Agent 可直接管理 Token、服务开关、缓存与链接转换。</p></div>
     <div class="feature"><span class="tag">AUTH</span><h3>Token 鉴权</h3><p>后台签发 Token，无效请求返回 404，访问可控、可审计。</p></div>
@@ -743,7 +743,7 @@ const homeTmpl = `
     </div>
     <div class="svc">
       ` + tagDK + `<h3>Docker 镜像</h3>
-      <p>registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>（无需 token，路径必须带用户名段，后台可再加自定义路径）；离线 tar 走 <code>/offline/&lt;token&gt;/&lt;镜像&gt;</code> 供 <code>docker load</code>。</p>
+      <p>registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>（无需 token，路径必须带用户名段，后台可再加自定义路径）；离线 tar 走 <code>/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像&gt;</code> 供 <code>docker load</code>。</p>
       <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>docker pull &lt;你的域名&gt;/&lt;用户名&gt;/library/nginx:1.25</code></pre></div>
     </div>
   </div>

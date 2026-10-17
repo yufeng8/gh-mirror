@@ -16,7 +16,7 @@
    ```bash
    docker pull <域名>/<用户名>/library/nginx:1.25
    ```
-2. **离线包强制 Token**：`/offline/<镜像>` → `/offline/<token>/<镜像>`，缺失或无效一律 404
+2. **离线包强制用户名段与 Token**：`/offline/<token>/<镜像>` → `/offline/<用户名>/<token>/<镜像>`（多用户隔离；token 必须归属该用户名），缺失或无效一律 404
 3. **Token 字段**：新增 `owner`（归属用户，多用户预留，旧数据自动归属默认管理员）；后台展示的「角色」改称「类型」（内部值 `admin` / `user` 不变，MCP 仍要求高级 Token）
 
 ## 🚀 快速开始
