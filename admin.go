@@ -291,17 +291,17 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	stats := statCard("Token 数", fmt.Sprintf("%d", len(tokens)), "个") +
 		statCard("总命中", fmt.Sprintf("%d", totalHits), "次") +
 		statCard("总流量", formatBytes(totalBytes), "") +
-		statCard("缓存占用", formatBytes(s.cache.UsageBytes()), "上限 "+formatBytes(s.cache.MaxBytes())) +
+		statCard("缓存占用", formatBytes(s.cache.UsageBytes()), "单文件上限 "+formatBytes(s.cache.MaxBytes())) +
 		statCard("运行时长", fmtDuration(time.Since(processStart)), "")
 	// 链接转换器：识别与生成统一在服务端 buildAccelURL（与 MCP convert_link 同一实现）
 	conv := `<div id="gmconv" data-api="` + s.adminPath + `/api/convert" data-csrf="` + csrf + `" hidden></div>` +
-		`<div class="conv-row"><input id="gmconv-in" type="text" autocomplete="off" placeholder="粘贴 GitHub / HuggingFace 原始链接，或 Docker 镜像名（如 library/nginx:1.25）">` +
+		`<div class="conv-row"><input id="gmconv-in" type="text" autocomplete="off" placeholder="粘贴原始链接或镜像名">` +
 		`<button type="button" class="btn" onclick="gmConvert()">获取加速链接</button></div>` +
 		`<div class="conv-row" style="margin-top:10px"><input id="gmconv-out" type="text" readonly placeholder="加速链接将显示在这里">` +
 		`<button type="button" id="gmconv-copy" class="btn outline" onclick="gmCopyConv()">复制</button>` +
 		`<button type="button" class="btn outline" onclick="gmDownloadConv()">下载</button>` +
 		`<button type="button" class="btn outline" onclick="gmOpenConv()">访问</button></div>` +
-		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成；GitHub / HuggingFace 链接需带 token，Docker 镜像名给出 <code>/offline</code> 离线 tar 地址。</p>`
+		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出 <code>/offline</code> 离线 tar 地址）。</p>`
 	// 链接转换卡片的 Token 快捷切换器（与「用法示例」的切换器联动，共用 .gmtok）
 	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
 	// 服务管理三卡：GitHub 恒开；Docker / HuggingFace 即时开关（持锁内存 + settings.json 持久化）
@@ -344,7 +344,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		statCard("缓存已用", formatBytes(s.cache.UsageBytes()), "总上限 "+totalTxt) +
 		statCard("单文件上限", fmt.Sprintf("%d MB", maxFileMB), "超过则不缓存") +
 		statCard("缓存时效", ttlTxt, "到期自动失效") +
-		statCard("缓存目录", html.EscapeString(s.cfg.CacheDir), "") +
+		statCardCls("缓存目录", html.EscapeString(s.cfg.CacheDir), "", "sm") +
 		`</div>
 <form method="post" action="` + s.adminPath + `/cache" class="row" style="margin-top:16px;align-items:flex-end">
   <input type="hidden" name="csrf" value="` + csrf + `">
@@ -416,9 +416,10 @@ func (s *Server) tokenRows(tokens []*Token, csrf string) string {
 		if t.LastUsed > 0 {
 			lastUsed = time.Unix(t.LastUsed, 0).Format("2006-01-02 15:04")
 		}
+		// 角色文案用「普通 / 高级」：避免与后续多用户系统里的"管理员"角色混淆（admin 为内部值，保持兼容）
 		roleTxt, roleCls := "普通", "badge"
 		if normRole(t.Role) == RoleAdmin {
-			roleTxt, roleCls = "管理员", "badge role-admin"
+			roleTxt, roleCls = "高级", "badge role-admin"
 		}
 		esc := html.EscapeString(t.Token)
 		// 列表里只显示缩写（完整值放 title 并用「复制」按钮拿走），避免 32 位 token 把表格撑宽
@@ -447,7 +448,7 @@ func (s *Server) tokenRows(tokens []*Token, csrf string) string {
 <input type="hidden" name="csrf" value="%s">
 <input type="hidden" name="token" value="%s">
 <label class="fld">备注<input name="note" value="%s" placeholder="用于区分用途，如 CI / 个人笔记本"></label>
-<label class="fld">角色<select name="role" aria-label="Token 角色"><option value="user"%s>普通用户（仅代理）</option><option value="admin"%s>管理员（可用于 MCP）</option></select></label>
+<label class="fld">类型<select name="role" aria-label="Token 类型"><option value="user"%s>普通 Token（仅代理）</option><option value="admin"%s>高级 Token（可用于 MCP）</option></select></label>
 <button type="submit" class="btn">保存</button>
 <button type="button" class="btn outline" onclick="gmToggleEdit(this)">取消</button>
 <span class="muted small">Token 值不可修改，避免已发出的链接失效。</span>
@@ -480,10 +481,10 @@ func (s *Server) tokenAddForm(csrf string) string {
 		`<input type="hidden" name="csrf" value="` + csrf + `">` +
 		`<input name="token" placeholder="留空则自动生成">` +
 		`<input name="note" placeholder="备注（可选）">` +
-		`<select name="role" title="角色：管理员可用于 MCP 接入" aria-label="Token 角色">` +
-		`<option value="user">普通用户</option><option value="admin">管理员（MCP）</option></select>` +
+		`<select name="role" title="Token 类型：高级 Token 可用于 MCP 接入" aria-label="Token 类型">` +
+		`<option value="user">普通 Token</option><option value="admin">高级 Token（可用于 MCP）</option></select>` +
 		`<button type="submit" class="btn">添加</button></form>` +
-		`<p class="muted small" style="margin-top:8px">角色说明：普通 token 仅用于代理访问；<strong>管理员 token</strong> 可用于 <code>MCP</code> 接入（<code>/mcp</code> 或 <code>gh-mirror mcp</code>），请勿随意外发。</p>`
+		`<p class="muted small" style="margin-top:8px">说明：<strong>普通 Token</strong>仅用于代理访问；<strong>高级 Token</strong> 另可用于 <code>MCP</code> 接入（<code>/mcp</code> 或 <code>gh-mirror mcp</code>），请勿随意外发。</p>`
 }
 
 // tokenFoot Token 页面页脚链接。
@@ -529,7 +530,7 @@ func (s *Server) consoleAside(r *http.Request) string {
 		`<span class="navsep"></span>` +
 		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
 		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">✦</span>GitHub</a>` +
-		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">⎋</span>退出登录</a>` +
+		`<a class="navitem" href="` + s.adminPath + `/logout"><span class="ic">` + logoutSVG + `</span>退出登录</a>` +
 		`</nav>` + s.asideFoot() + `</aside>` +
 		`<button class="nav-mask" type="button" aria-label="关闭导航菜单" onclick="toggleNav()"></button>`
 }
@@ -593,7 +594,16 @@ func formatBytes(n int64) string {
 
 // statCard 生成一张概览统计卡（标题 / 数值 / 可选副标题）。
 func statCard(k, v, sub string) string {
-	out := `<div class="stat"><p class="k">` + k + `</p><p class="v">` + v + `</p>`
+	return statCardCls(k, v, sub, "")
+}
+
+// statCardCls 同 statCard，但可给数值附加样式类（如 "sm" 用于缓存目录这类长文本）。
+func statCardCls(k, v, sub, cls string) string {
+	vcls := "v"
+	if cls != "" {
+		vcls = "v " + cls
+	}
+	out := `<div class="stat"><p class="k">` + k + `</p><p class="` + vcls + `">` + v + `</p>`
 	if sub != "" {
 		out += `<p class="s">` + sub + `</p>`
 	}

@@ -8,9 +8,11 @@ gh-mirror 内置 **MCP（Model Context Protocol）服务端**：AI Agent 可通�
 
 ## 1. 准备：签发一个 admin 角色的 Token
 
-MCP 鉴权要求 **admin 角色** 的 token（与普通代理用的 user token 区分）。
+MCP 鉴权要求 **高级 Token**（内部角色值 `admin`，与普通代理用的 `user` token 区分）。
 
-在管理后台 →「Token 管理」→「新增 Token」，**角色选择「管理员（MCP）」**即可。旧 token 若没有角色字段，加载时按 `user` 处理（不影响原有代理）。
+在管理后台 →「Token 管理」→「新增 Token」，**类型选择「高级 Token（可用于 MCP）」**即可。旧 token 若没有该字段，加载时按 `user` 处理（不影响原有代理）。
+
+> 命名说明：面板里显示为「高级 Token」而非「管理员」，是为了与后续多用户系统的账号角色（超级管理员 / 管理员 / 普通用户）区分，避免歧义；内部存储值仍是 `admin`。
 
 > admin token 具备运维能力，**请勿随意外发**；它同时不会泄露 `ADMIN_SECRET`，也不能修改超级管理员账号。
 

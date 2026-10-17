@@ -584,7 +584,7 @@ func runMCPStdio(s *Server) {
 	}
 	if *token == "" {
 		fmt.Fprintln(os.Stderr, "缺少 admin token：请使用 --token <token> 或设置 GM_MCP_TOKEN")
-		fmt.Fprintln(os.Stderr, "提示：在管理后台创建 token 时把角色设为「管理员(admin)」。")
+		fmt.Fprintln(os.Stderr, "提示：在管理后台创建 token 时把类型选为「高级 Token（可用于 MCP）」（内部值 admin）。")
 		os.Exit(2)
 	}
 	// stdout 仅供协议使用

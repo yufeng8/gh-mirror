@@ -30,6 +30,9 @@ const logoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" rol
   <path d="M21 32 L27 34 L23 28 Z" fill="#ffffff"/>
 </svg>`
 
+// logoutSVG 是「退出登录」用的图标（门 + 外出的箭头，比符号 ⎋ 更直观）。
+const logoutSVG = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 2H4.2A1.7 1.7 0 0 0 2.5 3.7v8.6A1.7 1.7 0 0 0 4.2 14h2.3"/><path d="M10.6 11.2 13.8 8l-3.2-3.2"/><path d="M13.8 8H6.2"/></svg>`
+
 // logoSVGAlt 是 logoSVG 的第二份副本，唯一差别是渐变 id（gm2）。
 // 为什么必须存在：同一页面会出现两个 logo，若二者复用同一个 <linearGradient id="gm"> 就形成重复 ID；
 // 当其中一个所在容器被 display:none（如登录页 ≤860px 隐藏左侧品牌区）时，另一个的
@@ -111,7 +114,7 @@ const pageStyle = `
   pre code{background:transparent;color:inherit;padding:0}
   a{color:var(--primary);text-decoration:none}
   a:hover{text-decoration:underline}
-  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:var(--radius);background:var(--primary);color:var(--primary-foreground);font-size:.95rem;font-weight:600;border:1px solid transparent;cursor:pointer;transition:filter .15s,transform .15s}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:9px 16px;border-radius:var(--radius);background:var(--primary);color:var(--primary-foreground);font-size:.95rem;font-weight:600;border:1px solid transparent;cursor:pointer;transition:filter .15s,transform .15s}
   .btn:hover{filter:brightness(1.03);text-decoration:none;transform:translateY(-1px)}
   .btn.outline{background:transparent;color:var(--foreground);border-color:var(--border)}
   .btn:focus-visible,button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
@@ -190,9 +193,12 @@ const pageStyle = `
   .console{display:flex;min-height:100vh}
   .console aside{width:232px;flex:0 0 auto;border-right:1px solid var(--border);padding:16px 14px;position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--card)}
   .console aside .brand{display:flex;align-items:center;gap:10px;font-weight:800;padding:4px 8px 16px}
-  .console .nav{display:grid;gap:4px}
+  /* align-content:start 必需：.nav 在 flex 列里被拉伸时，grid 行会被平均撑开导致导航项间距过大 */
+  .console .nav{display:grid;gap:4px;align-content:start}
   .navitem{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;color:var(--muted-foreground);font-weight:500;font-size:.92rem}
   .navitem:hover{background:var(--muted);color:var(--foreground);text-decoration:none}
+  .navitem .ic{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 auto}
+  .navitem .ic svg{display:block}
   .navitem.active{background:var(--muted);color:var(--foreground);font-weight:650}
   .navitem .ic{width:18px;text-align:center;flex:0 0 auto}
   .console .main{flex:1;min-width:0;padding:22px 26px 56px}
@@ -204,6 +210,8 @@ const pageStyle = `
   .stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
   .stat .k{color:var(--muted-foreground);font-size:.8rem;margin:0}
   .stat .v{font-size:1.55rem;font-weight:750;margin:3px 0 0;font-variant-numeric:tabular-nums;line-height:1.1}
+  /* 长文本型统计值（如缓存目录路径）：缩小字号并允许断行，避免撑破卡片 */
+  .stat .v.sm{font-size:.98rem;font-weight:650;line-height:1.4;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace}
   .stat .s{color:var(--muted-foreground);font-size:.76rem;margin:3px 0 0}
   .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;background:var(--muted);color:var(--muted-foreground);font-size:.8rem;font-weight:600;white-space:nowrap}
   .badge.on{background:rgba(34,197,94,.15);color:#15803d}
@@ -314,9 +322,17 @@ const pageStyle = `
   .edit-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .edit-form .fld input,.edit-form .fld select{width:220px}
   .edit-form .muted{margin:0 0 6px}
+  /* 全局下拉框统一外观（原生下拉在各处风格不一致，这里统一为与输入框一致的圆角+自绘箭头） */
+  select{appearance:none;-webkit-appearance:none;padding:9px 34px 9px 12px;border:1px solid var(--border);border-radius:10px;
+    background-color:var(--background);color:var(--foreground);font-size:.88rem;line-height:1.3;
+    background-repeat:no-repeat;background-position:right 11px center;background-size:12px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%2371717a' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E")}
+  select:hover{border-color:var(--ring)}
+  select:focus{outline:none;border-color:var(--ring);box-shadow:0 0 0 3px rgba(22,163,74,.16)}
+  html.dark select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%23a1a1aa' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E")}
   .tsel{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .tsel label{font-size:.8rem;color:var(--muted-foreground);font-weight:600;margin:0}
-  .tsel select{padding:7px 10px;border:1px solid var(--border);border-radius:9px;background:var(--background);color:var(--foreground);font-size:.86rem;max-width:100%}
+  .tsel label{font-size:.78rem;color:var(--muted-foreground);font-weight:600;margin:0;white-space:nowrap}
+  .tsel select{min-width:210px;max-width:100%;font-size:.84rem}
   .tok-cell{display:flex;align-items:center;gap:8px}
   .tok-cell code{flex:1;min-width:0}
   .svc-toggle{display:inline}
