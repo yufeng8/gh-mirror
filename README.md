@@ -97,7 +97,7 @@ curl -sX POST https://mirror.example.com/ai/<用户名>/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
-# 方式二：stdio（本地或跳板机；token 必填）
+# 方式二：stdio（仅限与网关数据同机；远程部署请用 HTTP 方式）
 gh-mirror mcp --token <高级Token>
 ```
 

@@ -676,10 +676,14 @@ func runMCPStdio(s *Server) {
 }
 
 // defaultBase 由监听地址推导默认基地址（stdio 模式下没有 HTTP 请求可参照）。
+// 0.0.0.0 / 缺省主机段归一为 127.0.0.1——0.0.0.0 不是可访问地址，
+// 直接拼接会生成 http://0.0.0.0:8080 这类无效链接（容器部署 LISTEN 常为 0.0.0.0:8080）。
 func defaultBase(listen string) string {
 	host := listen
-	if strings.HasPrefix(host, ":") {
-		host = "127.0.0.1" + host
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		if h := host[:i]; h == "" || h == "0.0.0.0" {
+			host = "127.0.0.1" + host[i:]
+		}
 	}
 	return "http://" + host
 }
