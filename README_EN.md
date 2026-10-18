@@ -123,26 +123,61 @@ Copy the prompt below **as a whole** to CodeBuddy / Cursor / Claude or any AI Ag
 ```text
 You are a deployment assistant. Deploy gh-mirror (a self-hosted multi-service acceleration gateway: Docker image / GitHub resource / HuggingFace weight acceleration + image search + MCP) on this Linux server, exposed at https://<your-domain>.
 
+[Step 0: anti-hallucination rules (highest priority — violating them means a wrong deployment)]
+1. **Whitelist only**: env vars, docs, endpoints and image tags must come from the explicit lists in this prompt.
+   Anything not listed that you "think should exist" does not exist — **never generate it from memory**.
+2. **Verify before use**: unsure whether a variable / file / endpoint exists? clone the repo and check with
+   grep / ls (e.g. `grep -rn "VAR" config/config.go`, `ls docs/`). If you can't find it, follow this
+   whitelist — **never fill the gap with a name you invented**.
+3. **Never invent prefixed variables**: do not emit non-whitelisted `GM_*`, `GHW_*`, `GHW-*`, `GH_*`
+   variables — the service reads none of them; they are dead config (and may leak plaintext passwords
+   into compose). The only `GM_`-prefixed one is `GM_MCP_TOKEN`, used solely by the `gh-mirror mcp` subcommand.
+4. **Don't invent "plausible" switches**: gh-mirror has **no** env var for concurrency / threads /
+   connections / run mode / database / max users. Use `RATELIMIT_ENABLED` for throttling; limit memory/CPU
+   at the **Docker layer** (`mem_limit: 900m` / `cpus: 1` in compose), not via env vars.
+5. **Only read docs that exist**: there is **no** `COMPOSE.md`, `RELEASES.md`, `INSTALL.md` or
+   `releases.atom` in this repo — don't read or cite imagined filenames. Real docs are listed below.
+
 [Step 1: confirm the public domain]
 <your-domain> is a generic placeholder, not any specific site. Before doing anything, ask the user: "What is the public domain?"; if the user does not provide one, do not guess or reuse the example domain — ask first, then continue. Replace every <your-domain> below with the confirmed domain.
 
 [Hard requirements]
-1. Read the repo docs first and follow the environment adaptation / conflict checklist strictly:
+1. Read the repo docs first (**only these real ones**):
    git clone https://github.com/yufeng8/gh-mirror.git
-   - docs/docker-deploy.md: generic Docker deployment, correct setup for domain-fronting CDNs (EdgeOne/Cloudflare), Docker acceleration security
+   - README.md (overview)
+   - docs/docker-deploy.md: generic Docker deployment, correct setup for domain-fronting CDNs (EdgeOne/Cloudflare), Docker acceleration security, known pitfalls
    - docs/deploy-runbook.md: the full flow (probe → choose → execute → end-to-end verify)
+   - docs/mcp.md: MCP integration
+   - .env.example: **the single authoritative whitelist of env vars**
+   Then follow the environment adaptation / conflict checklist in docs/deploy-runbook.md strictly.
 2. Prefer the prebuilt image, do not compile: ghcr.io/yufeng8/gh-mirror:<latest stable tag> (multi-arch, all features).
-   Do not hardcode a version: check GitHub Releases (https://github.com/yufeng8/gh-mirror/releases) for the current latest stable tag first, then build the image name.
-   :latest follows the latest stable release, but pin an explicit tag for controllable upgrades.
+   - Get the tag from the GitHub Releases page (https://github.com/yufeng8/gh-mirror/releases), or
+     `gh release list --exclude-pre-releases --limit 1`;
+     **do not use `:latest`** (uncontrollable upgrades) and **do not look for `releases.atom`** (no such file).
 3. Persist data with named volumes: gm-data (tokens & settings), gm-cache (cache). Recreating the container must not lose data.
 4. Generate strong random values for ADMIN_PASS and ADMIN_SECRET on the spot and keep them safe (never commit them or write them to logs).
-   ADMIN_PATH defaults to /admin, LISTEN defaults to 0.0.0.0:8080.
+   ⚠️ Important (a top cause of login failures): ADMIN_PASS is the **seed password used on first start** —
+   on startup the program writes ADMIN_USER and the password hash into gm-data/users.json; **changing the
+   ADMIN_PASS env var later will NOT update an existing user's password**. If you changed the password and
+   can't log in: log in with the old password and change it under "User management", or delete users.json
+   inside the volume and restart so it is re-seeded with the current ADMIN_PASS.
+   ADMIN_PATH defaults to /admin, LISTEN defaults to 127.0.0.1:8080.
 5. Pick one of two deployment shapes based on the machine; do not hijack host ports 80/443:
    A. Machine already runs nginx / KPanel: **use the repo's `docker-compose.standalone.yml`** (single file, exposes only 127.0.0.1:8080, prebuilt image, real env vars) — `docker compose -f docker-compose.standalone.yml up -d`, then let the existing reverse proxy forward; **don't** hand-edit `ports` / `environment` on the root `docker-compose.yml` to cobble one together.
    B. Clean host: use the repo's bundled nginx (--profile proxy) or reuse an existing host certificate.
-6. Environment variables: **only** the real ones listed in `.env.example`
-   (ADMIN_*/USER_PATH/CACHE_*/LISTEN/COOKIE_SECURE/HF_ENABLED/RATELIMIT_ENABLED/UPSTREAM_SOCKS5/USE_JSDELIVR…).
-   **Never invent `GM_`-prefixed variables**: `GM_DATA_DIR`, `GM_PROXY_MAX_*`, `GM_PROXY_MAX_PROXY_*`, `GM_ALLOWED_NETWORKS`, `GM_ADMIN_PASSWORD`, etc. are **not read** by the main service (the only `GM_`-prefixed one is `GM_MCP_TOKEN`, used only by the `gh-mirror mcp` subcommand and irrelevant to the gateway). Writing them is dead config and may leak a plaintext password into compose.
+6. Environment variables: **only** these real ones (identical to `.env.example`; nothing else exists):
+   - required: ADMIN_USER, ADMIN_PASS, ADMIN_SECRET
+   - entries: ADMIN_PATH (default /admin), USER_PATH (default /user)
+   - network: LISTEN (default 127.0.0.1:8080)
+   - cache/storage: CACHE_DIR, CACHE_TTL_MINUTES, MAX_CACHE_MB, UPSTREAM_TIMEOUT, TOKENS_FILE
+   - switches: DOCKER_ENABLED, HF_ENABLED, RATELIMIT_ENABLED, USE_JSDELIVR, COOKIE_SECURE
+   - egress: UPSTREAM_SOCKS5
+   **Never invent any non-whitelisted variable** (`GM_*`, `GHW_*`, `GHW-*`, `GH_*`…): `GM_DATA_DIR`,
+   `GM_PROXY_MAX_*`, `GM_ALLOWED_NETWORKS`, `GM_ADMIN_PASSWORD`, `GHW-MODE`, `GHW-DB`, `GHW-DATA-DIR`,
+   `GHW-USER-MAX-CONC`, etc. are **not read** by the main service (the only `GM_`-prefixed one is
+   `GM_MCP_TOKEN`, used only by the `gh-mirror mcp` subcommand). Writing them is dead config and may
+   leak a plaintext password into compose.
+   ⚠️ With plain HTTP (no TLS) you must set `COOKIE_SECURE=false`, otherwise login silently fails / loops.
 7. The reverse-proxy block must be configured exactly like this (otherwise proxy paths return 404):
    merge_slashes off;
    proxy_pass http://127.0.0.1:8080$request_uri;   # $request_uri is mandatory
@@ -164,6 +199,13 @@ You are a deployment assistant. Deploy gh-mirror (a self-hosted multi-service ac
 - Image search: curl -fsS "https://<your-domain>/search?q=nginx" returns results
 - If Docker acceleration is enabled: docker pull <your-domain>/<ADMIN_USER>/library/nginx:1.25 pulls and hits cache (the path must carry the username segment; an optional custom path can be added in the dashboard);
   curl -fsS "https://<your-domain>/offline/<ADMIN_USER>/<ADMIN_TOKEN>/library/nginx:1.25" -o nginx.tar and docker load -i nginx.tar loads it (the offline path must carry both the username segment and the token)
+- If HuggingFace is enabled: curl -fsS "https://<your-domain>/hf/<ADMIN_USER>/<ADMIN_TOKEN>/openai-community/gpt2/resolve/main/config.json" returns content
+- If MCP is used: POST https://<your-domain>/ai/<ADMIN_USER>/mcp works (the legacy `/mcp` endpoint is deprecated and always returns 401 — expected)
+
+⚠️ **Never verify endpoints gh-mirror does not proxy** (**do not enumerate beyond this list**):
+`/hf/*/discussions`, `/hf/*/pulls/*/diff`, `/hf/*/compare/*/diff` and similar GitHub social / collaboration
+features are **out of scope** and will always 404. A 404 there does not mean the install failed — do not
+retry or change config because of it. Verify only the items listed above.
 
 [On errors]
 Do not retry blindly. Read the "known pitfalls / troubleshooting" section of docs/docker-deploy.md first; if still unresolved,
@@ -175,7 +217,7 @@ Deployment shape (A/B), image tag, each verification result as ✅/❌, and any 
 
 </details>
 
-> The prompt includes the hard constraint "**confirm the public domain before touching anything**" and the correct reverse-proxy / CDN setup, so agents won't guess domains or produce 404s. Once the service is up, you can also hand the MCP connection commands from [docs/mcp.md](docs/mcp.md) to an agent and let it take over tokens, service switches and cache.
+> The prompt includes the hard constraint "**confirm the public domain before touching anything**", the correct reverse-proxy / CDN setup, and an **anti-hallucination whitelist** (real env vars / docs / endpoints plus a "verify before use" rule) — so agents won't guess domains, invent `GM_*`/`GHW_*` variables, read non-existent docs, or treat endpoints gh-mirror doesn't proxy as a failed install. Once the service is up, you can also hand the MCP connection commands from [docs/mcp.md](docs/mcp.md) to an agent and let it take over tokens, service switches and cache.
 
 ---
 

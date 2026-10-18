@@ -102,12 +102,19 @@ docker compose -f docker-compose.standalone.yml up -d
 无需叠加其它文件、无需 `--build`（用的是预构建镜像），配合根目录 `.env.example`（填 `ADMIN_PASS` / `ADMIN_SECRET`）即可。
 适合「机器已有 nginx / KPanel / CDN(EdgeOne) 等反代」的场景——网关只跑在本地 8080，由既有反代转发到公网。
 
-### ⚠️ 反面教材：不要臆造 GM_* 环境变量
+### ⚠️ 反面教材：不要臆造 GM_* / GHW_* 等环境变量
 gh-mirror 主服务**只认** `.env.example` 里列出的变量（`ADMIN_*` / `USER_PATH` / `CACHE_*` / `LISTEN` / `COOKIE_SECURE` / `HF_ENABLED` / …）。
 某些 AI 自动生成的配置里出现的大批 `GM_DATA_DIR`、`GM_PROXY_MAX_*`、`GM_PROXY_MAX_PROXY_*`、
-`GM_ALLOWED_NETWORKS`、`GM_ADMIN_PASSWORD` 等——**程序一律不读取**，纯属幻觉配置，写了等于没写（明文密码还泄露）。
+`GM_ALLOWED_NETWORKS`、`GM_ADMIN_PASSWORD`，以及 `GHW-MODE`、`GHW-DB`、`GHW-DATA-DIR`、
+`GHW-USER-MAX-CONC` 等——**程序一律不读取**，纯属幻觉配置，写了等于没写（明文密码还泄露）。
 唯一以 `GM_` 开头的是 `GM_MCP_TOKEN`，且仅用于 `gh-mirror mcp` 子命令的 stdio 调用，与主服务无关。
-正确做法：用 `.env.example` 里的真实变量；镜像用 `@sha256:` 或 `:vX.Y.Z` 锁定即可。
+正确做法：用 `.env.example` 白名单里的真实变量；镜像用 `@sha256:` 或 `:vX.Y.Z` 锁定即可。
+
+> **给 AI Agent / 自动部署**：完整规则见 [docs/agent-prompt.md](docs/agent-prompt.md)，内含「反幻觉总规则」——
+> 真实变量 / 文档 / 端点白名单，以及「不确定就先 grep 查证，绝不用自己编的名字填空」。
+> 仓库**没有** `COMPOSE.md` / `RELEASES.md` / `INSTALL.md` / `releases.atom` 等文件，不要按臆想的文件名去读。
+> 另外 `/hf/*/discussions`、`/hf/*/pulls/*/diff`、`/hf/*/compare/*/diff` 等 GitHub 社交功能
+> **不在镜像范围**，验证时必然 404，不代表安装失败，不要据此反复重试或改配置。
 
 ## 反向代理与 TLS
 - **场景 A（既有反代）**：把域名转发到 `127.0.0.1:8080`（或你设的 `GM_BIND_ADDR:GM_HTTP_PORT`），
