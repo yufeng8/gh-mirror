@@ -624,7 +624,30 @@ function gmCloseModal(reset){var ms=document.querySelectorAll('.modal');for(var 
 function gmConfirmModal(){var f=gmPendingForm;gmCloseModal(false);if(f)if(typeof f.requestSubmit==='function'){f.requestSubmit()}else{f.submit()}}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')gmCloseModal()});
 (function(){try{var t=localStorage.getItem('gm_tok');var sels=document.querySelectorAll('.gmtok');if(!sels.length)return;if(!t){return}var hit=false;for(var i=0;i<sels.length;i++){for(var j=0;j<sels[i].options.length;j++){if(sels[i].options[j].value===t){hit=true;break}}if(hit){break}}if(hit){gmApplyToken(t)}else{try{localStorage.removeItem('gm_tok')}catch(e){}}}catch(e){}})();
-function togglePromptExpand(){var t=document.getElementById('agentPromptTerm');var b=document.querySelector('#agentPromptTerm .fold-btn');if(!t||!b)return;var folded=t.classList.toggle('folded');b.textContent=folded?'展开':'收起';if(!folded){t.scrollIntoView({behavior:'smooth',block:'nearest'})}}
+/* 首页「复制最新提示词」：优先从 jsDelivr / GitHub raw 取最新版本（与仓库始终同步，不必等发版）；
+   取不到（离线 / 内网部署）时回退到镜像内置的 agentPrompt()。 */
+function gmCopyLatestPrompt(btn){
+  var fb=document.getElementById('agentPromptFallback');
+  /* 管理员自定义过提示词（AGENT_PROMPT_FILE / gm-data/agent-prompt.md）时以其为准，不去拉远端 */
+  if(fb&&fb.getAttribute('data-custom')==='1'){gmCopyText(btn,fb.textContent);return}
+  var urls=['https://cdn.jsdelivr.net/gh/yufeng8/gh-mirror@main/docs/agent-prompt.md',
+            'https://raw.githubusercontent.com/yufeng8/gh-mirror/main/docs/agent-prompt.md'];
+  var i=0;
+  function fallback(){
+    btn.disabled=false;
+    var t=fb?fb.textContent:'';
+    if(t&&t.trim()){gmCopyText(btn,t)}
+    else{alert('无法从 GitHub 获取提示词（可能无外网），请点「在 GitHub 上查看 / 手动复制」')}
+  }
+  function next(){
+    if(i>=urls.length){fallback();return}
+    var u=urls[i++];
+    fetch(u,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('bad');return r.text()})
+      .then(function(t){if(!t||!t.trim())throw new Error('empty');btn.disabled=false;gmCopyText(btn,t)})
+      .catch(function(){next()});
+  }
+  btn.disabled=true;btn.textContent='获取中…';next();
+}
 (function(){var d=document.documentElement.classList.contains('dark');var b=document.getElementById('themeToggle');if(b)b.textContent=d?'☀️ 浅色':'🌙 深色';})();
 </script>`
 
@@ -687,13 +710,37 @@ func (s *Server) agentPrompt() string {
 	return agentPromptDefault
 }
 
+// agentPromptCustomFlag 指示当前提示词是否来自管理员自定义源
+// （AGENT_PROMPT_FILE 指向的文件，或 gm-data/agent-prompt.md）：
+// 返回 "1" 时首页前端直接复制该本地版本，不再去 GitHub 拉取，避免覆盖管理员的定制内容。
+func (s *Server) agentPromptCustomFlag() string {
+	if p := os.Getenv("AGENT_PROMPT_FILE"); p != "" {
+		if b, err := os.ReadFile(p); err == nil && strings.TrimSpace(string(b)) != "" {
+			return "1"
+		}
+	}
+	if s.cfg != nil {
+		p := filepath.Join(filepath.Dir(settingsPath(s.cfg)), "agent-prompt.md")
+		if b, err := os.ReadFile(p); err == nil && strings.TrimSpace(string(b)) != "" {
+			return "1"
+		}
+	}
+	return "0"
+}
+
 // homeHTML 生成首页（宣传/介绍页）。示例地址统一用「<你的域名>」占位文字，与访问实例无关。
 // 提示词中的 <你的域名> 保持通用占位符（由使用者替换为实际部署域名），仅做 HTML 转义注入。
 func (s *Server) homeHTML(host string) string {
 	// 示例地址统一用「&lt;你的域名&gt;」占位文字：首页是公开宣传页，与访问实例无关，
 	// 不注入真实访问地址（host 参数仅为兼容调用方保留）。
 	_ = host
-	body := strings.ReplaceAll(homeTmpl, "{{AGENT_PROMPT}}", html.EscapeString(s.agentPrompt()))
+	// 提示词不再内嵌展示：首页改为「从 GitHub 拉取最新」+ 引导链接（见 gmCopyLatestPrompt），
+	// 仅在离线取不到远端时以内嵌版本兜底；内容放进 text/plain 脚本供 JS 读取，
+	// 不参与 HTML 解析，只需避免提前闭合 script 标签。
+	rawPrompt := strings.ReplaceAll(s.agentPrompt(), "</script", "<\\/script")
+	body := strings.ReplaceAll(homeTmpl, "{{AGENT_PROMPT_RAW}}", rawPrompt)
+	// 管理员自定义过提示词时，前端直接复制本地版本，不去远端拉取，避免覆盖定制内容。
+	body = strings.ReplaceAll(body, "{{AGENT_PROMPT_CUSTOM}}", s.agentPromptCustomFlag())
 	// 导航右侧登录/注册入口（注册按开关显隐，指向普通用户入口）
 	body = strings.ReplaceAll(body, "{{NAV_ACTIONS}}", s.navActionsHTML())
 	return page("gh-mirror · 多服务加速网关", "自托管的多服务加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。Token 鉴权、磁盘缓存、私有化部署，并支持 MCP 接入让 AI Agent 直接调用。", body)
@@ -806,10 +853,18 @@ curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
   <div class="alert" style="margin:0 0 16px">
     <strong>它也是 AI Agent 友好型服务</strong>：内置 MCP 服务端，Agent（CodeBuddy / Cursor / Claude 等）可用标准协议直接管理 Token、开关 Docker/HF 加速、调整缓存、转换链接与搜索镜像，无需再手工拼接口。
   </div>
-  <p class="muted">把下面这段提示词整体复制，交给你的 AI Agent（CodeBuddy / Cursor / Claude 等），它就能照着仓库文档自动完成部署与验证。提示词中的 <code>&lt;你的域名&gt;</code> 是通用占位符，<strong>请先替换为你要部署的实际域名</strong>（或让 Agent 先向你确认）：</p>
+  <p class="muted">部署提示词<strong>以 GitHub 上的 <code>docs/agent-prompt.md</code> 为准</strong>——始终最新，不必等发版。点下面的按钮即可复制最新版，整体交给你的 AI Agent（CodeBuddy / Cursor / Claude 等），它就能照着仓库文档自动完成部署与验证。提示词中的 <code>&lt;你的域名&gt;</code> 是通用占位符，<strong>请先替换为你要部署的实际域名</strong>（或让 Agent 先向你确认）。</p>
   <p class="muted">提示词内置<strong>反幻觉白名单</strong>：真实环境变量 / 文档 / 端点清单，以及「不确定就先查证、绝不用自己编的名字填空」的硬约束——可避免 Agent 臆造 <code>GM_*</code> / <code>GHW_*</code> 等无效变量、读取不存在的文档，或把 gh-mirror 不代理的端点当成安装失败。</p>
-  <div class="term folded" id="agentPromptTerm"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">prompt · 默认折叠，展开可见全文</span><button type="button" class="fold-btn" onclick="togglePromptExpand()">展开</button><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{{AGENT_PROMPT}}</code></pre></div>
-  <p class="muted" style="margin-top:12px">本服务同时支持 <strong>MCP 接入</strong>：AI Agent 可通过标准 MCP 协议直接管理 Token、服务开关与缓存，无需再猜接口。详见 <a href="` + repoURL + `/blob/main/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。提示词内容与仓库 <code>docs/agent-prompt.md</code> 保持一致，随版本更新。</p>
+  <div class="alert" style="margin:0 0 16px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button type="button" class="btn" onclick="gmCopyLatestPrompt(this)">📋 复制最新提示词（从 GitHub 拉取）</button>
+      <a class="btn outline" href="` + repoURL + `/blob/main/docs/agent-prompt.md" target="_blank" rel="noopener">在 GitHub 上查看 / 手动复制</a>
+      <a class="btn outline" href="https://raw.githubusercontent.com/yufeng8/gh-mirror/main/docs/agent-prompt.md" target="_blank" rel="noopener">raw 原文</a>
+    </div>
+    <p class="muted" style="margin:10px 0 0;font-size:.84rem">复制时优先从 jsDelivr / GitHub raw 取<strong>最新</strong>内容；若本实例所在网络访问不了外网，会自动回退到镜像内置版本（可能不是最新）。</p>
+  </div>
+  <script type="text/plain" id="agentPromptFallback" data-custom="{{AGENT_PROMPT_CUSTOM}}" style="display:none">{{AGENT_PROMPT_RAW}}</script>
+  <p class="muted" style="margin-top:12px">本服务同时支持 <strong>MCP 接入</strong>：AI Agent 可通过标准 MCP 协议直接管理 Token、服务开关与缓存，无需再猜接口。详见 <a href="` + repoURL + `/blob/main/docs/mcp.md" target="_blank" rel="noopener">docs/mcp.md</a>。</p>
 </section>
 
 <div class="footer">
