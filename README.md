@@ -138,18 +138,21 @@ gh-mirror mcp --token <高级Token>
 4. ADMIN_PASS 与 ADMIN_SECRET 现场生成强随机值并妥善记录（勿写进任何提交或日志）。
    ADMIN_PATH 默认 /admin，LISTEN 默认 0.0.0.0:8080。
 5. 部署方式按机器实际情况二选一，不要强占主机 80/443：
-   A. 机器已有 nginx / KPanel 等 Web 服务：只跑网关并绑定 127.0.0.1:8080，由既有反代转发；
+   A. 机器已有 nginx / KPanel 等 Web 服务：**直接用仓库的 `docker-compose.standalone.yml`**（单文件、仅暴露 127.0.0.1:8080、预构建镜像、真实环境变量），`docker compose -f docker-compose.standalone.yml up -d` 即可，由既有反代转发；**不要**基于根 `docker-compose.yml` 自己补 `ports` / `environment` 去凑。
    B. 干净主机：用仓库自带 nginx（--profile proxy）或复用宿主机证书。
-6. 反代段必须这样配（否则代理路径会 404）：
+6. 环境变量**只用**仓库 `.env.example` 里列出的真实变量
+   （ADMIN_*/USER_PATH/CACHE_*/LISTEN/COOKIE_SECURE/HF_ENABLED/RATELIMIT_ENABLED/UPSTREAM_SOCKS5/USE_JSDELIVR…）。
+   **严禁臆造 `GM_` 前缀变量**：`GM_DATA_DIR`、`GM_PROXY_MAX_*`、`GM_PROXY_MAX_PROXY_*`、`GM_ALLOWED_NETWORKS`、`GM_ADMIN_PASSWORD` 等主服务**一律不读取**（唯一以 `GM_` 开头的是 `GM_MCP_TOKEN`，仅用于 `gh-mirror mcp` 子命令，与主服务无关），写了只是无效配置、还可能把明文密码写进 compose。
+7. 反代段必须这样配（否则代理路径会 404）：
    merge_slashes off;
    proxy_pass http://127.0.0.1:8080$request_uri;   # 必须带 $request_uri
    proxy_set_header Host $host;
    proxy_set_header X-Forwarded-Proto https;        # 经 CDN 时固定 https
    且不要再叠加 http→https 跳转（会形成回环）。
-7. 若域名前置 CDN（EdgeOne/Cloudflare）：让 CDN 持公网证书并终止 TLS，源站只做 80 反代；
+8. 若域名前置 CDN（EdgeOne/Cloudflare）：让 CDN 持公网证书并终止 TLS，源站只做 80 反代；
    CDN 侧关闭缓存与 URL 规范化/重写；不要在 CDN 后面的源站用 certbot（会报 521，重申请无用）；
    确需源站自己持证时用 DNS-01 验证。
-8. 防火墙 / 云安全组放行源站 80 入站；对外 HTTPS 由 CDN 或主机提供。
+9. 防火墙 / 云安全组放行源站 80 入站；对外 HTTPS 由 CDN 或主机提供。
 
 【完成后必须逐项验证并回报结果】
 - curl -fsS http://127.0.0.1:8080/healthz                → ok

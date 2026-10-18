@@ -785,7 +785,8 @@ const homeTmpl = `
   <div class="sec-head"><span class="sec-num">03</span><div><span class="sec-en">Deploy</span><h2>快速部署</h2></div></div>
   <div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>git clone https://github.com/yufeng8/gh-mirror.git &amp;&amp; cd gh-mirror
 cp .env.example .env   # 设 ADMIN_PASS / ADMIN_SECRET
-docker compose up -d --build
+docker compose -f docker-compose.standalone.yml up -d   # 预构建镜像，仅暴露 127.0.0.1:8080，交给既有反代转发
+# 干净主机无反代：docker compose up -d --build  # 用根 docker-compose.yml + 内置 nginx（--profile proxy）
 curl -fsS http://127.0.0.1:8080/healthz   # 期望 ok</code></pre></div>
   <p class="muted" style="margin-top:12px">也可用预构建镜像不编译直接跑：镜像 <code>ghcr.io/yufeng8/gh-mirror</code> 搭配 <a href="` + repoURL + `/releases" target="_blank" rel="noopener">GitHub Releases</a> 里的<strong>最新正式版 tag</strong>。详见 <a href="` + repoURL + `/blob/main/docs/docker-deploy.md" target="_blank" rel="noopener">docs/docker-deploy.md</a> 与 <a href="` + repoURL + `/blob/main/docs/deploy-runbook.md" target="_blank" rel="noopener">docs/deploy-runbook.md</a>。</p>
 </section>
