@@ -2,9 +2,13 @@
 #
 # 适用场景：机器上已有 nginx / KPanel / CDN(EdgeOne) 等反代与证书体系，
 # 只需把 gh-mirror 跑起来并暴露到 127.0.0.1:8080，由既有反代转发到公网。
-# 本文件不内置 nginx、不占用主机 80/443，也不包含任何 GM_* 幻觉变量——
+# 本文件不内置 nginx、不占用主机 80/443，也不包含任何幻觉变量——
 # gh-mirror 主服务真实只认下方这些 ADMIN_*/USER_PATH/CACHE_*/LISTEN/COOKIE_SECURE 等
 # （完整清单见根目录 .env.example）。
+# ⚠️ 不要添加 GM_* / GHW_* / GH_* 等任何非白名单前缀变量：程序一律不读取，
+#    写了只是无效配置（明文密码还可能泄露）。限制内存/CPU 请用 docker 层面
+#    （mem_limit / cpus）——gh-mirror 没有「并发数 / 线程数 / 运行模式 / 数据库」这类变量。
+#    给 AI Agent 的完整规则见 docs/agent-prompt.md。
 #
 # 用法：
 #   cp .env.example .env        # 至少填 ADMIN_PASS 与 ADMIN_SECRET
@@ -12,11 +16,11 @@
 #   升级：改下方 image 标签后重新 up（无需 --build，用的是预构建镜像）
 #
 # 镜像：用最新正式版标签（形如 vX.Y.Z），不要用 :latest（跟踪 main、不含 HF）。
-#   当前示例用 v1.3.1；升级时把标签改高即可。也可用 @sha256: 锁定不可变镜像。
+#   当前示例用 v1.3.2；升级时把标签改高即可。也可用 @sha256: 锁定不可变镜像。
 
 services:
   gh-mirror:
-    image: ghcr.io/yufeng8/gh-mirror:v1.3.1
+    image: ghcr.io/yufeng8/gh-mirror:v1.3.2
     container_name: gh-mirror
     restart: unless-stopped
     environment:
