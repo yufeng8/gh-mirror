@@ -138,18 +138,21 @@ You are a deployment assistant. Deploy gh-mirror (a self-hosted multi-service ac
 4. Generate strong random values for ADMIN_PASS and ADMIN_SECRET on the spot and keep them safe (never commit them or write them to logs).
    ADMIN_PATH defaults to /admin, LISTEN defaults to 0.0.0.0:8080.
 5. Pick one of two deployment shapes based on the machine; do not hijack host ports 80/443:
-   A. Machine already runs nginx / KPanel: run only the gateway bound to 127.0.0.1:8080 and let the existing reverse proxy forward;
+   A. Machine already runs nginx / KPanel: **use the repo's `docker-compose.standalone.yml`** (single file, exposes only 127.0.0.1:8080, prebuilt image, real env vars) — `docker compose -f docker-compose.standalone.yml up -d`, then let the existing reverse proxy forward; **don't** hand-edit `ports` / `environment` on the root `docker-compose.yml` to cobble one together.
    B. Clean host: use the repo's bundled nginx (--profile proxy) or reuse an existing host certificate.
-6. The reverse-proxy block must be configured exactly like this (otherwise proxy paths return 404):
+6. Environment variables: **only** the real ones listed in `.env.example`
+   (ADMIN_*/USER_PATH/CACHE_*/LISTEN/COOKIE_SECURE/HF_ENABLED/RATELIMIT_ENABLED/UPSTREAM_SOCKS5/USE_JSDELIVR…).
+   **Never invent `GM_`-prefixed variables**: `GM_DATA_DIR`, `GM_PROXY_MAX_*`, `GM_PROXY_MAX_PROXY_*`, `GM_ALLOWED_NETWORKS`, `GM_ADMIN_PASSWORD`, etc. are **not read** by the main service (the only `GM_`-prefixed one is `GM_MCP_TOKEN`, used only by the `gh-mirror mcp` subcommand and irrelevant to the gateway). Writing them is dead config and may leak a plaintext password into compose.
+7. The reverse-proxy block must be configured exactly like this (otherwise proxy paths return 404):
    merge_slashes off;
    proxy_pass http://127.0.0.1:8080$request_uri;   # $request_uri is mandatory
    proxy_set_header Host $host;
    proxy_set_header X-Forwarded-Proto https;        # pin https behind a CDN
    and do not stack an http→https redirect on top (it creates a loop).
-7. If a domain-fronting CDN (EdgeOne/Cloudflare) is in play: let the CDN hold the public certificate and terminate TLS, with the origin doing 80-only reverse proxy;
+8. If a domain-fronting CDN (EdgeOne/Cloudflare) is in play: let the CDN hold the public certificate and terminate TLS, with the origin doing 80-only reverse proxy;
    disable caching and URL normalization/rewrite on the CDN side; do not run certbot behind the CDN (it reports 521, re-issuing won't help);
    use DNS-01 validation if the origin must hold its own certificate.
-8. Open inbound port 80 on the firewall / cloud security group; public HTTPS is provided by the CDN or the host.
+9. Open inbound port 80 on the firewall / cloud security group; public HTTPS is provided by the CDN or the host.
 
 [After completion, verify each item and report]
 - curl -fsS http://127.0.0.1:8080/healthz                → ok
