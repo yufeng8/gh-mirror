@@ -1,34 +1,46 @@
-# gh-mirror v1.3.1 — 文档 / 脚本 / 资源同步与细节修复
+# gh-mirror v1.3.2 — 部署脚手架与 AI Agent 提示词完善
 
-一个单二进制、零第三方依赖的自托管加速网关：**Docker 镜像 · GitHub 资源 · HuggingFace 权重**三类加速一站搞定，多用户隔离、Token 鉴权、磁盘缓存与镜像搜索，内置 MCP 服务端。v1.3.1 是 v1.3.0 之后的一批**文档、部署脚本与站点资源对齐**，全部为增量与修复，**无破坏性变更，升级零风险**。
+一个单二进制、零第三方依赖的自托管加速网关：**Docker 镜像 · GitHub 资源 · HuggingFace 权重**三类加速一站搞定。v1.3.2 在 v1.3.1 基础上**聚焦部署体验与「纠正第三方 AI Agent 幻觉配置」**，无代码逻辑变更、无破坏性变更。
 
 ## ✨ 本版亮点
 
-- 🖼️ **站点图标补全**：新增 `logo.png`（256 透明位图）/ `favicon.ico`（16/32/48 多尺寸）仓库资产；站点新增 `GET /favicon.ico` 路由（ICO 兼容层）——现代浏览器仍走零请求的 SVG data-URI 主图标，老浏览器 / 保存书签 / 桌面快捷方式自动回落到 ICO。
-- 📝 **文档全面对齐**：`README_EN.md` 按 v1.3.0 完整重写（原为 v1.0.0 旧结构，仅 GitHub 单服务）并加中英双语切换；修复 README 顶部锚点导航失效（带 U+FE0F 变体选择符的 emoji 使 GitHub 生成的 slug 含不可见字符，点击无反应，已换等价单码点 emoji 治本）；截图说明文案优化。
-- 🔧 **部署脚本修复**：`deploy.sh` / `install.sh` 适配 v1.3.0（补 `USER_PATH`、代理示例改为 `/g/<用户名>/<token>/` 等新格式并补 HF / 离线 / MCP 示例、完成提示输出双入口；Docker 模式镜像 tag fallback 由 `latest` 改固定稳定版）；`uninstall.sh` 修复 compose 部署的 `gm-*` 卷/网络残留与 `/etc/gh-mirror` 目录残留。
-- 🔐 **凭证安全**：`.gitignore` 补全含凭证的数据文件（`users.json` / `invites.json` / `settings.json`），防止密码哈希 / SMTP 密码被误提交；`CONTRIBUTING.md` 对齐最新架构（零依赖铁律、多用户与凭证安全、破坏性变更处理方式、文档同步清单等约定）。
-- ✂️ **清理**：删除 README 中已不再引用的 4 张演示截图（`admin-conv-result` / `admin-usage` / `mobile-home` / `mobile-tokens`）；中文 README 同步「Star & Fork」板块。
+- 🐳 **新增 `docker-compose.standalone.yml`（单容器最小正确配置）**：只暴露 `127.0.0.1:8080`、使用真实环境变量（`ADMIN_*` / `USER_PATH` / `CACHE_*` / `LISTEN` / `COOKIE_SECURE`）、不内置 nginx、不占主机 80/443，配合根目录 `.env.example` 即可 `docker compose -f docker-compose.standalone.yml up -d`。专为「机器已有 nginx / KPanel / CDN 反代」场景，也供 AI Agent / 自动部署直接选用，免于自己补端口时连带编出无效变量。
+- 📝 **`.env.example` 补全真实变量并加警示**（根 + `deploy-docker`）：补齐 `USER_PATH` 等可选项；顶部明确「主服务只认这些变量」，点名 `GM_DATA_DIR` / `GM_PROXY_*` / `GM_ALLOWED_NETWORKS` / `GM_ADMIN_PASSWORD` 等一律不被读取（唯一 `GM_` 开头的是 `GM_MCP_TOKEN`，仅用于 `gh-mirror mcp` 子命令）。
+- 📄 **`docs/docker-deploy.md` 新增「最小单文件 compose」小节**：推荐 `standalone.yml`，并附 `GM_*` 幻觉配置的反面教材说明。
+- 🤖 **AI Agent 提示词同步**：`docs/agent-prompt.md`（内嵌首页 #agent 区块）+ README 中/英副本 + 首页 #deploy 示例——A 场景明确指向 `standalone.yml`，新增「严禁臆造 GM_ 前缀变量」硬约束。
 
-## 🚀 升级说明（无破坏性变更）
+## ⚠️ 为什么做这些
 
-- **Docker**：直接拉取 `ghcr.io/yufeng8/gh-mirror:v1.3.1` 替换旧容器即可；配置（`ADMIN_PATH` / `USER_PATH` / 数据卷）保持不变。
-- **二进制**：下载本页对应平台二进制覆盖原文件，原 `tokens.json` / `users.json` 等数据文件保留。
-- 端点格式、MCP 地址、双入口均与 v1.3.0 一致，无需重新生成链接或更新 Agent 客户端。
+某些第三方 AI Agent 自动部署时，会臆造出一大堆 `GM_DATA_DIR`、`GM_PROXY_MAX_*`、`GM_PROXY_MAX_PROXY_*`、`GM_ALLOWED_NETWORKS`、`GM_ADMIN_PASSWORD` 等环境变量——这些**程序一概不读取**（等于无效配置，还可能把明文密码写进 compose）。v1.3.2 通过「给一份开箱即用的正确配置 + 在文档 / 提示词 / 示例里明确真实变量清单与禁令」从源头降低这类幻觉。
 
-## 📋 端点速查（v1.3.0 起沿用）
+## ✅ 兼容性
 
-| 服务 | 端点 | 鉴权 |
-|---|---|---|
-| Docker 拉取 | `/v2/<用户名>[/<自定义路径>]/…` | 路径即凭证（协议无法带 Token） |
-| GitHub 资源 | `/g/<用户名>/<token>/<URL>` | 用户名段 + Token 归属 |
-| HuggingFace 权重 | `/hf/<用户名>/<token>/<owner>/<repo>/…` | 用户名段 + Token 归属（开放模式免） |
-| 离线镜像 tar | `/offline/<用户名>/<token>/<image>` | 用户名段 + Token 归属 |
-| MCP 接入 | `POST /ai/<用户名>/mcp` | 用户名段 + 高级 Token 归属 |
+- 端点格式、MCP 地址（`/ai/<用户名>/mcp`）、双入口（`/admin` + `/user`）均与 v1.3.1 完全一致。
+- 无破坏性变更；从 v1.3.1 升级只需替换镜像 / 二进制，配置与数据卷不变。
+
+## 🚀 快速开始
+
+```bash
+# 方式一：单容器 + 既有反代（推荐，已含正确 env）
+cp .env.example .env   # 设 ADMIN_PASS / ADMIN_SECRET
+docker compose -f docker-compose.standalone.yml up -d
+
+# 方式二：docker run（与 v1.3.1 相同）
+docker run -d --name gh-mirror \
+  -p 127.0.0.1:8080:8080 \
+  -e ADMIN_USER=admin \
+  -e ADMIN_PASS='强口令' \
+  -e ADMIN_SECRET="$(openssl rand -hex 32)" \
+  -e USER_PATH=/user \
+  ghcr.io/yufeng8/gh-mirror:v1.3.2
+```
+
+启动后：**超级管理员**访问 `http://<域名>/admin`；**普通用户**访问 `http://<域名>/user`。
 
 ## 🔗 相关链接
 
-- 文档：[README.md](https://github.com/yufeng8/gh-mirror/blob/main/README.md) · [README_EN.md](https://github.com/yufeng8/gh-mirror/blob/main/README_EN.md) · [docs/](https://github.com/yufeng8/gh-mirror/tree/main/docs)
+- 文档：[README.md](https://github.com/yufeng8/gh-mirror/blob/main/README.md) · [docs/](https://github.com/yufeng8/gh-mirror/tree/main/docs) · [docs/docker-deploy.md](https://github.com/yufeng8/gh-mirror/blob/main/docs/docker-deploy.md)
 - 镜像：[ghcr.io/yufeng8/gh-mirror](https://github.com/yufeng8/gh-mirror/pkgs/container/gh-mirror)
+- AI Agent 部署提示词：[docs/agent-prompt.md](https://github.com/yufeng8/gh-mirror/blob/main/docs/agent-prompt.md)
 
 ---
