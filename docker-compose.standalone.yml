@@ -1,0 +1,47 @@
+# gh-mirror 最小部署（单容器 · 仅网关 · 交给既有反代）
+#
+# 适用场景：机器上已有 nginx / KPanel / CDN(EdgeOne) 等反代与证书体系，
+# 只需把 gh-mirror 跑起来并暴露到 127.0.0.1:8080，由既有反代转发到公网。
+# 本文件不内置 nginx、不占用主机 80/443，也不包含任何 GM_* 幻觉变量——
+# gh-mirror 主服务真实只认下方这些 ADMIN_*/USER_PATH/CACHE_*/LISTEN/COOKIE_SECURE 等
+# （完整清单见根目录 .env.example）。
+#
+# 用法：
+#   cp .env.example .env        # 至少填 ADMIN_PASS 与 ADMIN_SECRET
+#   docker compose -f docker-compose.standalone.yml up -d
+#   升级：改下方 image 标签后重新 up（无需 --build，用的是预构建镜像）
+#
+# 镜像：用最新正式版标签（形如 vX.Y.Z），不要用 :latest（跟踪 main、不含 HF）。
+#   当前示例用 v1.3.1；升级时把标签改高即可。也可用 @sha256: 锁定不可变镜像。
+
+services:
+  gh-mirror:
+    image: ghcr.io/yufeng8/gh-mirror:v1.3.1
+    container_name: gh-mirror
+    restart: unless-stopped
+    environment:
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:?请在 .env 中设置 ADMIN_PASS}
+      ADMIN_PATH: ${ADMIN_PATH:-/admin}
+      # 普通用户入口（多用户）；不需要可删除此行
+      USER_PATH: ${USER_PATH:-/user}
+      ADMIN_SECRET: ${ADMIN_SECRET:?请在 .env 中设置 ADMIN_SECRET（openssl rand -hex 32）}
+      # HTTPS 部署保持 true；纯 HTTP（无 TLS）部署改为 false，否则后台无法登录
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      LISTEN: 0.0.0.0:8080
+      TOKENS_FILE: /var/lib/gh-mirror/tokens.json
+      CACHE_DIR: /var/cache/gh-mirror
+      CACHE_TTL_MINUTES: ${CACHE_TTL_MINUTES:-1440}
+      MAX_CACHE_MB: ${MAX_CACHE_MB:-200}
+      UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-60}
+      # 要开放 HuggingFace 代理再加：HF_ENABLED: "true"
+    ports:
+      # 仅绑本机回环，交给既有反代转发；需容器外直接访问可改 0.0.0.0
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - gm-data:/var/lib/gh-mirror
+      - gm-cache:/var/cache/gh-mirror
+
+volumes:
+  gm-data:
+  gm-cache:
