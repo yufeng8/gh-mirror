@@ -97,7 +97,7 @@ curl -sX POST https://mirror.example.com/ai/<username>/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
-# Option 2: stdio (local or jump host; token required)
+# Option 2: stdio (only on the machine holding the gateway data; use HTTP for remote gateways)
 gh-mirror mcp --token <admin-token>
 ```
 

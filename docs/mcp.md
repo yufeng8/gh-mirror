@@ -34,18 +34,28 @@ curl -sS -X POST https://<你的域名>/ai/<用户名>/mcp \
 
 ## 3. 接入方式二：stdio（本地 Agent，推荐桌面端）
 
+> **适用前提（先读这个）**：stdio 是在**运行这条命令的机器上**直接初始化网关并操作**本机数据**
+> （`TOKENS_FILE` / 设置 / 缓存），token 也用同一份本地数据校验——它**不是**远程网关的遥控器：
+> - MCP 客户端与网关**同一台机器**（或挂载同一数据目录）→ stdio 可用；
+> - 网关部署在**远程服务器**（尤其 Docker 部署）→ 请用上面的 HTTP 方式；
+>   本地桌面没有网关数据，token 校验不会通过，工具操作的也只是本地空数据。
+> - Docker 镜像是极简无 shell（distroless），**无法 `docker exec` 运行 stdio**；
+>   确需在网关主机上用 stdio 时：从 Releases 下载二进制，以与网关相同的
+>   `TOKENS_FILE` / 数据目录运行——或直接用 HTTP（更简单）。
+
 二进制里直接运行子命令，无需经过 HTTP：
 
 ```bash
 gh-mirror mcp --token <高级Token>            # 或设置环境变量 GM_MCP_TOKEN
-gh-mirror mcp --token <高级Token> --base https://<你的域名>   # 指定生成链接用的基地址
+gh-mirror mcp --token <高级Token> --base http://127.0.0.1:8080   # 指定生成链接用的基地址
 ```
 
 - 逐行读 JSON-RPC、逐行写响应；**stdout 只输出协议 JSON，所有日志写 stderr**
-- `--base` 缺省时由 `LISTEN` 推导（如 `http://127.0.0.1:8080`）
+- `--base` **仅影响 `convert_link` 生成链接的前缀**，不改变工具操作的数据（始终是本机数据目录）；
+  缺省由 `LISTEN` 推导（`:端口` 与 `0.0.0.0:端口` 会归一为 `http://127.0.0.1:端口`）
 - 未传 token 时以退出码 2 结束并提示用法
 
-### 客户端配置示例
+### 客户端配置示例（MCP 客户端与网关同机）
 
 Claude Desktop / CodeBuddy / 其它支持 `mcpServers` 的客户端：
 
@@ -54,13 +64,13 @@ Claude Desktop / CodeBuddy / 其它支持 `mcpServers` 的客户端：
   "mcpServers": {
     "gh-mirror": {
       "command": "gh-mirror",
-      "args": ["mcp", "--token", "<高级Token>", "--base", "https://<你的域名>"]
+      "args": ["mcp", "--token", "<高级Token>"]
     }
   }
 }
 ```
 
-若网关在远程主机上，用 HTTP 方式配置即可（客户端间差异较大，以其文档为准）。
+网关在远程主机上时，用 HTTP 方式配置即可（客户端间差异较大，以其文档为准）。
 
 ## 4. 工具清单
 
