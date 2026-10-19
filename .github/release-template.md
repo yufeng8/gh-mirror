@@ -1,32 +1,41 @@
-# gh-mirror v1.4.4 — 指标口径说明 + 链接转换区美化
+# gh-mirror v1.4.5 — MCP 接入重做：让 AI Agent 真正用得起来
 
-一个单二进制、零第三方依赖的自托管加速网关：**Docker 镜像 · GitHub 资源 · HuggingFace 权重**三类加速一站搞定。v1.4.4 是两处体验打磨：**统计卡加问号说明**（把「总命中 / 总流量」这类指标的口径讲清楚），以及**链接转换区重排**（两行等宽、说明折叠）。
+一个单二进制、零第三方依赖的自托管加速网关：**Docker 镜像 · GitHub 资源 · HuggingFace 权重**三类加速一站搞定。
+
+v1.4.5 集中重做 **MCP（Model Context Protocol）接入层**。起因是对线上两个真实端点（超管 `/ai/admin/mcp`、普通用户 `/ai/fengk/mcp`）做了完整协议实测，发现「能连上」与「Agent 能正确用」之间有一段距离。本版同时修复了一个链接转换缺陷。
 
 ## ✨ 本版亮点
 
-- ❓ **统计卡问号说明**：概览四张指标卡标题旁新增问号，**点击或悬停**即弹出深色说明气泡
-  - **Token 数**：当前账号可见的 Token 数量（超管也仅自己的）
-  - **总命中**：经 `/g/` 与 `/hf/` 代理**成功**的请求次数；状态码 ≥ 400 不计入；用别人 Token 的流量记在那个 Token 上
-  - **总流量**：上述成功响应实际写给客户端的字节数（按 Token 分别累计后求和）
-  - **运行时长**：进程运行时长，实例重启后重置
-  - 纯 CSS 实现（`:hover` / `:focus`）：点击后保持显示，点别处自动消失，无需额外 JS
-  - 缓存管理等其他页面的统计卡**不显示**问号，不受影响
-- 🎨 **链接转换区重排**
-  - 输入框与输出框**统一 560px**（此前输入 460px、输出铺满整行约 1040px）
-  - 输出框改为等宽字体 + 浅底色，链接更易读、也明确是只读结果
-  - 原占 3 行的说明文字收进 `<details>`「使用说明与示例」，**默认收起**（收起仅 53px，展开 182px）
+### MCP：从「能连通」到「会用」
 
-## 🔧 其他改进
+- 🐛 **修复 `search_images` 只有 ★ 没有镜像名**：它自己解析了一份 Docker Hub 响应并读 `name`，真实字段是 `repo_name` —— 结果只能输出 `★21411`。现在复用 `/api/search` 的规范化逻辑，输出 **名称 / ★ / 拉取数 / 官方 / 上游更新时间 / 描述**，并新增 `limit`（默认 10）
+- 🐛 **修复 `serverInfo.version` 恒为 `0.2.0`**：改为读取构建期注入的真实版本号
+- 🐛 **修复非法 `role` 静默生效**：`create_token` 传 `role:"root"` 会被静默按 `user` 创建，现在直接报错并说明可选值
+- 📖 **新增 `instructions`（协议 ≥ 2025-06-18）**：一段给模型的使用指引——推荐流程、破坏性操作提示、结果解析方式。这是提升 Agent 正确率最有效的一处投入
+- 🎯 **工具描述全面重写**：12 个工具统一「何时用 + 返回什么 + 是否破坏性 + 权限要求」；破坏性工具显式标注 ⚠
+- 🔒 **`tools/list` 按角色裁剪**：普通用户不再看到 4 个必然被拒的管理工具（`set_service` / `get_cache_stats` / `set_cache_limits` / `clear_cache`），结果附 `note` 说明隐藏了几个
+- 🧩 **参数约束**：关键参数加 `enum`（不会再把 `github` 传给 `set_service`）、整数参数带默认值
+- 🧭 **错误可自纠**：未知工具会列出全部可用工具名；参数缺失给出可执行提示（缺 `q` → 提示传 `{"q":"nginx"}`）
+- 📦 **结构化输出**：`list_tokens` / `list_tags` / `search_images` / `get_services` / `get_cache_stats` / `health` 统一为「一行摘要 + ```json 代码块」
 
-- 链接转换两行按钮均紧随输入框，不再有「一个窄一个宽」的错位感
-- 说明内容一字未减（GitHub / HuggingFace 示例、`/offline` 与 `/v2` 规则），拆为两段更易读
-- 小屏（≤600px）输入框仍铺满，移动端不受影响
+### 协议兼容（Streamable HTTP）
 
-## ✅ 兼容性
+- **响应按 `Accept` 协商**：只要求 `text/event-stream` 的客户端现在拿到规范事件流；同时接受两者时仍返回单个 JSON（兼容性最好）
+- `GET` → `405` + JSON 说明；`DELETE` → `200`（无状态、无需终止会话）
+- `resources/list` / `resources/templates/list` / `prompts/list` 返回空列表；`logging/setLevel` 被接受
+- `401` 等错误改为 JSON 并附接入 hint
+- 支持 JSON-RPC 批量
 
-- 无破坏性变更：端点、MCP 地址、双入口、配置与数据卷格式均不变
-- MCP 主推接入方式仍是 **Streamable HTTP**（`"type": "http"` + `headers.Authorization`）
-- 说明气泡不改变任何统计口径：仍是「当前账号可见 Token」的成功代理请求与字节数
+### 链接转换修复
+
+- 🐛 **无 `https://` 的 GitHub / HuggingFace 链接不再被误判成 Docker 镜像**（后台说明里明确支持这种写法，但此前会生成完全错误的 `/offline/...` 地址）
+
+## 🔧 兼容性
+
+- **无破坏性变更**：端点、鉴权方式、MCP 地址、双入口、配置与数据卷格式均不变
+- `tools/call` 仍返回 `content[0].text`，只是内容改为「摘要 + JSON」，LLM 读取更稳
+- 老客户端会忽略 `instructions` 等新增字段
+- `tools/list` 按角色裁剪是**收敛**而非破坏：服务端鉴权仍是权威
 
 ## 🚀 快速开始
 
@@ -42,13 +51,26 @@ docker run -d --name gh-mirror \
   -e ADMIN_PASS='强口令' \
   -e ADMIN_SECRET="$(openssl rand -hex 32)" \
   -e USER_PATH=/user \
-  ghcr.io/yufeng8/gh-mirror:v1.4.4
+  ghcr.io/yufeng8/gh-mirror:v1.4.5
 ```
 
 启动后：**超级管理员**访问 `http://<域名>/admin`；**普通用户**访问 `http://<域名>/user`。
 
-> 纯 HTTP（无 TLS）部署请设 `COOKIE_SECURE=false`，否则浏览器不下发 Secure cookie，表现为登录无反应 / 反复跳回登录页。
-> `ADMIN_PASS` 只是**首次启动的种子密码**，之后改该环境变量不会更新已存在用户的密码（详见 `docs/agent-prompt.md`）。
+### MCP 接入（推荐首选：Streamable HTTP）
+
+```json
+{
+  "mcpServers": {
+    "gh-mirror": {
+      "type": "http",
+      "url": "https://<你的域名>/ai/<用户名>/mcp",
+      "headers": { "Authorization": "Bearer <高级Token>" }
+    }
+  }
+}
+```
+
+> ⚠️ **高级 Token 等同于账号凭证**：持有者可管理 Token、开关服务、清空缓存。请勿提交进仓库或公开分享。
 
 ## 🔗 相关链接
 
