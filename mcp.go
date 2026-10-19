@@ -175,7 +175,7 @@ var mcpRegistry = []mcpTool{
 		},
 	},
 	{
-		Name: "list_tokens", Description: "列出你有权查看的 Token（含类型、命中数、流量、创建与最近使用时间；普通用户仅自己的，超级管理员可见全部）。",
+		Name: "list_tokens", Description: "列出你自己的 Token（含类型、命中数、流量、创建与最近使用时间；任何角色都只返回自己名下的）。",
 		InputSchema: objSchema(nil, nil),
 		handler: func(s *Server, base string, args map[string]any, owner string) mcpCallResult {
 			toks := s.tokensForUser(s.store.All(), owner, s.mcpUserRole(owner))

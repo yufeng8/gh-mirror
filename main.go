@@ -44,10 +44,9 @@ type Server struct {
 	offlineMaxFileMB   int  // 离线包单文件上限（MB，0=不限；超过则不落盘缓存）
 	contactEmailStr    string // 超管联系邮箱（忘记密码引导 / 用户紧急联系展示）
 	smtpCfg            smtpConfig // SMTP 发信配置（持 svcMu）
-	regOpen            bool       // 用户自主注册开关（持 svcMu）
+	regModeVal         string     // 注册模式：closed / invite / open（持 svcMu，唯一事实来源）
 	userCaptcha        bool       // 用户入口图形验证码开关（持 svcMu）
 	adminCaptcha       bool       // 管理入口图形验证码开关（持 svcMu）
-	inviteOnly         bool       // 仅邀请码注册开关（持 svcMu）
 	hideLogin          bool       // 首页隐藏登录/注册按钮（持 svcMu；仅隐藏入口展示，路径仍可直达）
 	codes              *CodeStore    // 邮箱验证码存储（内存）
 	captcha            *CaptchaStore // 图形验证码存储（内存）
