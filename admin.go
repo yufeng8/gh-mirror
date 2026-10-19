@@ -767,7 +767,8 @@ func (s *Server) renderServicesPage(w http.ResponseWriter, r *http.Request) {
 		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.userDockerPath(user), dockerSegment(user))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: aside, topbarRight, flash, services
-	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services)
+	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services,
+		s.portalSettingsHTML(csrf), s.inviteSectionHTML(csrf))
 	_, _ = w.Write([]byte(pageApp("服务管理 - gh-mirror", "gh-mirror 服务管理", body)))
 }
 
@@ -1262,11 +1263,11 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 	users := s.users.All()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	body := fmt.Sprintf(usersBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.userRows(users, csrf, user), s.userAddForm(csrf), s.portalSettingsHTML(csrf), s.inviteSectionHTML(csrf))
+		s.userRows(users, csrf, user), s.userAddForm(csrf))
 	_, _ = w.Write([]byte(pageApp("用户管理 - gh-mirror", "gh-mirror 用户管理", body)))
 }
 
-// portalSettingsHTML 渲染用户管理页下方的「用户注册与邮箱」设置区（SMTP + 注册开关 + 联系邮箱，仅超管）。
+// portalSettingsHTML 渲染服务管理页底部的「用户注册与邮箱」设置区（SMTP + 注册开关 + 联系邮箱，仅超管）。
 func (s *Server) portalSettingsHTML(csrf string) string {
 	cfg := s.smtpSettings()
 	tlsChecked, regChecked, inviteChecked, userCapChecked, adminCapChecked, hideLoginChecked := "", "", "", "", "", ""
@@ -1321,7 +1322,7 @@ func (s *Server) portalSettingsHTML(csrf string) string {
 </section>`
 }
 
-// inviteSectionHTML 渲染用户管理页下方的「邀请码管理」区（仅超管）：生成/自定义/导出/删除/备注/有效期 + 使用追踪。
+// inviteSectionHTML 渲染服务管理页底部的「邀请码管理」区（仅超管）：生成/自定义/导出/删除/备注/有效期 + 使用追踪。
 func (s *Server) inviteSectionHTML(csrf string) string {
 	invites := s.invites.List()
 	var rows strings.Builder
