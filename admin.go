@@ -1293,6 +1293,7 @@ func (s *Server) portalSettingsHTML(csrf string) string {
   <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">注册开关 / 图形验证码 / 联系邮箱</span></div>
   <form method="post" action="` + s.adminPath + `/portal-settings" class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap;gap:12px">
     <input type="hidden" name="csrf" value="` + csrf + `">
+    <input type="hidden" name="scope" value="portal">
     <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="regOpen" value="1"` + regChecked + `> 开启用户注册</label>
     <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="inviteOnly" value="1"` + inviteChecked + `> 仅邀请码注册</label>
     <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="userCaptcha" value="1"` + userCapChecked + `> 用户入口图形验证码</label>
@@ -1303,10 +1304,11 @@ func (s *Server) portalSettingsHTML(csrf string) string {
   <h3 style="margin-top:18px">SMTP 发信设置</h3>
   <form method="post" action="` + s.adminPath + `/portal-settings" class="row" style="margin-top:10px;align-items:flex-end;flex-wrap:wrap;gap:12px">
     <input type="hidden" name="csrf" value="` + csrf + `">
+    <input type="hidden" name="scope" value="smtp">
     <label class="fld">SMTP 主机<input name="smtpHost" value="` + html.EscapeString(cfg.Host) + `" placeholder="smtp.example.com"></label>
     <label class="fld">端口<input name="smtpPort" type="number" min="1" value="` + port + `" placeholder="465"></label>
     <label class="fld">账号<input name="smtpUser" value="` + html.EscapeString(cfg.Username) + `" autocomplete="off"></label>
-    <label class="fld">密码<input name="smtpPass" type="password" value="` + html.EscapeString(cfg.Password) + `" autocomplete="new-password"></label>
+    <label class="fld">密码<input name="smtpPass" type="password" value="" placeholder="已设置则留空保持不变" autocomplete="new-password"></label>
     <label class="fld">发件人<input name="smtpFrom" type="email" value="` + html.EscapeString(cfg.From) + `" placeholder="no-reply@example.com"></label>
     <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="smtpTLS" value="1"` + tlsChecked + `> 使用 TLS</label>
     <button type="submit" class="btn">保存邮箱设置</button>
@@ -1938,7 +1940,16 @@ func (s *Server) doOfflineAutoPurge(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.adminPath+"/cache?ok=offline_purge_saved", http.StatusFound)
 }
 
-// doSetPortalSettings 保存 SMTP 配置、注册开关与联系邮箱（仅超管）。
+// formBool 读取布尔表单值：checkbox 的 "1" / "true" / "on" 均视为真。
+func formBool(r *http.Request, name string) bool {
+	v := r.FormValue(name)
+	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "on")
+}
+
+// doSetPortalSettings 保存「用户注册与邮箱」设置（仅超管）。
+// 页面上是两个独立表单（注册开关区 / SMTP 发信区）共用本端点，以隐藏域 scope 区分：
+// 只更新提交来源对应的那一组，未提交的组保持现值——否则保存注册开关会把 SMTP 清空、
+// 保存邮箱设置会把注册开关与联系邮箱重置（历史缺陷：两个表单全量覆盖互相吃掉对方）。
 func (s *Server) doSetPortalSettings(w http.ResponseWriter, r *http.Request) {
 	sid, _, role, ok := s.parseSession(r)
 	if !ok || role != RoleSuper {
@@ -1950,26 +1961,43 @@ func (s *Server) doSetPortalSettings(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.adminPath+"/users?err=csrf", http.StatusFound)
 		return
 	}
-	port := 0
-	if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("smtpPort"))); err == nil {
-		port = v
+	scope := r.FormValue("scope")
+	// scope 缺省时（旧版页面 / 手工 POST）按字段存在性推断来源，保持兼容
+	portalForm := scope == "portal" || (scope == "" && r.PostForm.Has("contactEmail"))
+	smtpForm := scope == "smtp" || (scope == "" && r.PostForm.Has("smtpHost"))
+
+	oldSMTP := s.smtpSettings()
+	cfg := oldSMTP
+	if smtpForm {
+		port := 0
+		if v, err := strconv.Atoi(strings.TrimSpace(r.FormValue("smtpPort"))); err == nil {
+			port = v
+		}
+		cfg = smtpConfig{
+			Host:     strings.TrimSpace(r.FormValue("smtpHost")),
+			Port:     port,
+			Username: strings.TrimSpace(r.FormValue("smtpUser")),
+			Password: r.FormValue("smtpPass"),
+			From:     strings.TrimSpace(r.FormValue("smtpFrom")),
+			TLS:      r.FormValue("smtpTLS") == "1",
+		}
+		// 密码留空 = 保持不变（页面已不回显密码，防止重复提交时把已存凭据清掉）
+		if cfg.Password == "" {
+			cfg.Password = oldSMTP.Password
+		}
 	}
-	cfg := smtpConfig{
-		Host:     strings.TrimSpace(r.FormValue("smtpHost")),
-		Port:     port,
-		Username: strings.TrimSpace(r.FormValue("smtpUser")),
-		Password: r.FormValue("smtpPass"),
-		From:     strings.TrimSpace(r.FormValue("smtpFrom")),
-		TLS:      r.FormValue("smtpTLS") == "1",
+	regOpen, contactEmail := s.regEnabled(), s.contactEmail()
+	userCaptcha, adminCaptcha, inviteOnly := s.userCaptchaEnabled(), s.adminCaptchaEnabled(), s.inviteOnlyEnabled()
+	if portalForm {
+		regOpen = formBool(r, "regOpen")
+		contactEmail = r.FormValue("contactEmail")
+		userCaptcha = formBool(r, "userCaptcha")
+		adminCaptcha = formBool(r, "adminCaptcha")
+		inviteOnly = formBool(r, "inviteOnly")
 	}
-	regOpen := r.FormValue("regOpen") == "1" || strings.EqualFold(r.FormValue("regOpen"), "true") || strings.EqualFold(r.FormValue("regOpen"), "on")
-	contactEmail := r.FormValue("contactEmail")
-	userCaptcha := r.FormValue("userCaptcha") == "1" || strings.EqualFold(r.FormValue("userCaptcha"), "true") || strings.EqualFold(r.FormValue("userCaptcha"), "on")
-	adminCaptcha := r.FormValue("adminCaptcha") == "1" || strings.EqualFold(r.FormValue("adminCaptcha"), "true") || strings.EqualFold(r.FormValue("adminCaptcha"), "on")
-	inviteOnly := r.FormValue("inviteOnly") == "1" || strings.EqualFold(r.FormValue("inviteOnly"), "true") || strings.EqualFold(r.FormValue("inviteOnly"), "on")
 	s.setPortalSettings(cfg, regOpen, contactEmail, userCaptcha, adminCaptcha, inviteOnly)
-	log.Printf("门户设置已保存: regOpen=%v userCaptcha=%v adminCaptcha=%v inviteOnly=%v contactEmail=%q smtp=%s:%d tls=%v",
-		regOpen, userCaptcha, adminCaptcha, inviteOnly, contactEmail, cfg.Host, cfg.Port, cfg.TLS)
+	log.Printf("门户设置已保存(scope=%s): regOpen=%v userCaptcha=%v adminCaptcha=%v inviteOnly=%v contactEmail=%q smtp=%s:%d tls=%v",
+		scope, regOpen, userCaptcha, adminCaptcha, inviteOnly, contactEmail, cfg.Host, cfg.Port, cfg.TLS)
 	http.Redirect(w, r, s.adminPath+"/users?ok=portal_saved", http.StatusFound)
 }
 
