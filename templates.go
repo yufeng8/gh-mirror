@@ -984,7 +984,7 @@ const homeTmpl = `
     <div class="feature">` + tagHF + `<h3>HuggingFace 权重</h3><p>加速模型 / LFS 大文件下载，config.toml 一键开启。</p></div>
     <div class="feature">` + tagDK + `<h3>Docker 镜像加速</h3><p>registry-mirror 回源 Docker Hub / GHCR，另支持 /offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像&gt; 产出可 docker load 的 tar（离线包需 token）。</p></div>
     <div class="feature"><span class="tag">SRC</span><h3>镜像搜索</h3><p>内置强大的镜像搜索：<code>/search</code>、<code>/tags</code> 页面与 API，并可通过 MCP 供 Agent 调用。</p></div>
-    <div class="feature"><span class="tag">AI</span><h3>MCP 接入 · Agent 友好</h3><p>内置 MCP 服务端，AI Agent 可直接管理 Token、服务开关、缓存与链接转换。</p></div>
+    <div class="feature"><span class="tag">AI</span><h3>MCP 接入 · Agent 友好</h3><p>内置 MCP 服务端，<strong>主推 Streamable HTTP（<code>"type": "http"</code>）</strong>，AI Agent 可直接管理 Token、服务开关、缓存与链接转换。</p></div>
     <div class="feature"><span class="tag">AUTH</span><h3>Token 鉴权</h3><p>后台签发 Token，无效请求返回 404，访问可控、可审计。</p></div>
   </div>
   <p class="muted small" style="margin-top:16px">底层能力：<strong>流式代理 + 磁盘缓存</strong>（支持 Range 断点续传），全部由 <strong>Go 标准库实现、零第三方依赖</strong>，单二进制即可运行，提供多架构镜像。</p>
@@ -1279,11 +1279,11 @@ var mcpBody = `
       %s
     </section>
     <section class="card">
-      <h2>方式一 · HTTP</h2>
+      <h2>方式一 · Streamable HTTP（推荐首选）</h2>
       %s
     </section>
     <section class="card">
-      <h2>方式二 · stdio</h2>
+      <h2>方式二 · stdio（仅同机，备选）</h2>
       %s
     </section>
     <section class="card">
