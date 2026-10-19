@@ -981,13 +981,31 @@ func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size in
 			`</div></div>`
 	}
 
-	// 拉取新镜像表单（主动缓存）
-	pullForm := `<form method="post" action="` + s.adminPath + `/offline/repull" class="row" style="margin-top:12px">
+	// 拉取新镜像表单（主动缓存）+ 镜像选择面板（常用镜像 / Docker Hub 搜索）
+	imagePicker := `<div class="modal" id="gmImageModal" hidden>
+  <div class="modal-mask" onclick="gmCloseModal()"></div>
+  <div class="modal-box" style="max-width:720px">
+    <div class="modal-head"><h3>选择镜像</h3><button type="button" class="modal-x" onclick="gmCloseModal()" aria-label="关闭">✕</button></div>
+    <div class="modal-body">
+      <div class="row" style="gap:8px;flex-wrap:nowrap">
+        <input id="gmImageQuery" placeholder="搜索 Docker Hub，如 nginx / redis / postgres" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter'){event.preventDefault();gmSearchImage()}">
+        <button type="button" class="btn" onclick="gmSearchImage()">搜索</button>
+      </div>
+      <p class="muted small" style="margin:14px 0 6px">常用镜像（点击填入）：</p>
+      <div class="row" id="gmImageCommon" style="gap:8px"></div>
+      <p class="muted small" style="margin:14px 0 6px">搜索结果（最多 10 条，点击填入）：</p>
+      <div id="gmImageResults"><p class="muted small">输入关键词后点「搜索」。</p></div>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn outline" onclick="gmCloseModal()">关闭</button></div>
+  </div>
+</div>`
+	pullForm := `<form method="post" action="` + s.adminPath + `/offline/repull" class="row" style="margin-top:12px;gap:10px">
   <input type="hidden" name="csrf" value="` + csrf + `">
-  <input name="image" placeholder="镜像名，如 library/nginx:1.25 或 nginx:latest" required>
+  <input id="gmOfflineImage" name="image" placeholder="镜像名，如 library/nginx:1.25 或 nginx:latest" required style="flex:1;min-width:320px">
+  <button type="button" class="btn outline" onclick="gmPickImage()">🔍 选择镜像</button>
   <button type="submit" class="btn">拉取并缓存</button>
 </form>
-<p class="muted small" style="margin-top:6px">主动拉取镜像到离线缓存（后台异步打包，稍后刷新可见）；用户下载时也会自动缓存。</p>`
+<p class="muted small" style="margin-top:6px">主动拉取镜像到离线缓存（后台异步打包，稍后刷新可见）；用户下载时也会自动缓存。点「选择镜像」可从常用镜像或 Docker Hub 搜索结果快速填入。</p>` + imagePicker
 
 	return `<section class="card">
   <div class="card-head"><h2>离线包缓存</h2><span class="muted small">内容寻址（manifest digest）· 全局共享 · 仅超管管理</span></div>

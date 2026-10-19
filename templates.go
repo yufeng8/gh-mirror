@@ -536,6 +536,13 @@ const pageStyle = `
   .btn.danger{background:var(--danger);color:var(--danger-foreground)}
   .btn.danger:hover{background:#b91c1c}
   .btn.danger:disabled{opacity:.45;cursor:not-allowed;background:var(--danger)}
+  /* 镜像选择面板：搜索结果卡片 */
+  .img-pick{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:10px 12px;margin:0 0 6px;
+    border:1px solid var(--border);border-radius:10px;background:var(--background);color:var(--foreground);cursor:pointer;font:inherit}
+  .img-pick:hover{background:var(--muted)}
+  .img-pick-name{font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.88rem}
+  .img-pick-meta{color:var(--muted-foreground);font-size:.78rem}
+  .img-pick-desc{color:var(--muted-foreground);font-size:.8rem;line-height:1.45}
   .edit-row td{background:var(--muted);border-radius:10px}
   .edit-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .edit-form .fld input,.edit-form .fld select{width:220px}
@@ -728,6 +735,53 @@ function gmDismissFlash(){var f=document.getElementById('gmFlash');if(f)f.remove
 function gmDockerPathPreview(v){var i=document.getElementById('gmDockerPath'),p=document.getElementById('gmDockerPathPreview');if(!p)return;var o=(i&&i.getAttribute('data-owner'))||'';v=(v||'').replace(/^\/+|\/+$/g,'');p.textContent='docker pull <本服务域名>/'+o+(v?'/'+v:'')+'/library/nginx:1.25'}
 /* 反馈条：清掉 URL 上的 ok/err 参数避免刷新重复提示，并 4 秒后自动淡出 */
 (function(){var f=document.getElementById('gmFlash');if(!f)return;try{var u=new URL(location.href);if(u.searchParams.has('ok')||u.searchParams.has('err')){u.searchParams.delete('ok');u.searchParams.delete('err');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}setTimeout(function(){f.classList.add('out');setTimeout(function(){if(f.parentNode)f.remove()},400)},4000)})();
+/* 离线包：镜像选择面板（常用镜像 + Docker Hub 实时搜索，点击填入输入框） */
+var GM_COMMON_IMAGES=['nginx','redis','postgres','mysql','mariadb','mongo','node','python','alpine','ubuntu'];
+function gmPickImage(){
+  var box=document.getElementById('gmImageCommon');
+  if(box&&!box.getAttribute('data-ready')){
+    var h='';
+    for(var i=0;i<GM_COMMON_IMAGES.length;i++){
+      var n=GM_COMMON_IMAGES[i];
+      h+='<button type="button" class="btn outline" data-name="library/'+n+'" onclick="gmUseImage(this.getAttribute(\'data-name\'))">'+n+'</button>';
+    }
+    box.innerHTML=h;box.setAttribute('data-ready','1');
+  }
+  gmOpenModal('gmImageModal');
+  var q=document.getElementById('gmImageQuery');
+  if(q)setTimeout(function(){try{q.focus()}catch(e){}},60);
+}
+function gmUseImage(name){
+  var inp=document.getElementById('gmOfflineImage');
+  if(inp&&name){inp.value=name;try{inp.focus()}catch(e){}}
+  gmCloseModal();
+}
+function gmSearchImage(){
+  var qi=document.getElementById('gmImageQuery');
+  var q=qi?qi.value.trim():'';
+  var box=document.getElementById('gmImageResults');
+  if(!box)return;
+  if(!q){box.innerHTML='<p class="muted small">请输入关键词。</p>';return}
+  box.innerHTML='<p class="muted small">搜索中…</p>';
+  fetch('/api/search?q='+encodeURIComponent(q),{cache:'no-store'})
+    .then(function(r){return r.json()})
+    .then(function(j){
+      var rs=(j&&j.results)||[];rs=rs.slice(0,10);
+      if(!rs.length){box.innerHTML='<p class="muted small">没有找到匹配的镜像。</p>';return}
+      var h='';
+      for(var i=0;i<rs.length;i++){
+        var x=rs[i],nm=x.name||'',stars=x.star_count||0;
+        h+='<button type="button" class="img-pick" data-name="'+gmEsc(nm)+'">'
+          +'<span class="img-pick-name">'+gmEsc(nm)+'</span>'
+          +'<span class="img-pick-meta">'+stars+' ★'+(x.is_official?' · 官方':'')+'</span>'
+          +(x.description?'<span class="img-pick-desc">'+gmEsc(x.description)+'</span>':'')
+          +'</button>';
+      }
+      box.innerHTML=h;
+      box.onclick=function(e){var b=e.target.closest?e.target.closest('.img-pick'):null;if(b)gmUseImage(b.getAttribute('data-name'))};
+    })
+    .catch(function(){box.innerHTML='<p class="err">搜索失败（实例需要能访问 Docker Hub）</p>'});
+}
 /* Token 列表：全选 / 批量删除 / 每页条数 */
 function gmSyncBatchBtn(){var xs=document.querySelectorAll('input.tok-sel:checked');var b=document.getElementById('gmBatchDel');if(!b)return;b.disabled=xs.length===0;b.textContent=xs.length>0?('删除选中（'+xs.length+'）'):'删除选中'}
 function gmToggleAllTokens(cb){var xs=document.querySelectorAll('input.tok-sel');for(var i=0;i<xs.length;i++)xs[i].checked=cb.checked;gmSyncBatchBtn()}
