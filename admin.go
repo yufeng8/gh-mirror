@@ -518,16 +518,33 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.entryBase(r)+"/tokens?err=csrf", http.StatusFound)
 		return
 	}
-	tok := r.FormValue("token")
-	code := "token_missing"
-	if tok != "" {
-		// 归属校验：normal 只能删自己的；无权时保持 token_missing，不泄露他人 token 是否存在
-		if t, exists := s.store.Get(tok); exists && s.tokenVisible(t, user, role) {
-			s.store.Delete(tok)
-			code = "token_deleted"
+	// 兼容单个删除（行内表单）与批量删除（表格复选框批量表单）：读取全部 token 值
+	toks := r.PostForm["token"]
+	if len(toks) == 0 {
+		if v := r.FormValue("token"); v != "" {
+			toks = []string{v}
 		}
 	}
-	http.Redirect(w, r, s.entryBase(r)+"/tokens?ok="+code, http.StatusFound)
+	deleted := 0
+	for _, tok := range toks {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		// 归属校验：只能删自己的；无权时按不存在处理，不泄露他人 token 是否存在
+		if t, exists := s.store.Get(tok); exists && s.tokenVisible(t, user, role) {
+			s.store.Delete(tok)
+			deleted++
+		}
+	}
+	code := "token_missing"
+	switch {
+	case deleted == 1:
+		code = "token_deleted"
+	case deleted > 1:
+		code = "tokens_deleted"
+	}
+	http.Redirect(w, r, s.entryBase(r)+"/tokens?ok="+code+"&n="+strconv.Itoa(deleted), http.StatusFound)
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
@@ -1069,7 +1086,9 @@ func (s *Server) tokenRows(tokens []*Token, csrf, base string) string {
 			shown = html.EscapeString(shortTok(t.Token)) + "…"
 		}
 		rows.WriteString(fmt.Sprintf(
-			`<tr class="tok-row"><td data-label="Token"><span class="tok-cell"><code title="完整 Token：%s">%s</code>`+
+			`<tr class="tok-row"><td data-label="选择" class="sel-cell">`+
+				`<input type="checkbox" class="tok-sel" form="gmBatchForm" name="token" value="%s" aria-label="选择该 Token"></td>`+
+				`<td data-label="Token"><span class="tok-cell"><code title="完整 Token：%s">%s</code>`+
 				`<button type="button" class="btn outline" title="复制 token" onclick="gmCopyText(this,&quot;%s&quot;)">复制</button></span></td>`+
 				`<td data-label="备注">%s</td>`+
 				`<td data-label="类型"><span class="%s">%s</span></td>`+
@@ -1084,7 +1103,7 @@ func (s *Server) tokenRows(tokens []*Token, csrf, base string) string {
 				`<input type="hidden" name="token" value="%s">`+
 				`<button type="submit" class="danger" onclick="return confirm('确定删除该 token？')">删除</button>`+
 				`</form></span></td></tr>
-<tr class="edit-row" hidden><td colspan="8">
+<tr class="edit-row" hidden><td colspan="9">
 <form method="post" action="%s/tokens/edit" class="edit-form">
 <input type="hidden" name="csrf" value="%s">
 <input type="hidden" name="token" value="%s">
@@ -1095,7 +1114,7 @@ func (s *Server) tokenRows(tokens []*Token, csrf, base string) string {
 <span class="muted small">Token 值不可修改，避免已发出的链接失效。</span>
 </form>
 </td></tr>`,
-			esc, shown, esc, html.EscapeString(t.Note), roleCls, roleTxt,
+			esc, esc, shown, esc, html.EscapeString(t.Note), roleCls, roleTxt,
 			time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"),
 			t.Hits, formatBytes(t.Bytes), lastUsed,
 			base, csrf, esc,
@@ -1103,7 +1122,7 @@ func (s *Server) tokenRows(tokens []*Token, csrf, base string) string {
 			selAttr(normRole(t.Role) == RoleUser), selAttr(normRole(t.Role) == RoleAdmin)))
 	}
 	if len(tokens) == 0 {
-		rows.WriteString(`<tr><td colspan="8" class="muted">暂无 token，请在上方创建</td></tr>`)
+		rows.WriteString(`<tr><td colspan="9" class="muted">暂无 token，请在上方创建</td></tr>`)
 	}
 	return rows.String()
 }
@@ -1145,12 +1164,71 @@ func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	csrf := s.csrfToken(sid)
-	tokens := s.tokensForUser(s.store.All(), user, role)
 	entry := s.entryBase(r)
+	all := s.tokensForUser(s.store.All(), user, role)
+
+	// 每页条数：10（默认）/ 20 / 50；页码从 1 开始
+	size := 10
+	switch r.URL.Query().Get("size") {
+	case "20":
+		size = 20
+	case "50":
+		size = 50
+	}
+	page := 1
+	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
+		page = v
+	}
+	total := len(all)
+	pages := (total + size - 1) / size
+	if pages < 1 {
+		pages = 1
+	}
+	if page > pages {
+		page = pages
+	}
+	start := (page - 1) * size
+	end := start + size
+	if end > total {
+		end = total
+	}
+	pageTokens := all[start:end]
+
+	// 列表工具条：批量删除（行复选框通过 form 属性关联到该表单）+ 每页条数
+	sizeSel := func(sz int) string {
+		if size == sz {
+			return " selected"
+		}
+		return ""
+	}
+	toolbar := `<form id="gmBatchForm" method="post" action="` + entry + `/del" style="display:contents">` +
+		`<input type="hidden" name="csrf" value="` + csrf + `">` +
+		`<button type="submit" id="gmBatchDel" class="btn danger" disabled onclick="return gmConfirmBatchDel()">删除选中</button>` +
+		`</form>` +
+		`<label class="muted small" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px">每页` +
+		`<select onchange="gmSetTokenPageSize(this.value)" aria-label="每页显示条数" style="width:auto;height:32px;padding:0 28px 0 10px">` +
+		`<option value="10"` + sizeSel(10) + `>10</option>` +
+		`<option value="20"` + sizeSel(20) + `>20</option>` +
+		`<option value="50"` + sizeSel(50) + `>50</option>` +
+		`</select> 条</label>`
+
+	pageURL := func(p int) string {
+		return entry + "/tokens?size=" + strconv.Itoa(size) + "&page=" + strconv.Itoa(p)
+	}
+	pager := `<div class="row" style="margin-top:14px;gap:8px;align-items:center">` +
+		`<span class="muted small">共 ` + strconv.Itoa(total) + ` 个 · 第 ` + strconv.Itoa(page) + `/` + strconv.Itoa(pages) + ` 页</span>`
+	if page > 1 {
+		pager += `<a class="btn outline" href="` + pageURL(page-1) + `">上一页</a>`
+	}
+	if page < pages {
+		pager += `<a class="btn outline" href="` + pageURL(page+1) + `">下一页</a>`
+	}
+	pager += `</div>`
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, flash, rows, addForm, foot
+	// verbs: aside, topbarRight, flash, toolbar, rows, pager, addForm, foot
 	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.tokenRows(tokens, csrf, entry), s.tokenAddForm(csrf, entry), s.tokenFoot(entry))
+		toolbar, s.tokenRows(pageTokens, csrf, entry), pager, s.tokenAddForm(csrf, entry), s.tokenFoot(entry))
 	_, _ = w.Write([]byte(pageApp("令牌管理 - gh-mirror", "gh-mirror 令牌管理", body)))
 }
 
@@ -1929,7 +2007,8 @@ func (s *Server) doEditToken(w http.ResponseWriter, r *http.Request) {
 // flashOK / flashErr 把 POST 后重定向携带的 ok / err 码翻译成可读文案。
 var flashOK = map[string]string{
 	"token_added":   "Token 已创建，可立即用于代理访问",
-	"token_deleted": "Token 已删除",
+	"token_deleted":  "Token 已删除",
+	"tokens_deleted": "已删除选中的 Token",
 	"token_updated": "Token 已保存",
 	"token_exists":  "该 Token 已存在，未做改动",
 	"service_on":    "服务已开启，即时生效（已持久化）",
