@@ -37,9 +37,10 @@ type User struct {
 	Email      string `json:"email,omitempty"`
 	PassHash   string `json:"pass_hash"`
 	Salt       string `json:"salt"`
-	Role       string `json:"role"` // super / normal
-	DockerPath string `json:"docker_path,omitempty"`
-	CreatedAt  int64  `json:"created_at"`
+	Role        string `json:"role"` // super / normal
+	DockerPath  string `json:"docker_path,omitempty"`
+	CreatedAt   int64  `json:"created_at"`
+	LastLoginAt int64  `json:"last_login_at,omitempty"` // 最近一次登录时间（0 = 从未登录）
 }
 
 // normUserRole 归一化用户角色：空值或非法值按 normal 处理（super 需显式指定）。
@@ -291,6 +292,18 @@ func (us *UserStore) UpdateRole(username, role string) error {
 		}
 	}
 	u.Role = role
+	return us.saveLocked()
+}
+
+// SetLastLogin 记录某用户最近一次登录时间并落盘（用户不存在时静默返回）。
+func (us *UserStore) SetLastLogin(username string) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[username]
+	if !ok {
+		return nil
+	}
+	u.LastLoginAt = time.Now().Unix()
 	return us.saveLocked()
 }
 

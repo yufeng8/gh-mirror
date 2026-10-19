@@ -221,6 +221,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.doResetUserPass(w, r)
+	case sub == "users/tokens":
+		if !s.requireRootSuper(r) {
+			http.Redirect(w, r, s.adminPath, http.StatusFound)
+			return
+		}
+		s.renderUserTokensPage(w, r)
 	case sub == "services":
 		if s.requireSuper(r) {
 			s.renderServicesPage(w, r)
@@ -415,6 +421,9 @@ func (s *Server) doAdminLogin(w http.ResponseWriter, r *http.Request) {
 	pass := r.FormValue("pass")
 	if s.users.Verify(user, pass) {
 		if u, exists := s.users.Get(user); exists && u.Role == RoleSuper {
+			if err := s.users.SetLastLogin(user); err != nil {
+				log.Printf("更新最后登录时间失败(%s): %v", user, err)
+			}
 			s.setSessionCookie(w, adminSessionCookie, user)
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
@@ -435,6 +444,9 @@ func (s *Server) doUserLogin(w http.ResponseWriter, r *http.Request) {
 	user := r.FormValue("user")
 	pass := r.FormValue("pass")
 	if s.users.Verify(user, pass) {
+		if err := s.users.SetLastLogin(user); err != nil {
+			log.Printf("更新最后登录时间失败(%s): %v", user, err)
+		}
 		s.setSessionCookie(w, userSessionCookie, user)
 		http.Redirect(w, r, s.userPath, http.StatusFound)
 		return
@@ -518,6 +530,10 @@ func (s *Server) doDelToken(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// 注册关闭后从注册页跳回：给出明确提示（而非静默回到登录页）
+	if errMsg == "" && r.URL.Query().Get("err") == "reg_closed" {
+		errMsg = "注册未开放"
+	}
 	// 登录页身份按入口区分：/user 面向普通用户（用户后台），/admin 面向超管（管理后台）
 	isUser := s.isUserEntry(r)
 	sub, desc, forgot := "登录 gh-mirror 管理后台", "gh-mirror 管理后台登录", adminForgotHTML()
@@ -527,7 +543,11 @@ func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, errMsg stri
 	// 注册入口：仅普通入口且注册开关开启时显示
 	regEntry := ""
 	if isUser && s.regEnabled() {
-		regEntry = `<p class="muted note">还没有账号？<a href="` + s.userPath + `/register">注册新账号</a></p>`
+		txt := "注册新账号"
+		if s.inviteOnlyEnabled() {
+			txt = "注册新账号（需邀请码）"
+		}
+		regEntry = `<p class="muted note">还没有账号？<a href="` + s.userPath + `/register">` + txt + `</a></p>`
 	}
 	// 图形验证码：按入口开关显隐（用户入口 userCaptcha / 管理入口 adminCaptcha）
 	captchaBlock := ""
@@ -581,8 +601,13 @@ func userForgotHTML(userPath, contactEmail string) string {
       </details>`
 }
 
-// renderRegisterPage 渲染用户自主注册页（/user/register，注册开关开启时可达）。
+// renderRegisterPage 渲染用户自主注册页（/user/register，仅注册模式非关闭时可达）。
 func (s *Server) renderRegisterPage(w http.ResponseWriter, r *http.Request) {
+	// 注册关闭时直接回到登录页，避免「能打开页面但提交被拒」的矛盾
+	if !s.regEnabled() {
+		http.Redirect(w, r, s.userPath+"?err=reg_closed", http.StatusFound)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	captchaBlock := ""
 	if s.userCaptchaEnabled() {
@@ -775,13 +800,12 @@ func (s *Server) renderServicesPage(w http.ResponseWriter, r *http.Request) {
 		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.userDockerPath(user), dockerSegment(user))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: aside, topbarRight, flash, services
-	// 用户注册与邮箱 / 邀请码管理属用户体系，仅「安装时创建的超级管理员」可见与操作
-	pfHTML, invHTML := "", ""
+	// 邀请码管理属用户体系，仅「安装时创建的超级管理员」可见与操作（设置区已移回用户管理页）
+	invHTML := ""
 	if s.requireRootSuper(r) {
-		pfHTML = s.portalSettingsHTML(csrf)
 		invHTML = s.inviteSectionHTML(csrf)
 	}
-	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services, pfHTML, invHTML)
+	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services, invHTML)
 	_, _ = w.Write([]byte(pageApp("服务管理 - gh-mirror", "gh-mirror 服务管理", body)))
 }
 
@@ -1129,20 +1153,16 @@ func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
 }
 
-// tokenVisible 判断某 token 是否对当前用户可见：super 全量；normal 只看归属自己的；
-// 空 owner（旧数据）归属默认管理员 adminUser（多用户迁移兼容）。
+// tokenVisible 判断某 token 是否属于当前用户（空 owner 的旧数据归属默认管理员 adminUser）。
+// 任何角色（含 super）在常规页面都只看自己的 token——查看他人 token 仅限
+// 「用户管理 → 某用户 Token 详情」（仅安装时超管，只读）。
 func (s *Server) tokenVisible(t *Token, user, role string) bool {
-	if role == RoleSuper {
-		return true
-	}
+	_ = role
 	return t.Owner == user || (t.Owner == "" && user == s.adminUser)
 }
 
-// tokensForUser 按当前用户过滤 token 列表（super 全量、normal 仅自己）。
+// tokensForUser 返回属于当前用户的 token 列表（任何角色都只返回自己的）。
 func (s *Server) tokensForUser(tokens []*Token, user, role string) []*Token {
-	if role == RoleSuper {
-		return tokens
-	}
 	out := make([]*Token, 0, len(tokens))
 	for _, t := range tokens {
 		if s.tokenVisible(t, user, role) {
@@ -1274,45 +1294,36 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 	}
 	csrf := s.csrfToken(sid)
 	users := s.users.All()
+	// 每个用户的 Token 数（一次遍历；空 owner 归默认管理员，兼容旧数据）
+	counts := map[string]int{}
+	for _, t := range s.store.All() {
+		o := t.Owner
+		if o == "" {
+			o = s.adminUser
+		}
+		counts[o]++
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	body := fmt.Sprintf(usersBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.userRows(users, csrf, user), s.userAddForm(csrf))
+		s.userRows(users, counts, csrf, user), s.userAddForm(csrf), s.portalSettingsHTML(csrf))
 	_, _ = w.Write([]byte(pageApp("用户管理 - gh-mirror", "gh-mirror 用户管理", body)))
 }
 
-// portalSettingsHTML 渲染服务管理页底部的「用户注册与邮箱」设置区（SMTP + 注册开关 + 联系邮箱，仅超管）。
+// portalSettingsHTML 渲染用户管理页底部的「用户注册与邮箱」设置区（按钮 + 弹窗表格表单，仅超管）。
 func (s *Server) portalSettingsHTML(csrf string) string {
 	cfg := s.smtpSettings()
-	tlsChecked, regChecked, inviteChecked, userCapChecked, adminCapChecked, hideLoginChecked := "", "", "", "", "", ""
-	if cfg.TLS {
-		tlsChecked = " checked"
-	}
-	if s.regEnabled() {
-		regChecked = " checked"
-	}
-	if s.inviteOnlyEnabled() {
-		inviteChecked = " checked"
-	}
-	if s.hideLoginEnabled() {
-		hideLoginChecked = " checked"
-	}
-	if s.userCaptchaEnabled() {
-		userCapChecked = " checked"
-	}
-	if s.adminCaptchaEnabled() {
-		adminCapChecked = " checked"
-	}
 	port := ""
 	if cfg.Port > 0 {
 		port = strconv.Itoa(cfg.Port)
 	}
-	// 未展开时的状态摘要：一眼看到注册开关 / 联系邮箱 / SMTP 是否已配置
-	regState := "已关闭"
-	if s.regEnabled() {
-		regState = "已开启"
-	}
-	if s.inviteOnlyEnabled() {
-		regState += "（仅邀请码）"
+	mode := s.regMode()
+	// 状态摘要：注册模式 / 联系邮箱 / SMTP
+	regTxt := "关闭注册"
+	switch mode {
+	case RegInvite:
+		regTxt = "仅邀请码注册"
+	case RegOpen:
+		regTxt = "开放注册"
 	}
 	mailState := "未设置"
 	if v := s.contactEmail(); v != "" {
@@ -1325,38 +1336,73 @@ func (s *Server) portalSettingsHTML(csrf string) string {
 			smtpState += ":" + port
 		}
 	}
+	warnHTML := ""
+	if mode != RegClosed && cfg.Host == "" {
+		warnHTML = ` · <strong style="color:#d97706">SMTP 未配置，邮箱验证码无法发送</strong>`
+	}
+	sel := func(m string) string {
+		if mode == m {
+			return " selected"
+		}
+		return ""
+	}
+	chk := func(on bool) string {
+		if on {
+			return " checked"
+		}
+		return ""
+	}
+	chkStyle := "display:inline-flex;align-items:center;gap:8px;margin:2px 18px 2px 0;font-weight:400"
 	return `<section class="card">
-  <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">注册开关 / 图形验证码 / 联系邮箱 / SMTP</span></div>
+  <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">注册模式 / 图形验证码 / 联系邮箱 / SMTP</span></div>
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px">
-    <button type="button" class="btn" onclick="gmTogglePortalForm()">⚙️ 设置</button>
-    <span class="muted small">当前：注册` + regState + ` · 联系邮箱 ` + mailState + ` · SMTP ` + smtpState + `</span>
+    <button type="button" class="btn" onclick="gmOpenModal('gmPortalModal','portalSettingsForm','保存')">⚙️ 设置</button>
+    <span class="muted small">当前：` + regTxt + ` · 联系邮箱 ` + mailState + ` · SMTP ` + smtpState + warnHTML + `</span>
   </div>
-  <form id="portalSettingsForm" method="post" action="` + s.adminPath + `/portal-settings" style="display:none;margin-top:16px">
-    <input type="hidden" name="csrf" value="` + csrf + `">
-    <input type="hidden" name="scope" value="all">
-    <div class="row" style="align-items:flex-end;flex-wrap:wrap;gap:12px">
-      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="regOpen" value="1"` + regChecked + `> 开启用户注册</label>
-      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="inviteOnly" value="1"` + inviteChecked + `> 仅邀请码注册</label>
-      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="userCaptcha" value="1"` + userCapChecked + `> 用户入口图形验证码</label>
-      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="adminCaptcha" value="1"` + adminCapChecked + `> 管理入口图形验证码</label>
-      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="hideLogin" value="1"` + hideLoginChecked + `> 首页隐藏登录按钮</label>
-      <label class="fld">联系邮箱<input name="contactEmail" type="email" value="` + html.EscapeString(s.contactEmail()) + `" placeholder="用于用户紧急联系与找回密码引导"></label>
+  <div class="modal" id="gmPortalModal" hidden>
+    <div class="modal-mask" onclick="gmCloseModal()"></div>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="gmPortalModalTitle">
+      <div class="modal-head"><h3 id="gmPortalModalTitle">用户注册与邮箱</h3></div>
+      <form id="portalSettingsForm" method="post" action="` + s.adminPath + `/portal-settings">
+        <input type="hidden" name="csrf" value="` + csrf + `">
+        <input type="hidden" name="scope" value="all">
+        <div class="modal-body">
+          <table class="kv-table">
+            <tr><th>注册模式</th><td>
+              <select name="regMode">
+                <option value="closed"` + sel(RegClosed) + `>关闭注册</option>
+                <option value="invite"` + sel(RegInvite) + `>仅邀请码注册</option>
+                <option value="open"` + sel(RegOpen) + `>开放注册</option>
+              </select>
+              <p class="muted small" style="margin:6px 0 0">「仅邀请码」需在服务管理页的邀请码管理中生成邀请码；关闭后注册页与注册入口均不可用。</p>
+            </td></tr>
+            <tr><th>图形验证码</th><td>
+              <label style="` + chkStyle + `"><input type="checkbox" name="userCaptcha" value="1"` + chk(s.userCaptchaEnabled()) + `> 用户入口（登录 / 注册）</label>
+              <label style="` + chkStyle + `"><input type="checkbox" name="adminCaptcha" value="1"` + chk(s.adminCaptchaEnabled()) + `> 管理入口登录</label>
+            </td></tr>
+            <tr><th>首页入口</th><td>
+              <label style="` + chkStyle + `"><input type="checkbox" name="hideLogin" value="1"` + chk(s.hideLoginEnabled()) + `> 隐藏首页登录 / 注册按钮（<code>/admin</code>、<code>/user</code> 仍可直达）</label>
+            </td></tr>
+            <tr><th>联系邮箱</th><td>
+              <input name="contactEmail" type="email" value="` + html.EscapeString(s.contactEmail()) + `" placeholder="用于用户紧急联系与找回密码引导">
+            </td></tr>
+            <tr class="kv-group"><th colspan="2">SMTP 发信设置</th></tr>
+            <tr><th>SMTP 主机</th><td><input name="smtpHost" value="` + html.EscapeString(cfg.Host) + `" placeholder="smtp.example.com"></td></tr>
+            <tr><th>端口</th><td><input name="smtpPort" type="number" min="1" value="` + port + `" placeholder="465" style="max-width:140px"></td></tr>
+            <tr><th>账号</th><td><input name="smtpUser" value="` + html.EscapeString(cfg.Username) + `" autocomplete="off"></td></tr>
+            <tr><th>密码</th><td><input name="smtpPass" type="password" value="" placeholder="已设置则留空保持不变" autocomplete="new-password"></td></tr>
+            <tr><th>发件人</th><td><input name="smtpFrom" type="email" value="` + html.EscapeString(cfg.From) + `" placeholder="no-reply@example.com"></td></tr>
+            <tr><th>加密</th><td><label style="` + chkStyle + `"><input type="checkbox" name="smtpTLS" value="1"` + chk(cfg.TLS) + `> 使用 TLS</label></td></tr>
+          </table>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn outline" onclick="gmCloseModal()">取消</button>
+          <button type="submit" class="btn">保存</button>
+        </div>
+      </form>
     </div>
-    <h3 style="margin-top:16px">SMTP 发信设置</h3>
-    <div class="row" style="align-items:flex-end;flex-wrap:wrap;gap:12px">
-      <label class="fld">SMTP 主机<input name="smtpHost" value="` + html.EscapeString(cfg.Host) + `" placeholder="smtp.example.com"></label>
-      <label class="fld">端口<input name="smtpPort" type="number" min="1" value="` + port + `" placeholder="465"></label>
-      <label class="fld">账号<input name="smtpUser" value="` + html.EscapeString(cfg.Username) + `" autocomplete="off"></label>
-      <label class="fld">密码<input name="smtpPass" type="password" value="" placeholder="已设置则留空保持不变" autocomplete="new-password"></label>
-      <label class="fld">发件人<input name="smtpFrom" type="email" value="` + html.EscapeString(cfg.From) + `" placeholder="no-reply@example.com"></label>
-      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="smtpTLS" value="1"` + tlsChecked + `> 使用 TLS</label>
-    </div>
-    <div class="row" style="margin-top:14px;gap:10px">
-      <button type="submit" class="btn">保存</button>
-      <button type="button" class="btn outline" onclick="gmTogglePortalForm()">取消</button>
-    </div>
-  </form>
-  <p class="muted small" style="margin-top:10px">SMTP 凭据保存在 <code>gm-data/settings.json</code>（文件权限 0600）。开启注册后用户可凭邮箱验证码自主注册普通账号；关闭后注册入口隐藏，但已有账号与找回密码不受影响。超级管理员密码无法通过邮箱找回。勾选「首页隐藏登录按钮」后首页导航不再显示登录/注册入口，但 <code>/admin</code> 与 <code>/user</code> 仍可直接访问，不影响后台登录。</p>
+  </div>
+  <p class="muted small" style="margin-top:10px">SMTP 凭据保存在 <code>gm-data/settings.json</code>（文件权限 0600）。注册模式：关闭 = 无自助注册；仅邀请码 = 需有效邀请码；开放 = 邮箱验证码自助注册（需先配置 SMTP）。超级管理员密码无法通过邮箱找回。</p>
 </section>`
 }
 
@@ -1465,7 +1511,7 @@ func toggleRole(role string) string {
 // userRows 渲染用户列表（当前登录用户标注「我」；改角色/重置密码/删除为行内操作）。
 // 安装时创建的超级管理员（s.adminUser）唯一，不可降级/删除，也不显示操作按钮；
 // 其他 super 角色显示为「管理员」（可被唯一超管调整）。
-func (s *Server) userRows(users []*User, csrf, current string) string {
+func (s *Server) userRows(users []*User, counts map[string]int, csrf, current string) string {
 	var rows strings.Builder
 	for _, u := range users {
 		roleTxt, roleCls := "普通用户", "badge"
@@ -1480,6 +1526,21 @@ func (s *Server) userRows(users []*User, csrf, current string) string {
 			me = ` <span class="muted small">（我）</span>`
 		}
 		esc := html.EscapeString(u.Username)
+		// 邮箱（手工创建的用户可能没有）
+		emailCell := `<span class="muted">—</span>`
+		if u.Email != "" {
+			emailCell = html.EscapeString(u.Email)
+		}
+		// 最后登录（从未登录显示 —）
+		lastLogin := `<span class="muted">—</span>`
+		if u.LastLoginAt > 0 {
+			lastLogin = time.Unix(u.LastLoginAt, 0).Format("2006-01-02 15:04")
+		}
+		// Token 数（点击进入该用户的只读 Token 详情）
+		tokenCell := `<span class="muted">0</span>`
+		if n := counts[u.Username]; n > 0 {
+			tokenCell = `<a href="` + s.adminPath + `/users/tokens?user=` + esc + `">` + strconv.Itoa(n) + `</a>`
+		}
 		ops := `<span class="muted small">安装时创建，不可降级 / 删除</span>`
 		if !isRoot {
 			btnTxt, roleVal := "设为管理员", RoleSuper
@@ -1496,14 +1557,78 @@ func (s *Server) userRows(users []*User, csrf, current string) string {
 		}
 		rows.WriteString(fmt.Sprintf(
 			`<tr class="tok-row"><td data-label="用户名"><code>%s</code>%s</td>`+
+				`<td data-label="邮箱">%s</td>`+
 				`<td data-label="角色"><span class="%s">%s</span></td>`+
 				`<td data-label="创建时间">%s</td>`+
+				`<td data-label="最后登录">%s</td>`+
+				`<td data-label="Token 数">%s</td>`+
 				`<td data-label="操作"><span class="ops">%s</span></td></tr>`,
-			esc, me, roleCls, roleTxt,
-			time.Unix(u.CreatedAt, 0).Format("2006-01-02 15:04"), ops))
+			esc, me, emailCell, roleCls, roleTxt,
+			time.Unix(u.CreatedAt, 0).Format("2006-01-02 15:04"), lastLogin, tokenCell, ops))
 	}
 	if len(users) == 0 {
-		rows.WriteString(`<tr><td colspan="4" class="muted">暂无用户</td></tr>`)
+		rows.WriteString(`<tr><td colspan="7" class="muted">暂无用户</td></tr>`)
+	}
+	return rows.String()
+}
+
+// renderUserTokensPage 渲染某用户的 Token 只读详情页（/admin/users/tokens，仅安装时超管）。
+func (s *Server) renderUserTokensPage(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRootSuper(r) {
+		http.Redirect(w, r, s.adminPath, http.StatusFound)
+		return
+	}
+	target := strings.TrimSpace(r.URL.Query().Get("user"))
+	if target == "" {
+		http.Redirect(w, r, s.adminPath+"/users", http.StatusFound)
+		return
+	}
+	if _, exists := s.users.Get(target); !exists {
+		http.Redirect(w, r, s.adminPath+"/users?err=bad_input", http.StatusFound)
+		return
+	}
+	rows := s.userTokenRows(s.store.All(), target)
+	back := `<a class="btn outline" href="` + s.adminPath + `/users">← 返回用户管理</a>`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// verbs: aside, topbarRight, flash, username, back, rows
+	body := fmt.Sprintf(userTokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
+		html.EscapeString(target), back, rows)
+	_, _ = w.Write([]byte(pageApp("Token 详情 · "+target+" - gh-mirror", "该用户的 Token 详情（只读）", body)))
+}
+
+// userTokenRows 渲染某用户 token 的只读行（可复制，不含编辑/删除表单）。
+func (s *Server) userTokenRows(tokens []*Token, owner string) string {
+	var rows strings.Builder
+	for _, t := range tokens {
+		if !(t.Owner == owner || (t.Owner == "" && owner == s.adminUser)) {
+			continue
+		}
+		roleTxt := "普通"
+		if normRole(t.Role) == RoleAdmin {
+			roleTxt = "高级（MCP）"
+		}
+		lastUsed := "—"
+		if t.LastUsed > 0 {
+			lastUsed = time.Unix(t.LastUsed, 0).Format("2006-01-02 15:04")
+		}
+		note := t.Note
+		if note == "" {
+			note = "—"
+		}
+		rows.WriteString(fmt.Sprintf(
+			`<tr class="tok-row">`+
+				`<td data-label="Token"><code>%s</code> <button type="button" class="btn outline" onclick="gmCopyText(this,this.parentNode.querySelector('code').textContent)">复制</button></td>`+
+				`<td data-label="备注">%s</td>`+
+				`<td data-label="类型">%s</td>`+
+				`<td data-label="命中">%d</td>`+
+				`<td data-label="流量">%s</td>`+
+				`<td data-label="创建时间">%s</td>`+
+				`<td data-label="最近使用">%s</td></tr>`,
+			html.EscapeString(t.Token), html.EscapeString(note), roleTxt, t.Hits, formatBytes(t.Bytes),
+			time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"), lastUsed))
+	}
+	if rows.Len() == 0 {
+		rows.WriteString(`<tr><td colspan="7" class="muted">该用户暂无 Token</td></tr>`)
 	}
 	return rows.String()
 }
@@ -2073,20 +2198,19 @@ func (s *Server) doSetPortalSettings(w http.ResponseWriter, r *http.Request) {
 			cfg.Password = oldSMTP.Password
 		}
 	}
-	regOpen, contactEmail := s.regEnabled(), s.contactEmail()
-	userCaptcha, adminCaptcha, inviteOnly := s.userCaptchaEnabled(), s.adminCaptchaEnabled(), s.inviteOnlyEnabled()
+	regMode, contactEmail := s.regMode(), s.contactEmail()
+	userCaptcha, adminCaptcha := s.userCaptchaEnabled(), s.adminCaptchaEnabled()
 	hideLogin := s.hideLoginEnabled()
 	if portalForm {
-		regOpen = formBool(r, "regOpen")
+		regMode = normRegMode(r.FormValue("regMode"))
 		contactEmail = r.FormValue("contactEmail")
 		userCaptcha = formBool(r, "userCaptcha")
 		adminCaptcha = formBool(r, "adminCaptcha")
-		inviteOnly = formBool(r, "inviteOnly")
 		hideLogin = formBool(r, "hideLogin")
 	}
-	s.setPortalSettings(cfg, regOpen, contactEmail, userCaptcha, adminCaptcha, inviteOnly, hideLogin)
-	log.Printf("门户设置已保存(scope=%s): regOpen=%v userCaptcha=%v adminCaptcha=%v inviteOnly=%v contactEmail=%q smtp=%s:%d tls=%v",
-		scope, regOpen, userCaptcha, adminCaptcha, inviteOnly, contactEmail, cfg.Host, cfg.Port, cfg.TLS)
+	s.setPortalSettings(cfg, regMode, contactEmail, userCaptcha, adminCaptcha, hideLogin)
+	log.Printf("门户设置已保存(scope=%s): regMode=%s userCaptcha=%v adminCaptcha=%v contactEmail=%q smtp=%s:%d tls=%v",
+		scope, regMode, userCaptcha, adminCaptcha, contactEmail, cfg.Host, cfg.Port, cfg.TLS)
 	http.Redirect(w, r, s.adminPath+"/users?ok=portal_saved", http.StatusFound)
 }
 
@@ -2400,19 +2524,25 @@ type convertResp struct {
 func (s *Server) doConvertAPI(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	raw := strings.TrimSpace(r.FormValue("url"))
-	toks := s.store.All()
-	// token 可由前端选择器指定；未指定或不存在时回落到第一个
-	tk := ""
-	if req := strings.TrimSpace(r.FormValue("token")); req != "" && s.store.Has(req) {
-		tk = req
-	} else if len(toks) > 0 {
-		tk = toks[0].Token
-	}
 	// 当前用户用于离线包路径的用户名段（多用户隔离）
-	_, user, _, ok := s.parseSession(r)
+	_, user, role, ok := s.parseSession(r)
 	if !ok {
 		s.writeJSON(w, http.StatusUnauthorized, convertResp{OK: false, Hint: "未登录或会话已过期"})
 		return
+	}
+	// 只允许使用自己的 token（管理员 / 超管也不能借用他人 token 生成链接）
+	own := s.tokensForUser(s.store.All(), user, role)
+	tk := ""
+	if req := strings.TrimSpace(r.FormValue("token")); req != "" {
+		for _, t := range own {
+			if t.Token == req {
+				tk = req
+				break
+			}
+		}
+	}
+	if tk == "" && len(own) > 0 {
+		tk = own[0].Token
 	}
 	res := s.buildAccelURL(baseOf(r), raw, tk, user)
 	if res.URL == "" {

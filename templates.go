@@ -447,6 +447,19 @@ const pageStyle = `
   .modal-body ol{margin:10px 0 0;padding-left:20px}
   .modal-body li{margin:6px 0}
   .modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);flex-wrap:wrap}
+  /* 设置弹窗内的两列表格（左标签 / 右控件） */
+  .kv-table{width:100%;border-collapse:collapse}
+  .kv-table th{width:140px;text-align:right;padding:7px 14px 7px 0;font-size:.86rem;font-weight:600;color:var(--muted-foreground);vertical-align:middle}
+  .kv-table td{padding:7px 0;vertical-align:middle;color:var(--foreground)}
+  .kv-table td input,.kv-table td select{width:100%;max-width:420px}
+  .kv-table td input[type=number]{max-width:140px}
+  .kv-table .kv-group th{text-align:left;padding-top:16px;border-top:1px solid var(--border);color:var(--foreground);font-size:.92rem}
+  @media (max-width:640px){
+    .kv-table,.kv-table tbody,.kv-table tr,.kv-table th,.kv-table td{display:block}
+    .kv-table th{width:auto;text-align:left;padding:8px 0 2px}
+    .kv-table td{padding:0 0 8px}
+    .kv-table td input,.kv-table td select{max-width:none}
+  }
   .nav-mask{display:none;position:fixed;inset:0;z-index:45;background:rgba(0,0,0,.45);border:0}
   .nav-mask.show{display:block}
   .captcha-row{display:flex;gap:8px;align-items:center;margin:10px 0}
@@ -625,9 +638,6 @@ function gmCloseModal(reset){var ms=document.querySelectorAll('.modal');for(var 
 function gmConfirmModal(){var f=gmPendingForm;gmCloseModal(false);if(f)if(typeof f.requestSubmit==='function'){f.requestSubmit()}else{f.submit()}}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')gmCloseModal()});
 (function(){try{var t=localStorage.getItem('gm_tok');var sels=document.querySelectorAll('.gmtok');if(!sels.length)return;if(!t){return}var hit=false;for(var i=0;i<sels.length;i++){for(var j=0;j<sels[i].options.length;j++){if(sels[i].options[j].value===t){hit=true;break}}if(hit){break}}if(hit){gmApplyToken(t)}else{try{localStorage.removeItem('gm_tok')}catch(e){}}}catch(e){}})();
-/* 用户注册与邮箱：默认只显示「设置」按钮，点击展开 / 收起表单；保存成功（URL 带 ok=portal_saved）时自动展开。 */
-function gmTogglePortalForm(){var f=document.getElementById('portalSettingsForm');if(!f)return;f.style.display=(f.style.display==='none'||!f.style.display)?'block':'none'}
-(function(){if(/[?&]ok=portal_saved/.test(location.search)){var f=document.getElementById('portalSettingsForm');if(f)f.style.display='block'}})();
 /* 首页「复制最新提示词」：优先从 jsDelivr / GitHub raw 取最新版本（与仓库始终同步，不必等发版）；
    取不到（离线 / 内网部署）时回退到镜像内置的 agentPrompt()。 */
 function gmCopyLatestPrompt(btn){
@@ -1021,7 +1031,7 @@ var dashboardBody = `
 </div>`
 
 // servicesBody 是服务管理独立页面的 body 片段（/admin/services）。
-// 动词：aside / topbarRight / flash / services / portalSettings / invite
+// 动词：aside / topbarRight / flash / services / invite
 var servicesBody = `
 <div class="console" id="top">
   %s
@@ -1036,7 +1046,6 @@ var servicesBody = `
       <h2>服务开关</h2>
       %s
     </section>
-    %s
     %s
   </div>
 </div>`
@@ -1119,9 +1128,30 @@ var mcpBody = `
   </div>
 </div>`
 
+// userTokensBody 是某用户 Token 只读详情页（/admin/users/tokens，仅安装时超管）。
+// 动词：aside / topbarRight / flash / username / back / rows
+var userTokensBody = `
+<div class="console" id="top">
+  %s
+  <div class="main">
+    <div class="topbar">
+      <button class="btn outline nav-toggle" type="button" onclick="toggleNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+      <h1>Token 详情 · %s</h1>
+      <div class="spacer">%s</div>
+    </div>
+    <section class="card">
+      <div class="card-head"><h2>该用户的 Token（只读）</h2>%s</div>
+      <p class="muted small">仅「安装时创建的超级管理员」可查看；此处可复制 Token 明文，但不能修改或删除。</p>
+      <div class="table-wrap"><table class="tok-table">
+        <thead><tr><th>Token</th><th>备注</th><th>类型</th><th>命中</th><th>流量</th><th>创建时间</th><th>最近使用</th></tr></thead>
+        <tbody>%s</tbody>
+      </table></div>
+    </section>
+  </div>
+</div>`
+
 // usersBody 是用户管理页面的 body 片段（/admin/users，仅超级管理员）。
-// 动词：aside / topbarRight / flash / rows / addForm
-// （「用户注册与邮箱」「邀请码管理」已移到服务管理页 /admin/services 底部）
+// 动词：aside / topbarRight / flash / rows / addForm / settings（「邀请码管理」仍在服务管理页）
 var usersBody = `
 <div class="console" id="top">
   %s
@@ -1137,12 +1167,13 @@ var usersBody = `
       <p class="muted small">超级管理员可管理所有用户并查看全局；普通用户只管理自己的 Token / Docker 路径 / MCP。</p>
       <div class="table-wrap">
       <table class="tok-table">
-        <thead><tr><th>用户名</th><th>角色</th><th>创建时间</th><th>操作</th></tr></thead>
+        <thead><tr><th>用户名</th><th>邮箱</th><th>角色</th><th>创建时间</th><th>最后登录</th><th>Token 数</th><th>操作</th></tr></thead>
         <tbody>%s</tbody>
       </table>
       </div>
       <h2 style="margin-top:22px">新增用户</h2>
       %s
     </section>
+    %s
   </div>
 </div>`

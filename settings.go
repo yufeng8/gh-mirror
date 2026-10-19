@@ -37,8 +37,39 @@ type settings struct {
 	RegOpen      bool       `json:"regOpen"`      // 用户自主注册开关
 	UserCaptcha  bool       `json:"userCaptcha"`  // 用户入口（登录+注册）图形验证码开关
 	AdminCaptcha bool       `json:"adminCaptcha"` // 管理入口登录图形验证码开关
-	InviteOnly   bool       `json:"inviteOnly"`   // 仅邀请码注册开关
+	InviteOnly   bool       `json:"inviteOnly"`   // 旧字段：仅邀请码注册开关（保留用于旧版本回滚，以 RegMode 为准）
 	HideLogin    bool       `json:"hideLogin"`    // 首页隐藏登录/注册按钮（仅隐藏入口，/admin /user 仍可直达）
+	RegMode      string     `json:"regMode"`      // 注册模式：closed / invite / open（唯一事实来源）
+}
+
+// 注册模式（三态，唯一事实来源）：关闭注册 / 仅邀请码注册 / 开放注册。
+const (
+	RegClosed = "closed"
+	RegInvite = "invite"
+	RegOpen   = "open"
+)
+
+// normRegMode 归一化注册模式：空值或非法值按「关闭」处理。
+func normRegMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case RegInvite:
+		return RegInvite
+	case RegOpen:
+		return RegOpen
+	default:
+		return RegClosed
+	}
+}
+
+// deriveRegMode 由旧字段推导注册模式（旧 settings.json 迁移用）。
+func deriveRegMode(regOpen, inviteOnly bool) string {
+	if !regOpen {
+		return RegClosed
+	}
+	if inviteOnly {
+		return RegInvite
+	}
+	return RegOpen
 }
 
 // normDockerPath 规范化 Docker 自定义路径：去首尾与重复斜杠，只允许 [A-Za-z0-9-_/]，最长 64 字符。
@@ -104,6 +135,12 @@ func loadSettings(s *Server, cfg *config.Config) {
 		}
 		st.DockerPath = ""
 	}
+	// 注册模式：新字段优先；旧 settings.json 缺 regMode 时按旧开关推导并回写一次
+	mode := normRegMode(st.RegMode)
+	if strings.TrimSpace(st.RegMode) == "" {
+		mode = deriveRegMode(st.RegOpen, st.InviteOnly)
+		migrated = true
+	}
 	s.svcMu.Lock()
 	s.dockerOn = st.Docker
 	s.hfOn = st.HF
@@ -113,10 +150,9 @@ func loadSettings(s *Server, cfg *config.Config) {
 	s.offlineMaxFileMB = st.Offline.MaxFileMB
 	s.contactEmailStr = st.ContactEmail
 	s.smtpCfg = st.SMTP
-	s.regOpen = st.RegOpen
+	s.regModeVal = mode
 	s.userCaptcha = st.UserCaptcha
 	s.adminCaptcha = st.AdminCaptcha
-	s.inviteOnly = st.InviteOnly
 	s.hideLogin = st.HideLogin
 	s.svcMu.Unlock()
 	if migrated {
@@ -151,10 +187,12 @@ func (s *Server) currentSettings() settings {
 	st.Offline.MaxFileMB = s.offlineMaxFileMB
 	st.ContactEmail = s.contactEmailStr
 	st.SMTP = s.smtpCfg
-	st.RegOpen = s.regOpen
+	// 以三态为唯一事实来源，同时回写旧字段便于旧版本回滚读取
+	st.RegMode = s.regModeVal
+	st.RegOpen = s.regModeVal != RegClosed
+	st.InviteOnly = s.regModeVal == RegInvite
 	st.UserCaptcha = s.userCaptcha
 	st.AdminCaptcha = s.adminCaptcha
-	st.InviteOnly = s.inviteOnly
 	st.HideLogin = s.hideLogin
 	s.svcMu.RUnlock()
 	st.Cache.MaxFileMB = int(s.cache.MaxBytes() / (1024 * 1024))
@@ -267,15 +305,14 @@ func (s *Server) offlineMaxFileBytes() int64 {
 	return int64(s.offlineMaxFileMB) * 1024 * 1024
 }
 
-// setPortalSettings 保存 SMTP 配置、注册开关、联系邮箱与图形验证码/邀请码开关（热生效 + 持久化）。
-func (s *Server) setPortalSettings(cfg smtpConfig, regOpen bool, contactEmail string, userCaptcha, adminCaptcha, inviteOnly, hideLogin bool) {
+// setPortalSettings 保存 SMTP 配置、注册模式、联系邮箱与图形验证码等开关（热生效 + 持久化）。
+func (s *Server) setPortalSettings(cfg smtpConfig, regMode, contactEmail string, userCaptcha, adminCaptcha, hideLogin bool) {
 	s.svcMu.Lock()
 	s.smtpCfg = cfg
-	s.regOpen = regOpen
+	s.regModeVal = normRegMode(regMode)
 	s.contactEmailStr = strings.TrimSpace(contactEmail)
 	s.userCaptcha = userCaptcha
 	s.adminCaptcha = adminCaptcha
-	s.inviteOnly = inviteOnly
 	s.hideLogin = hideLogin
 	s.svcMu.Unlock()
 	s.saveSettings()
@@ -295,11 +332,19 @@ func (s *Server) adminCaptchaEnabled() bool {
 	return s.adminCaptcha
 }
 
-// inviteOnlyEnabled 返回仅邀请码注册开关状态。
-func (s *Server) inviteOnlyEnabled() bool {
+// regMode 返回注册模式（closed / invite / open）。
+func (s *Server) regMode() string {
 	s.svcMu.RLock()
 	defer s.svcMu.RUnlock()
-	return s.inviteOnly
+	if s.regModeVal == "" {
+		return RegClosed
+	}
+	return s.regModeVal
+}
+
+// inviteOnlyEnabled 返回是否为「仅邀请码」注册模式。
+func (s *Server) inviteOnlyEnabled() bool {
+	return s.regMode() == RegInvite
 }
 
 // hideLoginEnabled 返回首页是否隐藏登录/注册入口（仅影响首页导航展示，不封禁入口路径）。
@@ -316,11 +361,9 @@ func (s *Server) smtpSettings() smtpConfig {
 	return s.smtpCfg
 }
 
-// regEnabled 返回用户注册开关状态。
+// regEnabled 返回是否允许注册（「仅邀请码」与「开放注册」均为 true）。
 func (s *Server) regEnabled() bool {
-	s.svcMu.RLock()
-	defer s.svcMu.RUnlock()
-	return s.regOpen
+	return s.regMode() != RegClosed
 }
 
 // offlinePurgeBytes 返回离线包自动清理阈值（字节；0 表示未启用）。
