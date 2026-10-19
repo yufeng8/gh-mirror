@@ -114,3 +114,33 @@ func TestOfflineCacheTasks(t *testing.T) {
 		t.Fatalf("tasks = %+v", tasks)
 	}
 }
+
+func TestParseConfigCreated(t *testing.T) {
+	ok := []byte(`{"created":"2026-10-09T12:34:56.123456789Z","architecture":"amd64"}`)
+	if ts := parseConfigCreated(ok); ts == 0 {
+		t.Fatal("expected parsed created timestamp")
+	}
+	if ts := parseConfigCreated([]byte(`{"created":""}`)); ts != 0 {
+		t.Fatalf("empty created = %d, want 0", ts)
+	}
+	if ts := parseConfigCreated([]byte(`not-json`)); ts != 0 {
+		t.Fatalf("invalid json = %d, want 0", ts)
+	}
+}
+
+func TestOfflineCacheSetUpstream(t *testing.T) {
+	c, dir := newTestOfflineCache(t)
+	c.MarkBuilding("sha256:up1", "library/redis:7.2", "7.2")
+	c.SetUpstream("sha256:up1", 1700000000)
+	c.MarkReady("sha256:up1", 100)
+	p, ok := c.Get("sha256:up1")
+	if !ok || p.Upstream != 1700000000 {
+		t.Fatalf("upstream not set: %+v", p)
+	}
+	// 重新加载验证持久化
+	c2 := NewOfflineCache(filepath.Join(dir, "offline-cache"))
+	p2, ok := c2.Get("sha256:up1")
+	if !ok || p2.Upstream != 1700000000 {
+		t.Fatalf("upstream not persisted: %+v", p2)
+	}
+}

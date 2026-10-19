@@ -737,6 +737,10 @@ function gmDockerPathPreview(v){var i=document.getElementById('gmDockerPath'),p=
 (function(){var f=document.getElementById('gmFlash');if(!f)return;try{var u=new URL(location.href);if(u.searchParams.has('ok')||u.searchParams.has('err')){u.searchParams.delete('ok');u.searchParams.delete('err');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}setTimeout(function(){f.classList.add('out');setTimeout(function(){if(f.parentNode)f.remove()},400)},4000)})();
 /* 离线包：镜像选择面板（常用镜像 + Docker Hub 实时搜索，点击填入输入框） */
 var GM_COMMON_IMAGES=['nginx','redis','postgres','mysql','mariadb','mongo','node','python','alpine','ubuntu'];
+/* 数字千分位（拉取数等） */
+function gmNum(n){n=Number(n)||0;return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,',')}
+/* ISO 时间 → 相对时间（分钟/小时/天前），无效返回空串 */
+function gmRelTime(s){if(!s)return '';var t=new Date(s);if(isNaN(t.getTime()))return '';var d=(Date.now()-t.getTime())/1000;if(d<0)d=0;if(d<3600)return Math.max(1,Math.floor(d/60))+' 分钟前';if(d<86400)return Math.floor(d/3600)+' 小时前';return Math.floor(d/86400)+' 天前'}
 function gmPickImage(){
   var box=document.getElementById('gmImageCommon');
   if(box&&!box.getAttribute('data-ready')){
@@ -770,10 +774,13 @@ function gmSearchImage(){
       if(!rs.length){box.innerHTML='<p class="muted small">没有找到匹配的镜像。</p>';return}
       var h='';
       for(var i=0;i<rs.length;i++){
-        var x=rs[i],nm=x.name||'',stars=x.star_count||0;
+        var x=rs[i],nm=x.name||'',stars=x.stars||0,pulls=x.pulls||0;
+        var meta=(x.official?'官方 · ':'')+gmNum(stars)+' ★ · 拉取 '+gmNum(pulls);
+        var rel=gmRelTime(x.updated);
+        if(rel)meta+=' · 上游更新 '+rel;
         h+='<button type="button" class="img-pick" data-name="'+gmEsc(nm)+'">'
           +'<span class="img-pick-name">'+gmEsc(nm)+'</span>'
-          +'<span class="img-pick-meta">'+stars+' ★'+(x.is_official?' · 官方':'')+'</span>'
+          +'<span class="img-pick-meta">'+meta+'</span>'
           +(x.description?'<span class="img-pick-desc">'+gmEsc(x.description)+'</span>':'')
           +'</button>';
       }

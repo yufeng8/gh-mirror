@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,10 +29,11 @@ const (
 type OfflinePkg struct {
 	Digest string `json:"digest"` // 平台选定后的 manifest digest（如 sha256:...）
 	Image  string `json:"image"`  // 镜像名（含 tag，如 library/nginx:1.25）
-	Ref    string `json:"ref"`    // 原始 tag 或 digest
-	Size   int64  `json:"size"`   // 落盘 tar 大小（字节）
-	Mtime  int64  `json:"mtime"`  // 最近打包完成时间（unix 秒）
-	State  string `json:"state"`  // ready / building / failed
+	Ref      string `json:"ref"`                // 原始 tag 或 digest（版本号）
+	Size     int64  `json:"size"`               // 落盘 tar 大小（字节）
+	Mtime    int64  `json:"mtime"`              // 最近打包完成时间（unix 秒）
+	State    string `json:"state"`              // ready / building / failed
+	Upstream int64  `json:"upstream,omitempty"` // 上游镜像创建时间（config.created，0 = 未知）
 }
 
 // OfflineTask 表示一次异步拉取任务（内存态，不落盘；用于管理页展示进度）。
@@ -156,6 +158,36 @@ func (c *OfflineCache) MarkBuilding(digest, image, ref string) {
 	p.State = OfflineBuilding
 	_ = c.saveLocked()
 	c.mu.Unlock()
+}
+
+// SetUpstream 记录上游镜像的构建时间（来自 image config 的 created 字段），供管理页展示。
+func (c *OfflineCache) SetUpstream(digest string, ts int64) {
+	if ts <= 0 {
+		return
+	}
+	c.mu.Lock()
+	if p, ok := c.pkgs[digest]; ok {
+		p.Upstream = ts
+		_ = c.saveLocked()
+	}
+	c.mu.Unlock()
+}
+
+// parseConfigCreated 从 OCI image config JSON 解析 created 时间（RFC3339），失败返回 0。
+func parseConfigCreated(b []byte) int64 {
+	var cfg struct {
+		Created string `json:"created"`
+	}
+	if json.Unmarshal(b, &cfg) != nil || strings.TrimSpace(cfg.Created) == "" {
+		return 0
+	}
+	if t, err := time.Parse(time.RFC3339Nano, cfg.Created); err == nil {
+		return t.Unix()
+	}
+	if t, err := time.Parse(time.RFC3339, cfg.Created); err == nil {
+		return t.Unix()
+	}
+	return 0
 }
 
 // MarkReady 记录「打包完成」：状态 ready、记录大小与时间。

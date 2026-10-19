@@ -945,10 +945,22 @@ func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size in
 		}
 		img := html.EscapeString(p.Image)
 		dg := html.EscapeString(p.Digest)
+		// 版本号（tag / digest）与上游镜像构建时间；未知时只显示版本
+		refTxt := strings.TrimSpace(p.Ref)
+		if refTxt == "" {
+			refTxt = "latest"
+		}
+		if strings.HasPrefix(refTxt, "sha256:") {
+			refTxt = "digest " + shortTok(refTxt)
+		}
+		refMeta := ` · 版本 ` + html.EscapeString(refTxt)
+		if p.Upstream > 0 {
+			refMeta += ` · 上游更新 ` + relTime(p.Upstream)
+		}
 		copyBtn := `<button type="button" class="btn outline" title="复制下载链接" onclick="gmCopyText(this, &quot;` + html.EscapeString(dlLink) + `&quot;)"` + func() string { if tok == "" { return " disabled" }; return "" }() + `>复制链接</button>`
 		rows.WriteString(`<tr class="tok-row">` +
 			`<td data-label="选择"><input type="checkbox" name="digest" value="` + dg + `" aria-label="选择 ` + img + `"></td>` +
-			`<td data-label="镜像"><code>` + img + `</code><div class="muted small">` + dg + `</div></td>` +
+			`<td data-label="镜像"><code>` + img + `</code><div class="muted small">` + dg + refMeta + `</div></td>` +
 			`<td data-label="状态"><span class="` + stateCls + `">` + stateTxt + `</span></td>` +
 			`<td data-label="大小" class="num">` + sizeTxt + `</td>` +
 			`<td data-label="缓存时间">` + mtime + `</td>` +
@@ -1000,7 +1012,7 @@ func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size in
 </div>`
 	pullForm := `<form method="post" action="` + s.adminPath + `/offline/repull" class="row" style="margin-top:12px;gap:10px">
   <input type="hidden" name="csrf" value="` + csrf + `">
-  <input id="gmOfflineImage" name="image" placeholder="镜像名，如 library/nginx:1.25 或 nginx:latest" required style="flex:1;min-width:320px">
+  <input id="gmOfflineImage" name="image" placeholder="镜像名，如 library/nginx:1.25 或 nginx:latest" required style="width:min(460px,100%)">
   <button type="button" class="btn outline" onclick="gmPickImage()">🔍 选择镜像</button>
   <button type="submit" class="btn">拉取并缓存</button>
 </form>
@@ -1025,6 +1037,25 @@ func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size in
 		`</form>` +
 		pullForm +
 		`</section>`
+}
+
+// relTime 把 unix 时间转为「N 分钟前 / N 小时前 / N 天前」（0 或未来时间返回空串）。
+func relTime(ts int64) string {
+	if ts <= 0 {
+		return ""
+	}
+	d := time.Since(time.Unix(ts, 0))
+	if d < 0 {
+		d = 0
+	}
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%d 分钟前", int(d.Minutes())+1)
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d 小时前", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d 天前", int(d.Hours()/24))
+	}
 }
 
 // selOpt 生成分页「每页条数」下拉的选项（含选中态）。
