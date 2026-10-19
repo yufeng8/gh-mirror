@@ -132,6 +132,7 @@ Claude Desktop / CodeBuddy / 其它支持 `mcpServers` 的客户端：
 
 > **结构化输出**：`list_tokens` / `search_images` / `list_tags` / `get_services` / `get_cache_stats` / `health` 的结果为「一行摘要 + ```json 代码块」，便于模型稳定解析；`convert_link` 直接返回可用 URL。
 > **错误提示**：参数缺失或非法时给出可执行的修正建议（例如缺 `q` 会提示传 `{"q":"nginx"}`）；未知工具会列出全部可用工具名。
+> **按角色裁剪**：`tools/list` 对**普通用户隐藏** 4 个仅超级管理员可用的工具（`set_service` / `get_cache_stats` / `set_cache_limits` / `clear_cache`），并在结果里附 `note` 说明已隐藏几个，避免模型把轮次浪费在必然被拒的调用上；服务端鉴权仍是权威，直接调用也会被拒绝。
 
 > **多用户权限模型**：MCP 入口要求高级 Token，按 Token 归属定位调用用户。Token 管理按归属隔离（普通用户只能管理自己的）；服务开关与缓存管理为实例级操作，仅超级管理员可调（与网页端 `/admin` 权限一致）；`convert_link` 使用调用者自己的 Token 生成带其用户名段的加速链接。
 

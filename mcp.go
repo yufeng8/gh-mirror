@@ -153,7 +153,8 @@ const mcpInstructions = `gh-mirror 自托管加速网关的 MCP 接入点（Stre
 注意：
 - 所有结果都是文本；结构化数据放在 json 代码块中（形如 json 围栏），解析时取该代码块。
 - 调用失败时 isError=true，错误文本已说明原因与修正方式。
-- set_service / set_cache_limits / clear_cache / delete_token 属破坏性操作，即时生效且不可撤销。`
+- set_service / set_cache_limits / clear_cache / delete_token 属破坏性操作，即时生效且不可撤销。
+- 服务开关与缓存管理仅超级管理员可用；普通用户的 tools/list 不含这些工具。`
 
 // mcpToolNames 返回全部工具名（用于「未知工具」错误提示，帮助模型自纠）。
 func mcpToolNames() string {
@@ -162,6 +163,31 @@ func mcpToolNames() string {
 		names = append(names, t.Name)
 	}
 	return strings.Join(names, ", ")
+}
+
+// mcpAdminOnlyTools 列出仅超级管理员可用的工具（服务开关与缓存管理）。
+var mcpAdminOnlyTools = map[string]bool{
+	"set_service": true, "get_cache_stats": true,
+	"set_cache_limits": true, "clear_cache": true,
+}
+
+// mcpVisibleTools 按调用者角色返回可见工具与被隐藏的数量：普通用户看不到仅超管可用的
+// 管理工具，避免 Agent 把轮次浪费在必然被拒的调用上；tools/list 实时返回，权限变更后
+// 重新连接即可拿到最新清单。
+func mcpVisibleTools(s *Server, owner string) ([]mcpTool, int) {
+	if s.mcpIsSuper(owner) {
+		return mcpRegistry, 0
+	}
+	out := make([]mcpTool, 0, len(mcpRegistry))
+	hidden := 0
+	for _, t := range mcpRegistry {
+		if mcpAdminOnlyTools[t.Name] {
+			hidden++
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, hidden
 }
 
 func objSchema(props map[string]any, required []string) map[string]any {
@@ -589,7 +615,12 @@ func mcpDispatch(s *Server, base string, owner string, req rpcReq) *rpcResp {
 		res := okResp(req.ID, map[string]any{})
 		return &res
 	case "tools/list":
-		res := okResp(req.ID, map[string]any{"tools": mcpRegistry})
+		list, hidden := mcpVisibleTools(s, owner)
+		result := map[string]any{"tools": list}
+		if hidden > 0 {
+			result["note"] = fmt.Sprintf("当前账号为普通用户，%d 个仅超级管理员可用的工具（服务开关 / 缓存管理）已隐藏。", hidden)
+		}
+		res := okResp(req.ID, result)
 		return &res
 	case "resources/list":
 		// 本服务端不提供 resources；显式返回空列表，避免客户端探测时报错
