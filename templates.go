@@ -1018,7 +1018,7 @@ var dashboardBody = `
 </div>`
 
 // servicesBody 是服务管理独立页面的 body 片段（/admin/services）。
-// 动词：aside / topbarRight / flash / services
+// 动词：aside / topbarRight / flash / services / portalSettings / invite
 var servicesBody = `
 <div class="console" id="top">
   %s
@@ -1033,6 +1033,8 @@ var servicesBody = `
       <h2>服务开关</h2>
       %s
     </section>
+    %s
+    %s
   </div>
 </div>`
 
@@ -1116,6 +1118,7 @@ var mcpBody = `
 
 // usersBody 是用户管理页面的 body 片段（/admin/users，仅超级管理员）。
 // 动词：aside / topbarRight / flash / rows / addForm
+// （「用户注册与邮箱」「邀请码管理」已移到服务管理页 /admin/services 底部）
 var usersBody = `
 <div class="console" id="top">
   %s
@@ -1138,7 +1141,5 @@ var usersBody = `
       <h2 style="margin-top:22px">新增用户</h2>
       %s
     </section>
-    %s
-    %s
   </div>
 </div>`
