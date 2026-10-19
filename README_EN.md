@@ -81,23 +81,38 @@
 - 🚀 **Single binary, zero deps**: `CGO_ENABLED=0` static build, multi-arch images, runs on a 1-core / 512 MB box.
 - 🔒 **Controllable access**: token auth (on by default) + IP (CIDR) / repo (wildcard) allow/block lists + per-IP token bucket (IPv6 collapsed to `/64`).
 - 💾 **Real disk cache**: layers / files persisted to disk, `X-Cache: HIT` on hit; total size, per-file limit and TTL are hot-editable in the dashboard, with automatic oldest-first eviction on over-quota or low disk.
-- 🤖 **AI Agent friendly**: built-in MCP server (`POST /ai/<username>/mcp` and `gh-mirror mcp` stdio), 12 tools covering tokens, service switches, cache, link conversion and image search.
+- 🤖 **AI Agent friendly**: built-in MCP server — **Streamable HTTP (`"type": "http"`) is the recommended transport** (`POST /ai/<username>/mcp`), with `gh-mirror mcp` stdio as an on-host fallback; 12 tools covering tokens, service switches, cache, link conversion and image search.
 - 🎛️ **Web dashboard**: service status, stats, link converter, token management, MCP setup and cache management — all in the browser, switches take effect instantly and persist to `gm-data/settings.json`.
 
 ---
 
 ## 🤖 MCP: let AI agents take over the gateway
 
-Built-in MCP (Model Context Protocol) server — agents don't have to guess APIs, they operate the gateway with a standard protocol:
+Built-in MCP (Model Context Protocol) server — agents don't have to guess APIs, they operate the gateway with a standard protocol.
+
+**Recommended: Streamable HTTP (MCP 2025-03-26, client `"type": "http"`)** — no local binary needed for remote gateways:
+
+```json
+{
+  "mcpServers": {
+    "gh-mirror": {
+      "type": "http",
+      "url": "https://mirror.example.com/ai/<username>/mcp",
+      "headers": { "Authorization": "Bearer <admin-token>" }
+    }
+  }
+}
+```
 
 ```bash
-# Option 1: HTTP (recommended, with an Admin Token)
+# Equivalent curl check (POST returns a single JSON; GET 405 is expected)
 curl -sX POST https://mirror.example.com/ai/<username>/mcp \
   -H "Authorization: Bearer <admin-token>" \
   -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
-# Option 2: stdio (only on the machine holding the gateway data; use HTTP for remote gateways)
+# Fallback: stdio (only on the machine holding the gateway data; use Streamable HTTP for remote gateways)
 gh-mirror mcp --token <admin-token>
 ```
 
@@ -233,7 +248,7 @@ Deployment shape (A/B), image tag, each verification result as ✅/❌, and any 
 - 🛡️ **Security controls**: token auth (default) + optional open mode; IP (CIDR) / repo (wildcard) allow/block lists; per-real-client-IP token bucket (IPv6 collapsed to `/64`).
 - ⚙️ **Unified configuration**: `config.toml` + environment variable overrides, smoothly compatible with legacy env-only deployments.
 - 🧦 **Optional SOCKS5 egress**: route all GitHub/HF/Docker upstream traffic through a SOCKS5 proxy.
-- 🤖 **MCP (AI Agent friendly)**: built-in MCP server — agents can manage tokens, toggle Docker/HuggingFace acceleration, view and adjust cache, convert links, health-check, and search images/tags through the standard protocol. Supports `POST /ai/<username>/mcp` and `gh-mirror mcp` stdio (with your own Admin Token), see `docs/mcp.md`.
+- 🤖 **MCP (AI Agent friendly)**: built-in MCP server — agents can manage tokens, toggle Docker/HuggingFace acceleration, view and adjust cache, convert links, health-check, and search images/tags through the standard protocol. **Streamable HTTP (`"type": "http"`, `POST /ai/<username>/mcp`) is the recommended transport**; `gh-mirror mcp` stdio is an on-host fallback (with your own Admin Token), see `docs/mcp.md`.
 - 🎛️ **Web dashboard ops**: service status badges, overview stats (token count / hits / traffic / cache usage / uptime), instant service switches, editable cache limits and TTL with automatic eviction, link converter.
 
 > The example domain in the docs is `mirror.example.com` — replace it with your own domain.
@@ -521,7 +536,7 @@ settings.go    # runtime settings persistence (switches + cache + SMTP/signup/ca
 - `docs/deploy-runbook.md`: an on-target-machine deployment runbook (probe → choose → execute → end-to-end verify → update/rollback)
 - `docs/upgrade-runbook.md`: one-click image upgrade / rollback script
 - `docs/agent-prompt.md`: **deployment prompt for AI Agents** (rendered by the homepage "One-click AI Agent deployment", updated per release; can be overridden via `AGENT_PROMPT_FILE` or `gm-data/agent-prompt.md`)
-- `docs/mcp.md`: **MCP setup guide** (HTTP `POST /ai/<username>/mcp` and `gh-mirror mcp` stdio, tool list, auth, security advice, troubleshooting)
+- `docs/mcp.md`: **MCP setup guide** (recommended Streamable HTTP `"type": "http"` + `POST /ai/<username>/mcp`; `gh-mirror mcp` stdio as on-host fallback; client config, tool list, auth, security advice, troubleshooting)
 
 ## 🙏 Acknowledgements
 

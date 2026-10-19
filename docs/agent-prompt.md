@@ -78,7 +78,8 @@
   且 docker load -i nginx.tar 能载入（离线包必须带用户名段与 token）
 - 若开启 HuggingFace：curl -fsS "https://<你的域名>/hf/<ADMIN_USER>/<ADMIN_TOKEN>/openai-community/gpt2/resolve/main/config.json" 能取到内容
 - 若接入 MCP：POST https://<你的域名>/ai/<ADMIN_USER>/mcp 可用
-  （旧端点 `/mcp` 已废弃，固定返回 401，属预期）
+  （主推 Streamable HTTP：客户端配置 `"type": "http"` + `headers.Authorization: Bearer <高级Token>`；
+  无状态、返回单个 JSON，`GET` 405 属预期。旧端点 `/mcp` 已废弃，固定返回 401）
 
 ⚠️ **不要验证 gh-mirror 不代理的端点**：`/hf/*/discussions`、`/hf/*/pulls/*/diff`、
 `/hf/*/compare/*/diff` 等 GitHub 社交 / 代码协作功能**不在镜像范围内**，必然 404。

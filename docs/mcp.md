@@ -3,7 +3,7 @@
 gh-mirror 内置 **MCP（Model Context Protocol）服务端**：AI Agent 可通过标准 MCP 协议直接管理网关——查/建/删 Token、开关 Docker/HuggingFace 加速、查看与调整缓存、把原链接转成加速链接、健康检查、镜像搜索与标签查询。
 
 - 协议：**JSON-RPC 2.0**，标准库手写，**零第三方依赖**
-- 传输：**HTTP `POST /ai/<用户名>/mcp`** 与 **stdio 子命令 `gh-mirror mcp`**，两者共用同一套工具实现
+- 传输：**Streamable HTTP（`"type": "http"`，主推）`POST /ai/<用户名>/mcp`** 与 **stdio 子命令 `gh-mirror mcp`**（仅同机，备选），两者共用同一套工具实现
 - 方法：`initialize` / `ping` / `tools/list` / `tools/call`（通知类 `notifications/initialized` 不回响应）
 
 ## 1. 准备：签发一个高级 Token
@@ -16,17 +16,46 @@ MCP 鉴权要求 **高级 Token**（内部角色值 `admin`，与普通代理用
 
 > 高级 Token 具备运维能力，**请勿随意外发**；它同时不会泄露 `ADMIN_SECRET`，也不能修改超级管理员账号。
 
-## 2. 接入方式一：HTTP（远程 / 已部署的网关）
+## 2. 接入方式一：Streamable HTTP（远程网关 · **推荐首选**）
+
+MCP 官方规范 **2025-03-26** 引入的 **Streamable HTTP** 传输（客户端配置里的 `"type": "http"`）。
+这是 gh-mirror **主推**的接入方式：**远程 / 已部署的网关一律用它**——无需本地二进制、无需同机数据。
+
+### 客户端配置（复制即用）
+
+Claude Desktop / CodeBuddy / Cursor / Cline 等支持 `mcpServers` 的客户端：
+
+```json
+{
+  "mcpServers": {
+    "gh-mirror": {
+      "type": "http",
+      "url": "https://<你的域名>/ai/<用户名>/mcp",
+      "headers": {
+        "Authorization": "Bearer <高级Token>"
+      }
+    }
+  }
+}
+```
+
+> 部分客户端把 `type` 写作 `"streamable-http"`，语义相同；`url` 末尾带不带 `/` 均可。
+
+### 等价 curl 验证
 
 ```bash
 curl -sS -X POST https://<你的域名>/ai/<用户名>/mcp \
   -H 'Authorization: Bearer <高级Token>' \
   -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-- 仅支持 `POST`（`GET` 返回 405）
-- 单次请求/响应，**不做 SSE 流式**
+### 协议行为（与 Streamable HTTP 规范对齐）
+
+- **无状态**：不返回 `Mcp-Session-Id`，每个请求独立鉴权（规范允许无状态服务器）
+- 请求用 `POST`，响应为**单个 JSON**（`Content-Type: application/json`）——这是规范允许的形式，**不强制 SSE 流**
+- `GET` 返回 `405`（服务器不提供主动推送流，规范允许）；不支持 `DELETE`
 - 支持 JSON-RPC 批量（请求体为数组）
 - 路径里的 `<用户名>` 为后台登录用户名；`<高级Token>` **必须归属该用户**
 - 用户名不存在 → `404`；未带 token / token 非高级 / token 不归属该用户 → `401`

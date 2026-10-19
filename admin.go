@@ -1261,11 +1261,24 @@ func (s *Server) renderMCPPage(w http.ResponseWriter, r *http.Request) {
 	// 两种接入方式的示例命令（token 段为 .tslot，随选择器联动）
 	httpEx, stdioEx := "", ""
 	if tk != "" {
-		httpEx = `<p class="muted">endpoint：<code>` + html.EscapeString(base) + `/ai/` + html.EscapeString(dockerSegment(user)) + `/mcp</code>（仅支持 <code>POST</code>；用户名段为你的登录用户名，鉴权用 <code>Authorization: Bearer &lt;token&gt;</code>，Token 必须归属该用户）</p>` +
+		httpEx = `<p class="muted"><strong>推荐首选</strong>：MCP 规范 2025-03-26 的 <strong>Streamable HTTP</strong>（客户端配置 <code>"type": "http"</code>），远程网关无需本地二进制。endpoint：<code>` + html.EscapeString(base) + `/ai/` + html.EscapeString(dockerSegment(user)) + `/mcp</code>（鉴权用 <code>Authorization: Bearer &lt;token&gt;</code>，Token 必须归属该用户）</p>` +
+			`<p class="muted small" style="margin:12px 0 4px">客户端配置（复制到 Claude Desktop / CodeBuddy / Cursor / Cline 等）：</p>` +
+			`<div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">json</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>{
+  "mcpServers": {
+    "gh-mirror": {
+      "type": "http",
+      "url": "` + html.EscapeString(base) + `/ai/` + html.EscapeString(dockerSegment(user)) + `/mcp",
+      "headers": { "Authorization": "Bearer ` + tokSlot(tk) + `" }
+    }
+  }
+}</code></pre></div>` +
+			`<p class="muted small" style="margin:12px 0 4px">等价 curl 验证：</p>` +
 			`<div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>curl -sX POST ` + html.EscapeString(base) + `/ai/` + html.EscapeString(dockerSegment(user)) + `/mcp \
   -H "Authorization: Bearer ` + tokSlot(tk) + `" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</code></pre></div>`
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</code></pre></div>` +
+			`<p class="muted small" style="margin-top:10px">协议行为：无状态；POST 返回单个 JSON（规范允许，不强制 SSE 流）；<code>GET</code> 返回 405 属预期。</p>`
 		stdioEx = `<p class="muted"><strong>仅限与网关数据同机</strong>：stdio 直接操作本机数据目录（<code>TOKENS_FILE</code> 等）并用其校验 token，<strong>不是</strong>远程网关的遥控器——远程部署请用上方 HTTP 方式；Docker 镜像无 shell，不能 <code>docker exec</code> 运行。日志写 stderr，stdout 只输出协议 JSON。</p>` +
 			`<div class="term"><div class="term-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">bash</span><button type="button" class="copy-btn" onclick="copyCode(this)">复制</button></div><pre><code>gh-mirror mcp --token ` + tokSlot(tk) + `
 # 或使用环境变量（不落命令行历史）
