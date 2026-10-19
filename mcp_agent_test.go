@@ -102,6 +102,39 @@ func TestMCPToolSchemaForAgents(t *testing.T) {
 	}
 }
 
+// TestMCPToolsListRespectsRole：普通用户不应看到仅超管可用的管理工具（省去无谓的失败调用），
+// 但绕过 tools/list 直接调用仍要被拒绝。
+func TestMCPToolsListRespectsRole(t *testing.T) {
+	s := newTestServer(t)
+	// admin（超级管理员）→ 全部 12 个
+	resp := mcpCall(t, s, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)[0]
+	rm, _ := resp.Result.(map[string]any)
+	tools, _ := rm["tools"].([]mcpTool)
+	if len(tools) != 12 {
+		t.Fatalf("超管应看到 12 个工具，实际 %d", len(tools))
+	}
+	// bobby（普通用户）→ 隐藏 4 个管理工具
+	resp2 := mcpCallAs(t, s, "bobby", `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)[0]
+	rm2, _ := resp2.Result.(map[string]any)
+	tools2, _ := rm2["tools"].([]mcpTool)
+	if len(tools2) != 8 {
+		t.Fatalf("普通用户应看到 8 个工具，实际 %d", len(tools2))
+	}
+	for _, tt := range tools2 {
+		if mcpAdminOnlyTools[tt.Name] {
+			t.Fatalf("普通用户不应看到 %s", tt.Name)
+		}
+	}
+	if note, _ := rm2["note"].(string); note == "" {
+		t.Fatal("普通用户 tools/list 应带 note 说明已隐藏管理工具")
+	}
+	// 绕过 tools/list 直接调用管理工具，仍应被拒绝（服务端鉴权才是权威）
+	txt := mcpFirstText(t, mcpCallAs(t, s, "bobby", `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"clear_cache","arguments":{}}}`)[0])
+	if !strings.Contains(txt, "超级管理员") {
+		t.Fatalf("普通用户直接调用管理工具应被拒绝: %s", txt)
+	}
+}
+
 // TestMCPUnknownToolListsAvailable：未知工具错误要列出可用工具，模型才能自纠。
 func TestMCPUnknownToolListsAvailable(t *testing.T) {
 	s := newTestServer(t)
