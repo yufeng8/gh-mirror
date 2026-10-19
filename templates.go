@@ -520,15 +520,22 @@ const pageStyle = `
   .tok-table td[data-label="备注"]{white-space:normal;min-width:120px;max-width:240px}
   /* Token 页表格列宽（仅 .tokens-table，用户管理页不受影响）：访问次数收窄、流量留宽 */
   .tok-table.tokens-table{table-layout:fixed}
-  .tok-table.tokens-table th:nth-child(1){width:21%}
-  .tok-table.tokens-table th:nth-child(2){width:18%}
-  .tok-table.tokens-table th:nth-child(3){width:76px}
-  .tok-table.tokens-table th:nth-child(4){width:136px}
-  .tok-table.tokens-table th:nth-child(5){width:84px}
-  .tok-table.tokens-table th:nth-child(6){width:96px}
-  .tok-table.tokens-table th:nth-child(7){width:136px}
-  .tok-table.tokens-table th:nth-child(8){width:170px}
+  .tok-table.tokens-table th:nth-child(1){width:40px}
+  .tok-table.tokens-table th:nth-child(2){width:21%}
+  .tok-table.tokens-table th:nth-child(3){width:18%}
+  .tok-table.tokens-table th:nth-child(4){width:76px}
+  .tok-table.tokens-table th:nth-child(5){width:136px}
+  .tok-table.tokens-table th:nth-child(6){width:84px}
+  .tok-table.tokens-table th:nth-child(7){width:96px}
+  .tok-table.tokens-table th:nth-child(8){width:136px}
+  .tok-table.tokens-table th:nth-child(9){width:170px}
   .tok-table.tokens-table .ops{flex-wrap:nowrap}
+  /* 批量选择列 + 批量删除按钮 */
+  .tok-table .sel-cell{width:40px;text-align:center;padding-left:12px;padding-right:0}
+  .tok-table .sel-cell input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary);cursor:pointer;vertical-align:middle}
+  .btn.danger{background:var(--danger);color:var(--danger-foreground)}
+  .btn.danger:hover{background:#b91c1c}
+  .btn.danger:disabled{opacity:.45;cursor:not-allowed;background:var(--danger)}
   .edit-row td{background:var(--muted);border-radius:10px}
   .edit-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .edit-form .fld input,.edit-form .fld select{width:220px}
@@ -721,6 +728,12 @@ function gmDismissFlash(){var f=document.getElementById('gmFlash');if(f)f.remove
 function gmDockerPathPreview(v){var i=document.getElementById('gmDockerPath'),p=document.getElementById('gmDockerPathPreview');if(!p)return;var o=(i&&i.getAttribute('data-owner'))||'';v=(v||'').replace(/^\/+|\/+$/g,'');p.textContent='docker pull <本服务域名>/'+o+(v?'/'+v:'')+'/library/nginx:1.25'}
 /* 反馈条：清掉 URL 上的 ok/err 参数避免刷新重复提示，并 4 秒后自动淡出 */
 (function(){var f=document.getElementById('gmFlash');if(!f)return;try{var u=new URL(location.href);if(u.searchParams.has('ok')||u.searchParams.has('err')){u.searchParams.delete('ok');u.searchParams.delete('err');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}setTimeout(function(){f.classList.add('out');setTimeout(function(){if(f.parentNode)f.remove()},400)},4000)})();
+/* Token 列表：全选 / 批量删除 / 每页条数 */
+function gmSyncBatchBtn(){var xs=document.querySelectorAll('input.tok-sel:checked');var b=document.getElementById('gmBatchDel');if(!b)return;b.disabled=xs.length===0;b.textContent=xs.length>0?('删除选中（'+xs.length+'）'):'删除选中'}
+function gmToggleAllTokens(cb){var xs=document.querySelectorAll('input.tok-sel');for(var i=0;i<xs.length;i++)xs[i].checked=cb.checked;gmSyncBatchBtn()}
+function gmConfirmBatchDel(){var n=document.querySelectorAll('input.tok-sel:checked').length;if(!n){alert('请先勾选要删除的 Token');return false}return confirm('确定删除选中的 '+n+' 个 Token？此操作不可恢复。')}
+function gmSetTokenPageSize(v){try{var u=new URL(location.href);u.searchParams.set('size',v);u.searchParams.delete('page');location.href=u.pathname+u.search}catch(e){location.href='?size='+encodeURIComponent(v)}}
+document.addEventListener('change',function(e){if(e.target&&e.target.classList&&e.target.classList.contains('tok-sel'))gmSyncBatchBtn()});
 /* 用户管理页：点 Token 数打开该用户的只读 Token 详情弹窗（不跳转页面） */
 function gmEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function gmShowUserTokens(user){
@@ -1236,7 +1249,7 @@ var cacheBody = `
 </div>`
 
 // tokensBody 是 Token 管理独立页面的 body 片段（/admin/tokens）。
-// 动词：aside / topbarRight / flash / rows / addForm / foot
+// 动词：aside / topbarRight / flash / toolbar / rows / pager / addForm / foot
 var tokensBody = `
 <div class="console" id="top">
   %s
@@ -1248,13 +1261,17 @@ var tokensBody = `
     </div>
     %s
     <section class="card">
-      <h2>Token 列表</h2>
+      <div class="card-head" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <h2 style="margin:0">Token 列表</h2>
+        %s
+      </div>
       <div class="table-wrap">
       <table class="tok-table tokens-table">
-        <thead><tr><th>Token</th><th>备注</th><th>类型</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
+        <thead><tr><th class="sel-cell"><input type="checkbox" id="gmSelAll" onclick="gmToggleAllTokens(this)" aria-label="全选"></th><th>Token</th><th>备注</th><th>类型</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
         <tbody>%s</tbody>
       </table>
       </div>
+      %s
       <h2 style="margin-top:22px">新增 Token</h2>
       %s
       <p class="foot">%s</p>
