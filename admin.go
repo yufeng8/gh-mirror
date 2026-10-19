@@ -1757,9 +1757,9 @@ func (s *Server) consoleAside(r *http.Request) string {
 	base := s.entryBase(r)
 	isAdmin := !s.isUserEntry(r)
 	n := len(s.tokensForUser(s.store.All(), user, role))
-	tokensNav := "Token 管理"
+	tokensNav := "令牌管理"
 	if n > 0 {
-		tokensNav = fmt.Sprintf("Token 管理（%d）", n)
+		tokensNav = fmt.Sprintf("令牌管理（%d）", n)
 	}
 	// 高亮互斥：各独立子页各自高亮，其余高亮概览
 	overviewActive, tokensActive, mcpActive, usersActive, svcActive, cacheActive := " active", "", "", "", "", ""

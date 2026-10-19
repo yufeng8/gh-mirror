@@ -514,6 +514,17 @@ const pageStyle = `
   .table-wrap table{min-width:960px}
   .tok-table th,.tok-table td{white-space:nowrap}
   .tok-table td[data-label="备注"]{white-space:normal;min-width:120px;max-width:240px}
+  /* Token 页表格列宽（仅 .tokens-table，用户管理页不受影响）：访问次数收窄、流量留宽 */
+  .tok-table.tokens-table{table-layout:fixed}
+  .tok-table.tokens-table th:nth-child(1){width:21%}
+  .tok-table.tokens-table th:nth-child(2){width:18%}
+  .tok-table.tokens-table th:nth-child(3){width:76px}
+  .tok-table.tokens-table th:nth-child(4){width:136px}
+  .tok-table.tokens-table th:nth-child(5){width:84px}
+  .tok-table.tokens-table th:nth-child(6){width:96px}
+  .tok-table.tokens-table th:nth-child(7){width:136px}
+  .tok-table.tokens-table th:nth-child(8){width:170px}
+  .tok-table.tokens-table .ops{flex-wrap:nowrap}
   .edit-row td{background:var(--muted);border-radius:10px}
   .edit-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .edit-form .fld input,.edit-form .fld select{width:220px}
@@ -1196,7 +1207,7 @@ var tokensBody = `
     <section class="card">
       <h2>Token 列表</h2>
       <div class="table-wrap">
-      <table class="tok-table">
+      <table class="tok-table tokens-table">
         <thead><tr><th>Token</th><th>备注</th><th>类型</th><th>创建时间</th><th class="num">访问次数</th><th class="num">流量</th><th>最近使用</th><th>操作</th></tr></thead>
         <tbody>%s</tbody>
       </table>
