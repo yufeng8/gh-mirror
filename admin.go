@@ -103,6 +103,14 @@ func (s *Server) requireSuper(r *http.Request) bool {
 	return ok && role == RoleSuper
 }
 
+// requireRootSuper 判断当前会话是否为「安装时创建的超级管理员」（种子账号 adminUser）。
+// 只有它能管理用户与角色：后续被提升为 super 的「管理员」不具备该权限，
+// 避免出现「管理员把超级管理员降级 / 互相提权」的越权。
+func (s *Server) requireRootSuper(r *http.Request) bool {
+	username, role, ok := s.currentUser(r)
+	return ok && role == RoleSuper && username == s.adminUser
+}
+
 // signSession 生成带随机 sid、用户名、密码版本、过期时间与 HMAC 签名的会话值。
 // cookieName 参与签名（domain separation），超管/普通入口的会话值不可互换。
 // 密码版本（PassHash 前 8 位）使改密后旧会话全部失效。
@@ -184,31 +192,31 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 	case sub == "users":
-		if s.requireSuper(r) {
+		if s.requireRootSuper(r) {
 			s.renderUsersPage(w, r)
 			return
 		}
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 	case sub == "users/add":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
 		s.doAddUser(w, r)
 	case sub == "users/del":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
 		s.doDelUser(w, r)
 	case sub == "users/role":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
 		s.doSetUserRole(w, r)
 	case sub == "users/pass":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
@@ -285,31 +293,31 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		s.doOfflineAutoPurge(w, r)
 	case sub == "portal-settings":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
 		s.doSetPortalSettings(w, r)
 	case sub == "invite/generate":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
 		s.doInviteGenerate(w, r)
 	case sub == "invite/add":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
 		s.doInviteAddCustom(w, r)
 	case sub == "invite/batch":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
 		s.doInviteBatch(w, r)
 	case sub == "invite/export":
-		if !s.requireSuper(r) {
+		if !s.requireRootSuper(r) {
 			http.Redirect(w, r, s.adminPath, http.StatusFound)
 			return
 		}
@@ -767,8 +775,13 @@ func (s *Server) renderServicesPage(w http.ResponseWriter, r *http.Request) {
 		`</div><p class="muted small" style="margin-top:12px">开关<strong>即时生效、无需重启</strong>，并持久化到 <code>gm-data/settings.json</code>（重启后保持）。后台设置优先于环境变量 <code>DOCKER_ENABLED</code> / <code>HF_ENABLED</code>。</p>` + dockerModalHTML(s.userDockerPath(user), dockerSegment(user))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// verbs: aside, topbarRight, flash, services
-	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services,
-		s.portalSettingsHTML(csrf), s.inviteSectionHTML(csrf))
+	// 用户注册与邮箱 / 邀请码管理属用户体系，仅「安装时创建的超级管理员」可见与操作
+	pfHTML, invHTML := "", ""
+	if s.requireRootSuper(r) {
+		pfHTML = s.portalSettingsHTML(csrf)
+		invHTML = s.inviteSectionHTML(csrf)
+	}
+	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services, pfHTML, invHTML)
 	_, _ = w.Write([]byte(pageApp("服务管理 - gh-mirror", "gh-mirror 服务管理", body)))
 }
 
@@ -1254,8 +1267,8 @@ GM_MCP_TOKEN=` + tokSlot(tk) + ` gh-mirror mcp</code></pre></div>`
 // consoleAside 渲染后台侧栏（各页面共用；小屏为抽屉，唤出入口见顶栏 ☰ 按钮）。
 // renderUsersPage 渲染用户管理页（仅超级管理员可访问）。
 func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
-	sid, user, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, user, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -1406,34 +1419,44 @@ func toggleRole(role string) string {
 }
 
 // userRows 渲染用户列表（当前登录用户标注「我」；改角色/重置密码/删除为行内操作）。
+// 安装时创建的超级管理员（s.adminUser）唯一，不可降级/删除，也不显示操作按钮；
+// 其他 super 角色显示为「管理员」（可被唯一超管调整）。
 func (s *Server) userRows(users []*User, csrf, current string) string {
 	var rows strings.Builder
 	for _, u := range users {
-		roleTxt, roleCls := "普通", "badge"
-		btnTxt := "设为管理员"
-		if u.Role == RoleSuper {
-			roleTxt, roleCls = "超级管理员", "badge role-admin"
-			btnTxt = "设为普通"
+		roleTxt, roleCls := "普通用户", "badge"
+		isRoot := u.Username == s.adminUser
+		if isRoot {
+			roleTxt, roleCls = "超级管理员（唯一）", "badge role-admin"
+		} else if u.Role == RoleSuper {
+			roleTxt, roleCls = "管理员", "badge role-admin"
 		}
 		me := ""
 		if u.Username == current {
 			me = ` <span class="muted small">（我）</span>`
 		}
 		esc := html.EscapeString(u.Username)
+		ops := `<span class="muted small">安装时创建，不可降级 / 删除</span>`
+		if !isRoot {
+			btnTxt, roleVal := "设为管理员", RoleSuper
+			if u.Role == RoleSuper {
+				btnTxt, roleVal = "设为普通用户", RoleNormal
+			}
+			ops = fmt.Sprintf(
+				`<form method="post" action="%s/users/role" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><input type="hidden" name="role" value="%s"><button type="submit" class="btn outline" onclick="return confirm('确定%s该用户？')">%s</button></form>`+
+					`<form method="post" action="%s/users/pass" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><input type="password" name="pass" placeholder="新密码" required><button type="submit" class="btn outline">重置密码</button></form>`+
+					`<form method="post" action="%s/users/del" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><button type="submit" class="danger" onclick="return confirm('确定删除该用户？其 Token 不会被删除。')">删除</button></form>`,
+				s.adminPath, csrf, esc, roleVal, btnTxt, btnTxt,
+				s.adminPath, csrf, esc,
+				s.adminPath, csrf, esc)
+		}
 		rows.WriteString(fmt.Sprintf(
 			`<tr class="tok-row"><td data-label="用户名"><code>%s</code>%s</td>`+
 				`<td data-label="角色"><span class="%s">%s</span></td>`+
 				`<td data-label="创建时间">%s</td>`+
-				`<td data-label="操作"><span class="ops">`+
-				`<form method="post" action="%s/users/role" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><input type="hidden" name="role" value="%s"><button type="submit" class="btn outline" onclick="return confirm('确定%s该用户？')">%s</button></form>`+
-				`<form method="post" action="%s/users/pass" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><input type="password" name="pass" placeholder="新密码" required><button type="submit" class="btn outline">重置密码</button></form>`+
-				`<form method="post" action="%s/users/del" class="del-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><button type="submit" class="danger" onclick="return confirm('确定删除该用户？其 Token 不会被删除。')">删除</button></form>`+
-				`</span></td></tr>`,
+				`<td data-label="操作"><span class="ops">%s</span></td></tr>`,
 			esc, me, roleCls, roleTxt,
-			time.Unix(u.CreatedAt, 0).Format("2006-01-02 15:04"),
-			s.adminPath, csrf, esc, toggleRole(u.Role), btnTxt, btnTxt,
-			s.adminPath, csrf, esc,
-			s.adminPath, csrf, esc))
+			time.Unix(u.CreatedAt, 0).Format("2006-01-02 15:04"), ops))
 	}
 	if len(users) == 0 {
 		rows.WriteString(`<tr><td colspan="4" class="muted">暂无用户</td></tr>`)
@@ -1447,14 +1470,14 @@ func (s *Server) userAddForm(csrf string) string {
 		`<input type="hidden" name="csrf" value="` + csrf + `">` +
 		`<input type="text" name="username" placeholder="用户名（4-32 位字母数字 . _ -）" required>` +
 		`<input type="password" name="pass" placeholder="密码（至少 4 位）" required>` +
-		`<select name="role" aria-label="角色"><option value="normal">普通用户</option><option value="super">超级管理员</option></select>` +
+		`<select name="role" aria-label="角色"><option value="normal">普通用户</option><option value="super">管理员（不能管理用户）</option></select>` +
 		`<button type="submit" class="btn">创建用户</button></form>`
 }
 
 // doAddUser 创建用户（仅 super）。
 func (s *Server) doAddUser(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -1477,8 +1500,8 @@ func (s *Server) doAddUser(w http.ResponseWriter, r *http.Request) {
 
 // doDelUser 删除用户（仅 super；不允许删除最后一个 super）。
 func (s *Server) doDelUser(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -1488,6 +1511,12 @@ func (s *Server) doDelUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := r.FormValue("username")
+	// 安装时创建的超级管理员不可删除（否则会失去唯一能管理角色的账号）
+	if username == s.adminUser {
+		log.Printf("拒绝删除超级管理员: %s", username)
+		http.Redirect(w, r, s.adminPath+"/users?err=user_del_failed", http.StatusFound)
+		return
+	}
 	if err := s.users.Delete(username); err != nil {
 		log.Printf("删除用户失败: %v", err)
 		http.Redirect(w, r, s.adminPath+"/users?err=user_del_failed", http.StatusFound)
@@ -1499,8 +1528,8 @@ func (s *Server) doDelUser(w http.ResponseWriter, r *http.Request) {
 
 // doSetUserRole 修改用户角色（仅 super；不允许降级最后一个 super）。
 func (s *Server) doSetUserRole(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -1510,6 +1539,12 @@ func (s *Server) doSetUserRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := r.FormValue("username")
+	// 安装时创建的超级管理员不可降级（否则「管理员」就能把超级管理员变成普通用户）
+	if username == s.adminUser {
+		log.Printf("拒绝修改超级管理员角色: %s", username)
+		http.Redirect(w, r, s.adminPath+"/users?err=user_role_failed", http.StatusFound)
+		return
+	}
 	newRole := r.FormValue("role")
 	if err := s.users.UpdateRole(username, newRole); err != nil {
 		log.Printf("修改用户角色失败: %v", err)
@@ -1522,8 +1557,8 @@ func (s *Server) doSetUserRole(w http.ResponseWriter, r *http.Request) {
 
 // doResetUserPass 重置用户密码（仅 super）。
 func (s *Server) doResetUserPass(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -1571,9 +1606,12 @@ func (s *Server) consoleAside(r *http.Request) string {
 	// 三项文字右侧均加盾牌符号标识超管专属，且按特权分组排在普通功能之后
 	svcNav, cacheNav, usersNav := "", "", ""
 	if isAdmin && role == RoleSuper {
-		svcNav = `<a class="navitem` + svcActive + `" href="` + base + `/services"><span class="ic">⚙️</span>服务管理<span class="priv" title="仅超级管理员可见">🛡️</span></a>`
-		usersNav = `<a class="navitem` + usersActive + `" href="` + base + `/users"><span class="ic">👥</span>用户管理<span class="priv" title="仅超级管理员可见">🛡️</span></a>`
-		cacheNav = `<a class="navitem` + cacheActive + `" href="` + base + `/cache"><span class="ic">💾</span>缓存管理<span class="priv" title="仅超级管理员可见">🛡️</span></a>`
+		svcNav = `<a class="navitem` + svcActive + `" href="` + base + `/services"><span class="ic">⚙️</span>服务管理<span class="priv" title="仅管理员可见">🛡️</span></a>`
+		cacheNav = `<a class="navitem` + cacheActive + `" href="` + base + `/cache"><span class="ic">💾</span>缓存管理<span class="priv" title="仅管理员可见">🛡️</span></a>`
+		// 用户管理仅「安装时创建的超级管理员」可见：管理员没有改角色/删用户的入口
+		if user == s.adminUser {
+			usersNav = `<a class="navitem` + usersActive + `" href="` + base + `/users"><span class="ic">👥</span>用户管理<span class="priv" title="仅安装时的超级管理员可见">🛡️</span></a>`
+		}
 	}
 	return `<aside id="gmNav">` +
 		`<a class="brand" href="/" title="返回首页">` + logoSVG + `<span>gh-mirror</span></a>` +
@@ -1956,8 +1994,8 @@ func formBool(r *http.Request, name string) bool {
 // 只更新提交来源对应的那一组，未提交的组保持现值——否则保存注册开关会把 SMTP 清空、
 // 保存邮箱设置会把注册开关与联系邮箱重置（历史缺陷：两个表单全量覆盖互相吃掉对方）。
 func (s *Server) doSetPortalSettings(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -2018,8 +2056,8 @@ func daysToExpire(days int) int64 {
 
 // doInviteGenerate 批量生成邀请码并直接下载（按格式导出），仅超管。
 func (s *Server) doInviteGenerate(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -2055,8 +2093,8 @@ func (s *Server) doInviteGenerate(w http.ResponseWriter, r *http.Request) {
 
 // doInviteAddCustom 添加自定义邀请码，仅超管。
 func (s *Server) doInviteAddCustom(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -2081,8 +2119,8 @@ func (s *Server) doInviteAddCustom(w http.ResponseWriter, r *http.Request) {
 
 // doInviteBatch 批量操作（delete/note/expire），仅超管。
 func (s *Server) doInviteBatch(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
@@ -2114,8 +2152,8 @@ func (s *Server) doInviteBatch(w http.ResponseWriter, r *http.Request) {
 
 // doInviteExport 导出邀请码（未指定 code 时导出全部；可选批量打备注），仅超管。
 func (s *Server) doInviteExport(w http.ResponseWriter, r *http.Request) {
-	sid, _, role, ok := s.parseSession(r)
-	if !ok || role != RoleSuper {
+	sid, _, _, ok := s.parseSession(r)
+	if !ok || !s.requireRootSuper(r) {
 		http.Redirect(w, r, s.adminPath, http.StatusFound)
 		return
 	}
