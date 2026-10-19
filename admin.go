@@ -1352,7 +1352,6 @@ func (s *Server) portalSettingsHTML(csrf string) string {
 		}
 		return ""
 	}
-	chkStyle := "display:inline-flex;align-items:center;gap:8px;margin:2px 18px 2px 0;font-weight:400"
 	return `<section class="card">
   <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">注册模式 / 图形验证码 / 联系邮箱 / SMTP</span></div>
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px">
@@ -1362,7 +1361,7 @@ func (s *Server) portalSettingsHTML(csrf string) string {
   <div class="modal" id="gmPortalModal" hidden>
     <div class="modal-mask" onclick="gmCloseModal()"></div>
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="gmPortalModalTitle">
-      <div class="modal-head"><h3 id="gmPortalModalTitle">用户注册与邮箱</h3></div>
+      <div class="modal-head"><h3 id="gmPortalModalTitle">用户注册与邮箱</h3><button type="button" class="modal-x" onclick="gmCloseModal()" aria-label="关闭">✕</button></div>
       <form id="portalSettingsForm" method="post" action="` + s.adminPath + `/portal-settings">
         <input type="hidden" name="csrf" value="` + csrf + `">
         <input type="hidden" name="scope" value="all">
@@ -1377,11 +1376,16 @@ func (s *Server) portalSettingsHTML(csrf string) string {
               <p class="muted small" style="margin:6px 0 0">「仅邀请码」需在服务管理页的邀请码管理中生成邀请码；关闭后注册页与注册入口均不可用。</p>
             </td></tr>
             <tr><th>图形验证码</th><td>
-              <label style="` + chkStyle + `"><input type="checkbox" name="userCaptcha" value="1"` + chk(s.userCaptchaEnabled()) + `> 用户入口（登录 / 注册）</label>
-              <label style="` + chkStyle + `"><input type="checkbox" name="adminCaptcha" value="1"` + chk(s.adminCaptchaEnabled()) + `> 管理入口登录</label>
+              <div class="kv-checks">
+                <label><input type="checkbox" name="userCaptcha" value="1"` + chk(s.userCaptchaEnabled()) + `> 用户入口（登录 / 注册）</label>
+                <label><input type="checkbox" name="adminCaptcha" value="1"` + chk(s.adminCaptchaEnabled()) + `> 管理入口登录</label>
+              </div>
             </td></tr>
             <tr><th>首页入口</th><td>
-              <label style="` + chkStyle + `"><input type="checkbox" name="hideLogin" value="1"` + chk(s.hideLoginEnabled()) + `> 隐藏首页登录 / 注册按钮（<code>/admin</code>、<code>/user</code> 仍可直达）</label>
+              <div class="kv-checks">
+                <label><input type="checkbox" name="hideLogin" value="1"` + chk(s.hideLoginEnabled()) + `> 隐藏首页登录 / 注册按钮</label>
+              </div>
+              <p class="kv-hint">隐藏后首页不再显示入口，但 <code>/admin</code>、<code>/user</code> 仍可直接访问。</p>
             </td></tr>
             <tr><th>联系邮箱</th><td>
               <input name="contactEmail" type="email" value="` + html.EscapeString(s.contactEmail()) + `" placeholder="用于用户紧急联系与找回密码引导">
@@ -1392,7 +1396,7 @@ func (s *Server) portalSettingsHTML(csrf string) string {
             <tr><th>账号</th><td><input name="smtpUser" value="` + html.EscapeString(cfg.Username) + `" autocomplete="off"></td></tr>
             <tr><th>密码</th><td><input name="smtpPass" type="password" value="" placeholder="已设置则留空保持不变" autocomplete="new-password"></td></tr>
             <tr><th>发件人</th><td><input name="smtpFrom" type="email" value="` + html.EscapeString(cfg.From) + `" placeholder="no-reply@example.com"></td></tr>
-            <tr><th>加密</th><td><label style="` + chkStyle + `"><input type="checkbox" name="smtpTLS" value="1"` + chk(cfg.TLS) + `> 使用 TLS</label></td></tr>
+            <tr><th>加密</th><td><label class="kv-check"><input type="checkbox" name="smtpTLS" value="1"` + chk(cfg.TLS) + `> 使用 TLS</label></td></tr>
           </table>
         </div>
         <div class="modal-foot">
