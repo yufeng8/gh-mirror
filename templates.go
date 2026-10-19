@@ -497,6 +497,11 @@ const pageStyle = `
   .console aside{display:flex;flex-direction:column}
   .console .nav{flex:1 1 auto}
   .aside-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);display:grid;gap:6px;font-size:.78rem}
+  /* 侧栏当前用户卡片：用户名 + 欢迎词 */
+  .aside-user{padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--muted)}
+  .aside-user .un{font-weight:700;font-size:.92rem;word-break:break-all}
+  .aside-user .un code{background:transparent;padding:0;font-size:inherit;color:inherit;font-family:inherit}
+  .aside-user .hi{margin-top:3px;color:var(--muted-foreground);font-size:.8rem}
   .star-cta{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;border-radius:9px;
     background:var(--muted);border:1px solid var(--border);color:var(--foreground);font-weight:600}
   .star-cta:hover{background:var(--primary);border-color:var(--primary);color:#fff;text-decoration:none}
