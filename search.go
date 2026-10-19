@@ -79,10 +79,14 @@ a{color:#7dd3fc}
 </style>`
 
 type hubSearchResult struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	StarCount   int    `json:"star_count"`
-	IsOfficial  bool   `json:"is_official"`
+	Name         string `json:"name"`
+	RepoName     string `json:"repo_name"`
+	Description  string `json:"description"`
+	StarCount    int    `json:"star_count"`
+	PullCount    int64  `json:"pull_count"`
+	IsOfficial   bool   `json:"is_official"`
+	LastUpdated  string `json:"last_updated"`
+	UpdatedAt    string `json:"update_at"`
 }
 
 type hubSearchResp struct {
@@ -163,7 +167,9 @@ func humanSize(n int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-// handleSearchAPI /api/search?q=&page= 代理 Docker Hub 搜索 JSON。
+// handleSearchAPI /api/search?q=&page= 代理 Docker Hub 搜索并输出规范化 JSON。
+// 输出：{count, results:[{name, description, stars, pulls, official, updated}]}
+// name 优先取 repo_name（library/nginx），回退 name；updated 为上游最后更新时间。
 func (s *Server) handleSearchAPI(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
@@ -176,15 +182,52 @@ func (s *Server) handleSearchAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	target := fmt.Sprintf("%s/v2/search/repositories/?query=%s&page=%s&page_size=25",
 		hubAPI, url.QueryEscape(q), url.QueryEscape(page))
-	body, ct, status, err := hubGet(r, target)
+	body, _, status, err := hubGet(r, target)
 	if err != nil {
 		http.Error(w, "上游请求失败", http.StatusBadGateway)
 		return
 	}
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("X-Cache", "MISS")
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	if status != http.StatusOK {
+		http.Error(w, "上游返回异常", status)
+		return
+	}
+	var sr hubSearchResp
+	if err := json.Unmarshal(body, &sr); err != nil {
+		http.Error(w, "搜索结果解析失败", http.StatusBadGateway)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"count": sr.Count, "results": normalizeSearchResults(sr)})
+}
+
+// searchItem 是规范化后的搜索结果（前端选择镜像面板直接使用）。
+type searchItem struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Stars       int    `json:"stars"`
+	Pulls       int64  `json:"pulls"`
+	Official    bool   `json:"official"`
+	Updated     string `json:"updated"`
+}
+
+// normalizeSearchResults 把 Docker Hub 搜索结果转成固定字段：
+// name 优先 repo_name（library/nginx），回退 name；updated 优先 last_updated，回退 update_at。
+func normalizeSearchResults(sr hubSearchResp) []searchItem {
+	out := make([]searchItem, 0, len(sr.Results))
+	for _, x := range sr.Results {
+		nm := x.RepoName
+		if nm == "" {
+			nm = x.Name
+		}
+		updated := x.LastUpdated
+		if updated == "" {
+			updated = x.UpdatedAt
+		}
+		out = append(out, searchItem{
+			Name: nm, Description: x.Description, Stars: x.StarCount,
+			Pulls: x.PullCount, Official: x.IsOfficial, Updated: updated,
+		})
+	}
+	return out
 }
 
 // handleTagsAPI /api/tags?repo=owner/name 代理 Docker Hub 标签 JSON。

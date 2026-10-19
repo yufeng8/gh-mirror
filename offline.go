@@ -316,6 +316,10 @@ func (s *Server) handleOffline(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "获取镜像 config 失败", http.StatusBadGateway)
 		return
 	}
+	// 记录上游镜像构建时间（供管理页「上游更新」展示）
+	if cacheIt {
+		s.offlineCache.SetUpstream(digest, parseConfigCreated(cfgBytes))
+	}
 
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeName(repoTag)+`.tar"`)
@@ -401,6 +405,7 @@ func (s *Server) repullOffline(image string) {
 			s.offlineCache.FinishTask(digest, OfflineTaskFailed, err.Error())
 			return
 		}
+		s.offlineCache.SetUpstream(digest, parseConfigCreated(cfgBytes))
 		tmpPath := s.offlineCache.TarPath(digest) + ".tmp"
 		tmp, err := os.Create(tmpPath)
 		if err != nil {
