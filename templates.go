@@ -726,7 +726,58 @@ function toggleNav(force){var a=document.getElementById('gmNav');var m=document.
 function toggleHomeNav(){var tn=document.querySelector('.topnav');if(!tn)return;var open=tn.classList.toggle('open');var b=tn.querySelector('.nav-toggle');if(b)b.setAttribute('aria-expanded',open?'true':'false')}
 function gmCopyText(btn,txt){var done=function(){var o=btn.textContent;btn.textContent='已复制 ✓';setTimeout(function(){btn.textContent=o},1500)};var fb=function(){var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);done()};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done,fb)}else{fb()}}
 /* 发送邮箱验证码（注册 register / 找回密码 reset）；emailId 指定邮箱输入框，默认 email */
-function gmSendCode(url,purpose,emailId){var email=document.getElementById(emailId||'email');if(!email||!email.value){alert('请先填写邮箱');return}var btn=document.getElementById('sendCodeBtn');var orig=btn?btn.textContent:'发送验证码';var done=function(){if(btn){btn.disabled=false;btn.textContent=orig}};if(btn){btn.disabled=true;btn.textContent='发送中...'}var fd=new URLSearchParams();fd.set('email',email.value);fd.set('purpose',purpose);fetch(url,{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(j){if(j&&j.ok){if(btn){btn.textContent='已发送 ✓'}else{alert('验证码已发送')}}else{alert((j&&j.err)||'发送失败')}}).catch(function(){alert('网络错误，请稍后再试')}).finally(function(){setTimeout(done,3000)})}
+/* 发送邮箱验证码：需要图形验证码时先展开图形码行（默认隐藏）；成功后按钮 60 秒冷却倒计时 */
+function gmStartCodeCooldown(btn){
+  if(!btn)return;
+  var orig=btn.getAttribute('data-label')||btn.textContent;
+  btn.setAttribute('data-label',orig);
+  var n=60;
+  btn.disabled=true;btn.textContent=n+'s 后重发';
+  var t=setInterval(function(){
+    n--;
+    if(n<=0){clearInterval(t);btn.disabled=false;btn.textContent=orig;return}
+    btn.textContent=n+'s 后重发';
+  },1000);
+}
+function gmSendCode(url,purpose,emailId){
+  var email=document.getElementById(emailId||'email');
+  if(!email||!email.value){alert('请先填写邮箱');return}
+  var btn=document.getElementById('sendCodeBtn')||document.querySelector('button[onclick*="gmSendCode"]');
+  var cap=document.getElementById('gmRegCaptcha');
+  if(cap){
+    if(cap.hasAttribute('hidden')){
+      cap.removeAttribute('hidden');
+      var ci=cap.querySelector('input[name=captcha]');
+      if(ci){try{ci.focus()}catch(e){}}
+      alert('请输入图形验证码后，再点一次「发送验证码」');
+      return;
+    }
+    var cv=cap.querySelector('input[name=captcha]');
+    if(cv&&!cv.value.trim()){alert('请先输入图形验证码');try{cv.focus()}catch(e){};return}
+  }
+  var orig=btn?btn.textContent:'发送验证码';
+  if(btn){btn.disabled=true;btn.textContent='发送中...'}
+  var fd=new URLSearchParams();
+  fd.set('email',email.value);fd.set('purpose',purpose);
+  if(cap){
+    var hid=cap.querySelector('input[name=captchaId]');
+    var ci2=cap.querySelector('input[name=captcha]');
+    if(hid)fd.set('captchaId',hid.value);
+    if(ci2)fd.set('captcha',ci2.value);
+  }
+  fetch(url,{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(j){
+    if(j&&j.ok){
+      if(btn){gmStartCodeCooldown(btn)}else{alert('验证码已发送')}
+    }else{
+      alert((j&&j.err)||'发送失败');
+      if(btn){btn.disabled=false;btn.textContent=orig}
+      if(cap){var img=cap.querySelector('img');if(img)gmRefreshCaptcha(img)}
+    }
+  }).catch(function(){
+    alert('网络错误，请稍后再试');
+    if(btn){btn.disabled=false;btn.textContent=orig}
+  })
+}
 function gmRefreshCaptcha(img){fetch('/captcha/new').then(function(r){return r.json()}).then(function(j){if(!j||!j.cid)return;var row=img.closest('.captcha-row');if(row){var h=row.querySelector('input[name=captchaId]');if(h)h.value=j.cid;var inp=row.querySelector('input[name=captcha]');if(inp)inp.value=''}img.src='/captcha?cid='+encodeURIComponent(j.cid)+'&t='+Date.now()}).catch(function(){})}
 function gmApplyToken(tk){try{localStorage.setItem('gm_tok',tk||'')}catch(e){}var sels=document.querySelectorAll('.gmtok');for(var i=0;i<sels.length;i++){if(sels[i].value!==tk)sels[i].value=tk}var s=document.querySelectorAll('.tslot');for(var j=0;j<s.length;j++){/* 空值/失效 token 时回退到服务端渲染的原值，绝不显示字面 "token" */var v=tk||s[j].getAttribute('data-orig')||'';s[j].textContent=v}}
 function gmToggleEdit(btn){var tr=btn.closest('tr');if(!tr)return;var row=tr.classList.contains('edit-row')?tr.previousElementSibling:tr;if(!row)return;var er=row.nextElementSibling;if(!er||!er.classList.contains('edit-row'))return;var open=er.hasAttribute('hidden');if(open){er.removeAttribute('hidden')}else{er.setAttribute('hidden','')}var t=row.querySelector('.edit-toggle');if(t){t.textContent=open?'取消':'编辑';t.setAttribute('aria-expanded',open?'true':'false')}if(open){var f=er.querySelector('input[name=note]');if(f)try{f.focus()}catch(e){}}}
