@@ -1663,9 +1663,9 @@ func (s *Server) consoleAside(r *http.Request) string {
 		`<a class="navitem` + overviewActive + `" href="` + base + `"><span class="ic">▦</span>概览</a>` +
 		`<a class="navitem` + tokensActive + `" href="` + base + `/tokens"><span class="ic">🔑</span>` + tokensNav + `</a>` +
 		`<a class="navitem` + mcpActive + `" href="` + base + `/mcp"><span class="ic">🤖</span>MCP 接入</a>` +
-		usersNav +
-		cacheNav +
 		svcNav +
+		cacheNav +
+		usersNav +
 		`<span class="navsep"></span>` +
 		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
 		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">` + githubSVG + `</span>GitHub</a>` +
