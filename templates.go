@@ -567,8 +567,19 @@ const pageStyle = `
   .tok-cell{display:flex;align-items:center;gap:8px}
   .tok-cell code{flex:1;min-width:0}
   .svc-toggle{display:inline}
-  .conv-row{display:flex;gap:8px;flex-wrap:wrap}
+  .conv-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .conv-row input{flex:1;min-width:200px}
+  /* 链接转换：两行输入框统一宽度，避免输出框铺满整行 */
+  .conv-row .conv-in,.conv-row .conv-out{flex:0 1 560px;width:560px;max-width:100%}
+  .conv-row .conv-out{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.86rem;background:var(--muted);color:var(--foreground)}
+  /* 说明默认收起，点击展开，降低卡片视觉噪音 */
+  .conv-help{margin-top:12px}
+  .conv-help summary{cursor:pointer;font-size:.82rem;font-weight:600;color:var(--muted-foreground);list-style:none;display:inline-flex;align-items:center;gap:6px}
+  .conv-help summary::-webkit-details-marker{display:none}
+  .conv-help summary::before{content:'▸';font-size:.9rem;transition:transform .15s}
+  .conv-help[open] summary::before{transform:rotate(90deg)}
+  .conv-help summary:hover{color:var(--foreground)}
+  .conv-help .conv-help-body{margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--muted);font-size:.8rem;line-height:1.65;color:var(--muted-foreground)}
   .fld{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted-foreground);font-weight:600}
   .fld input{width:130px}
   @media (max-width:900px){.grid-svc{grid-template-columns:1fr}.svcgrid{grid-template-columns:1fr}}

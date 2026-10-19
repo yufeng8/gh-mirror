@@ -724,14 +724,17 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		statCard("运行时长", fmtDuration(time.Since(processStart)), "")
 	// 链接转换器：识别与生成统一在服务端 buildAccelURL（与 MCP convert_link 同一实现）
 	conv := `<div id="gmconv" data-api="` + s.entryBase(r) + `/api/convert" data-csrf="` + csrf + `" hidden></div>` +
-		`<div class="conv-row"><input id="gmconv-in" type="text" autocomplete="off" placeholder="粘贴原始链接或镜像名" style="flex:0 1 460px;width:460px;max-width:100%">` +
+		`<div class="conv-row"><input id="gmconv-in" class="conv-in" type="text" autocomplete="off" placeholder="粘贴原始链接或镜像名">` +
 		`<button type="button" class="btn outline" onclick="gmPickImage('gmconv-in')">🔍 搜索镜像</button>` +
 		`<button type="button" class="btn" onclick="gmConvert()">获取加速链接</button></div>` +
-		`<div class="conv-row" style="margin-top:10px"><input id="gmconv-out" type="text" readonly placeholder="加速链接将显示在这里">` +
+		`<div class="conv-row" style="margin-top:8px"><input id="gmconv-out" class="conv-out" type="text" readonly placeholder="加速链接将显示在这里">` +
 		`<button type="button" id="gmconv-copy" class="btn outline" onclick="gmCopyConv()">复制</button>` +
 		`<button type="button" class="btn outline" onclick="gmDownloadConv()">下载</button>` +
 		`<button type="button" class="btn outline" onclick="gmOpenConv()">访问</button></div>` +
-		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出<strong>需带用户名段与 token</strong> 的 <code>/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址，用户名段取当前登录用户）。registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>` +
+		`<details class="conv-help"><summary>使用说明与示例</summary><div class="conv-help-body">` +
+		`<p style="margin:0 0 6px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>）。</p>` +
+		`<p style="margin:0">Docker 镜像会给出<strong>需带用户名段与 token</strong> 的 <code>/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址（用户名段取当前登录用户）；registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>` +
+		`</div></details>` +
 		s.imagePickerHTML()
 	// 链接转换卡片的 Token 快捷切换器（与「用法示例」的切换器联动，共用 .gmtok）
 	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
