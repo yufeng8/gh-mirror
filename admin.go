@@ -12,6 +12,7 @@ import (
 	"html"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1395,6 +1396,7 @@ GM_MCP_TOKEN=` + tokSlot(tk) + ` gh-mirror mcp</code></pre></div>`
 
 // consoleAside 渲染后台侧栏（各页面共用；小屏为抽屉，唤出入口见顶栏 ☰ 按钮）。
 // renderUsersPage 渲染用户管理页（仅超级管理员可访问）。
+// 支持按用户名/邮箱搜索（q）与分页（size=10/20/30/50、page）。
 func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 	sid, user, _, ok := s.parseSession(r)
 	if !ok || !s.requireRootSuper(r) {
@@ -1402,7 +1404,47 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	csrf := s.csrfToken(sid)
-	users := s.users.All()
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	all := s.users.All()
+	users := all
+	if q != "" {
+		lq := strings.ToLower(q)
+		users = make([]*User, 0, len(all))
+		for _, u := range all {
+			if strings.Contains(strings.ToLower(u.Username), lq) || strings.Contains(strings.ToLower(u.Email), lq) {
+				users = append(users, u)
+			}
+		}
+	}
+	// 每页条数：10（默认）/ 20 / 30 / 50
+	size := 10
+	switch r.URL.Query().Get("size") {
+	case "20":
+		size = 20
+	case "30":
+		size = 30
+	case "50":
+		size = 50
+	}
+	page := 1
+	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
+		page = v
+	}
+	total := len(users)
+	pages := (total + size - 1) / size
+	if pages < 1 {
+		pages = 1
+	}
+	if page > pages {
+		page = pages
+	}
+	start := (page - 1) * size
+	end := start + size
+	if end > total {
+		end = total
+	}
+	pageUsers := users[start:end]
+
 	// 每个用户的 Token 数（一次遍历；空 owner 归默认管理员，兼容旧数据）
 	counts := map[string]int{}
 	for _, t := range s.store.All() {
@@ -1415,7 +1457,7 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 	// 把各用户的 Token 只读数据内嵌进页面：弹窗直接本地渲染，不再额外请求。
 	// 这样不受反代/CDN 对 .json 路径的处理、ADMIN_PATH 非默认等因素影响。
 	tokenMap := map[string][]userTokenJSON{}
-	for _, u := range users {
+	for _, u := range all {
 		if counts[u.Username] > 0 {
 			tokenMap[u.Username] = s.userTokenData(u.Username)
 		}
@@ -1426,9 +1468,51 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 	}
 	// 防止数据中出现 </script 提前闭合脚本标签
 	tokensJSON := strings.ReplaceAll(string(tb), "</", "<\\/")
+
+	// 工具条：用户名/邮箱搜索 + 分页（每页 10/20/30/50 + 上一页/下一页）
+	usersBase := s.adminPath + "/users"
+	sizeSel := func(sz int) string {
+		if size == sz {
+			return " selected"
+		}
+		return ""
+	}
+	pageURL := func(p int) string {
+		u := usersBase + "?size=" + strconv.Itoa(size) + "&page=" + strconv.Itoa(p)
+		if q != "" {
+			u += "&q=" + url.QueryEscape(q)
+		}
+		return u
+	}
+	nav := ""
+	if page > 1 {
+		nav += `<a class="btn outline" href="` + pageURL(page-1) + `">上一页</a>`
+	}
+	if page < pages {
+		nav += `<a class="btn outline" href="` + pageURL(page+1) + `">下一页</a>`
+	}
+	clearLink := ""
+	if q != "" {
+		clearLink = `<a class="btn outline" href="` + usersBase + `?size=` + strconv.Itoa(size) + `">清除</a>`
+	}
+	userTools := `<form method="get" action="` + usersBase + `" class="row" style="gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap">` +
+		`<input type="hidden" name="size" value="` + strconv.Itoa(size) + `">` +
+		`<input name="q" value="` + html.EscapeString(q) + `" placeholder="搜索用户名 / 邮箱" aria-label="搜索用户名或邮箱" style="width:200px">` +
+		`<button type="submit" class="btn outline">搜索</button>` + clearLink + `</form>` +
+		`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">` +
+		`<span class="muted small">共 ` + strconv.Itoa(total) + ` 个 · 第 ` + strconv.Itoa(page) + `/` + strconv.Itoa(pages) + ` 页</span>` +
+		`<label class="muted small" style="display:inline-flex;align-items:center;gap:6px">每页` +
+		`<select onchange="gmSetUserPageSize(this.value)" aria-label="每页显示用户数" style="width:auto;height:32px;padding:0 28px 0 10px">` +
+		`<option value="10"` + sizeSel(10) + `>10</option>` +
+		`<option value="20"` + sizeSel(20) + `>20</option>` +
+		`<option value="30"` + sizeSel(30) + `>30</option>` +
+		`<option value="50"` + sizeSel(50) + `>50</option>` +
+		`</select> 条</label>` + nav + `</div>`
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// verbs: aside, topbarRight, flash, settings, userTools, rows, addForm, tokensData
 	body := fmt.Sprintf(usersBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.portalSettingsHTML(csrf), s.userRows(users, counts, csrf, user), s.userAddForm(csrf), tokensJSON)
+		s.portalSettingsHTML(csrf), userTools, s.userRows(pageUsers, counts, csrf, user), s.userAddForm(csrf), tokensJSON)
 	_, _ = w.Write([]byte(pageApp("用户管理 - gh-mirror", "gh-mirror 用户管理", body)))
 }
 
@@ -1606,16 +1690,15 @@ func (s *Server) inviteSectionHTML(r *http.Request, csrf string) string {
 	if page < pages {
 		pagerNav += `<a class="btn outline" href="` + pageURL(page+1) + `">下一页</a>`
 	}
+	// 页码 + 每页条数 + 上一页/下一页 放在同一行（翻页紧邻页码，避免跑到表格下方）
 	sizeBar := `<div class="row" style="margin:0 0 10px;gap:10px;align-items:center;flex-wrap:wrap">` +
 		`<span class="muted small">共 ` + strconv.Itoa(total) + ` 个 · 第 ` + strconv.Itoa(page) + `/` + strconv.Itoa(pages) + ` 页</span>` +
-		`<label class="muted small" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px">每页` +
+		`<label class="muted small" style="display:inline-flex;align-items:center;gap:6px">每页` +
 		`<select onchange="gmSetInvitePageSize(this.value)" aria-label="每页显示邀请码数" style="width:auto;height:32px;padding:0 28px 0 10px">` +
 		`<option value="10"` + sizeSel(10) + `>10</option>` +
 		`<option value="20"` + sizeSel(20) + `>20</option>` +
 		`<option value="50"` + sizeSel(50) + `>50</option>` +
-		`</select> 条</label></div>`
-	pager := `<div class="row" style="margin-top:12px;gap:8px;align-items:center;flex-wrap:wrap">` +
-		`<span class="muted small">共 ` + strconv.Itoa(total) + ` 个 · 第 ` + strconv.Itoa(page) + `/` + strconv.Itoa(pages) + ` 页</span>` + pagerNav + `</div>`
+		`</select> 条</label>` + pagerNav + `</div>`
 	return `<section class="card">
   <div class="card-head"><h2>邀请码管理</h2><span class="muted small">批量生成 / 自定义 / 导出 / 备注 / 有效期</span></div>
 
@@ -1657,7 +1740,6 @@ func (s *Server) inviteSectionHTML(r *http.Request, csrf string) string {
       <input name="days" type="number" min="0" placeholder="有效期(天)" style="width:150px">
       <button type="submit" class="btn outline" name="op" value="expire">批量设有效期</button>
     </div>
-    ` + pager + `
   </form>
   <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
     <h3 style="margin:0 0 8px;font-size:.95rem">导出</h3>

@@ -789,6 +789,7 @@ function gmConfirmBatchDel(){var n=document.querySelectorAll('input.tok-sel:chec
 function gmSetTokenPageSize(v){try{var u=new URL(location.href);u.searchParams.set('size',v);u.searchParams.delete('page');location.href=u.pathname+u.search}catch(e){location.href='?size='+encodeURIComponent(v)}}
 function gmSetInvitePageSize(v){try{var u=new URL(location.href);u.searchParams.set('inv_size',v);u.searchParams.delete('inv_page');location.href=u.pathname+u.search}catch(e){location.href='?inv_size='+encodeURIComponent(v)}}
 function gmSetCachePageSize(v){try{var u=new URL(location.href);u.searchParams.set('size',v);u.searchParams.delete('page');location.href=u.pathname+u.search}catch(e){location.href='?size='+encodeURIComponent(v)}}
+function gmSetUserPageSize(v){try{var u=new URL(location.href);u.searchParams.set('size',v);u.searchParams.delete('page');location.href=u.pathname+u.search}catch(e){location.href='?size='+encodeURIComponent(v)}}
 document.addEventListener('change',function(e){if(e.target&&e.target.classList&&e.target.classList.contains('tok-sel'))gmSyncBatchBtn()});
 /* 用户管理页：点 Token 数打开该用户的只读 Token 详情弹窗（不跳转页面） */
 function gmEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
@@ -1392,7 +1393,8 @@ var userTokensBody = `
 </div>`
 
 // usersBody 是用户管理页面的 body 片段（/admin/users，仅超级管理员）。
-// 动词：aside / topbarRight / flash / settings / rows / addForm / tokensData（设置区在用户列表上方）
+// 动词：aside / topbarRight / flash / settings / userTools / rows / addForm / tokensData
+// （设置区在用户列表上方；userTools 为搜索 + 分页工具条）
 var usersBody = `
 <div class="console" id="top">
   %s
@@ -1405,7 +1407,10 @@ var usersBody = `
     %s
     %s
     <section class="card">
-      <h2>用户列表</h2>
+      <div class="card-head" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <h2 style="margin:0">用户列表</h2>
+        %s
+      </div>
       <p class="muted small">超级管理员可管理所有用户并查看全局；普通用户只管理自己的 Token / Docker 路径 / MCP。</p>
       <div class="table-wrap">
       <table class="tok-table">
