@@ -2973,6 +2973,7 @@ type accelResult struct {
 
 var (
 	reURLMatch    = regexp.MustCompile(`^https?://([^/]+)(/.*)?$`)
+	reLooseHost   = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,})(/.*)?$`)
 	reHFBlob      = regexp.MustCompile(`^([^/]+/[^/]+)/blob/(.+)$`)
 	reDockerImage = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:/[a-zA-Z0-9._-]+)*(?::[A-Za-z0-9_.-]+)?(?:@sha256:[a-fA-F0-9]{64})?$`)
 )
@@ -3010,6 +3011,17 @@ func (s *Server) buildAccelURL(base, raw, tk, user string) accelResult {
 			return accelResult{Kind: "hf", URL: base + "/hf/" + tk + "/" + rest}
 		default:
 			return accelResult{Hint: "暂不支持该域名（支持 github.com / huggingface.co，或 Docker 镜像名如 library/nginx:1.25）"}
+		}
+	}
+	// 从浏览器地址栏复制的链接常常省略 https://（如 github.com/owner/repo/...），
+	// 而后台说明里就写着支持这种写法。若不在此补认，这类输入会落到下面的
+	// Docker 镜像判断里，生成完全错误的 /offline/ 路径。
+	// 只补认「已知主机名」：docker.io/library/nginx、ghcr.io/owner/app 含点但不是
+	// GitHub / HuggingFace 域，仍按 Docker 镜像处理。
+	if m := reLooseHost.FindStringSubmatch(raw); m != nil {
+		host := strings.ToLower(m[1])
+		if isGitHubHost(host) || isHFHost(host) {
+			return s.buildAccelURL(base, "https://"+raw, tk, user)
 		}
 	}
 	if reDockerImage.MatchString(raw) {
