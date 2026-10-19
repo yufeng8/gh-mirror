@@ -317,7 +317,19 @@ const pageStyle = `
   .console .card{margin-bottom:18px}
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px}
   .stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
-  .stat .k{color:var(--muted-foreground);font-size:.8rem;margin:0}
+  .stat .k{color:var(--muted-foreground);font-size:.8rem;margin:0;display:flex;align-items:center;gap:6px}
+  /* 统计卡说明气泡：点问号或悬停均显示，点击后保持到点别处 */
+  .stat .q{position:relative;flex:0 0 auto;width:16px;height:16px;padding:0;border-radius:50%;
+    border:1px solid var(--border);background:var(--muted);color:var(--muted-foreground);
+    font-size:.66rem;line-height:1;font-weight:700;display:inline-flex;align-items:center;justify-content:center;cursor:help}
+  .stat .q:hover{color:var(--foreground);border-color:var(--muted-foreground)}
+  .stat .q:focus{outline:2px solid var(--ring);outline-offset:2px}
+  .stat .q-tip{position:absolute;left:50%;bottom:132%;transform:translateX(-50%);z-index:30;
+    width:max-content;max-width:270px;padding:9px 11px;border-radius:9px;
+    background:var(--foreground);color:var(--background);font-size:.74rem;font-weight:400;
+    line-height:1.6;text-align:left;box-shadow:0 10px 24px rgba(0,0,0,.2);
+    opacity:0;visibility:hidden;transition:opacity .14s ease}
+  .stat .q:hover .q-tip,.stat .q:focus .q-tip,.stat .q:focus-visible .q-tip{opacity:1;visibility:visible}
   .stat .v{font-size:1.55rem;font-weight:750;margin:3px 0 0;font-variant-numeric:tabular-nums;line-height:1.1}
   /* 长文本型统计值（如缓存目录路径）：缩小字号并允许断行，避免撑破卡片 */
   .stat .v.sm{font-size:.98rem;font-weight:650;line-height:1.4;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace}

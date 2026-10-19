@@ -718,10 +718,16 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	dockerPathCard := s.dockerPathCard(csrf, s.entryBase(r), user)
 	// 概览统计卡（网关真实指标，不伪造主机监控）
 	// 概览只放与 token 流量相关的指标；缓存细节在下方「缓存管理」里展示，避免重复
-	stats := statCard("Token 数", fmt.Sprintf("%d", len(tokens)), "个") +
-		statCard("总命中", fmt.Sprintf("%d", totalHits), "次") +
-		statCard("总流量", formatBytes(totalBytes), "") +
-		statCard("运行时长", fmtDuration(time.Since(processStart)), "")
+	stats := statCardTip("Token 数", fmt.Sprintf("%d", len(tokens)), "个",
+		"当前账号可见的 Token 数量。普通用户只看到自己的；超级管理员也只看到自己的"+
+			"（查看他人请到「用户管理」点该用户的 Token 数）。") +
+		statCardTip("总命中", fmt.Sprintf("%d", totalHits), "次",
+			"经本网关代理成功的请求次数（GitHub /g/ 与 HuggingFace /hf/ 路径）。"+
+				"响应状态码 ≥ 400 的请求不计入；用别人 Token 的流量记在那个 Token 上。") +
+		statCardTip("总流量", formatBytes(totalBytes), "",
+			"上述成功响应实际写给客户端的字节数（按 Token 分别累计后求和）。") +
+		statCardTip("运行时长", fmtDuration(time.Since(processStart)), "",
+			"当前进程已运行时长，实例重启后重新计时。")
 	// 链接转换器：识别与生成统一在服务端 buildAccelURL（与 MCP convert_link 同一实现）
 	conv := `<div id="gmconv" data-api="` + s.entryBase(r) + `/api/convert" data-csrf="` + csrf + `" hidden></div>` +
 		`<div class="conv-row"><input id="gmconv-in" class="conv-in" type="text" autocomplete="off" placeholder="粘贴原始链接或镜像名">` +
@@ -2320,13 +2326,28 @@ func statCard(k, v, sub string) string {
 	return statCardCls(k, v, sub, "")
 }
 
+// statCardTip 同 statCard，但标题旁带一个问号按钮，点击/悬停显示说明气泡。
+func statCardTip(k, v, sub, tip string) string {
+	return statCardClsTip(k, v, sub, "", tip)
+}
+
 // statCardCls 同 statCard，但可给数值附加样式类（如 "sm" 用于缓存目录这类长文本）。
 func statCardCls(k, v, sub, cls string) string {
+	return statCardClsTip(k, v, sub, cls, "")
+}
+
+// statCardClsTip 完整的统计卡渲染：数值样式类 + 说明气泡（tip 为空则不渲染问号）。
+func statCardClsTip(k, v, sub, cls, tip string) string {
 	vcls := "v"
 	if cls != "" {
 		vcls = "v " + cls
 	}
-	out := `<div class="stat"><p class="k">` + k + `</p><p class="` + vcls + `">` + v + `</p>`
+	head := k
+	if strings.TrimSpace(tip) != "" {
+		head += ` <button type="button" class="q" aria-label="查看说明">?<span class="q-tip" role="tooltip">` +
+			html.EscapeString(tip) + `</span></button>`
+	}
+	out := `<div class="stat"><p class="k">` + head + `</p><p class="` + vcls + `">` + v + `</p>`
 	if sub != "" {
 		out += `<p class="s">` + sub + `</p>`
 	}
