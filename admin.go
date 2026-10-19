@@ -719,8 +719,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	// 概览统计卡（网关真实指标，不伪造主机监控）
 	// 概览只放与 token 流量相关的指标；缓存细节在下方「缓存管理」里展示，避免重复
 	stats := statCardTip("Token 数", fmt.Sprintf("%d", len(tokens)), "个",
-		"当前账号可见的 Token 数量。普通用户只看到自己的；超级管理员也只看到自己的"+
-			"（查看他人请到「用户管理」点该用户的 Token 数）。") +
+		"当前账号可见的 Token 数量。普通用户只看到自己的；超级管理员也只看到自己的。") +
 		statCardTip("总命中", fmt.Sprintf("%d", totalHits), "次",
 			"经本网关代理成功的请求次数（GitHub /g/ 与 HuggingFace /hf/ 路径）。"+
 				"响应状态码 ≥ 400 的请求不计入；用别人 Token 的流量记在那个 Token 上。") +
