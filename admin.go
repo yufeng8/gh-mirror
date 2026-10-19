@@ -1317,9 +1317,23 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 		}
 		counts[o]++
 	}
+	// 把各用户的 Token 只读数据内嵌进页面：弹窗直接本地渲染，不再额外请求。
+	// 这样不受反代/CDN 对 .json 路径的处理、ADMIN_PATH 非默认等因素影响。
+	tokenMap := map[string][]userTokenJSON{}
+	for _, u := range users {
+		if counts[u.Username] > 0 {
+			tokenMap[u.Username] = s.userTokenData(u.Username)
+		}
+	}
+	tb, err := json.Marshal(tokenMap)
+	if err != nil {
+		tb = []byte("{}")
+	}
+	// 防止数据中出现 </script 提前闭合脚本标签
+	tokensJSON := strings.ReplaceAll(string(tb), "</", "<\\/")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	body := fmt.Sprintf(usersBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.portalSettingsHTML(csrf), s.userRows(users, counts, csrf, user), s.userAddForm(csrf))
+		s.portalSettingsHTML(csrf), s.userRows(users, counts, csrf, user), s.userAddForm(csrf), tokensJSON)
 	_, _ = w.Write([]byte(pageApp("用户管理 - gh-mirror", "gh-mirror 用户管理", body)))
 }
 
@@ -1614,31 +1628,20 @@ func (s *Server) renderUserTokensPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(pageApp("Token 详情 · "+target+" - gh-mirror", "该用户的 Token 详情（只读）", body)))
 }
 
-// renderUserTokensJSON 返回某用户的 Token 列表（JSON，供用户管理页的详情弹窗使用，仅安装时超管）。
-func (s *Server) renderUserTokensJSON(w http.ResponseWriter, r *http.Request) {
-	if !s.requireRootSuper(r) {
-		s.writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "err": "无权访问"})
-		return
-	}
-	target := strings.TrimSpace(r.URL.Query().Get("user"))
-	if target == "" {
-		s.writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "err": "缺少用户名参数"})
-		return
-	}
-	if _, exists := s.users.Get(target); !exists {
-		s.writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "err": "用户不存在"})
-		return
-	}
-	type tokenRow struct {
-		Token    string `json:"token"`
-		Note     string `json:"note"`
-		Role     string `json:"role"`
-		Hits     int64  `json:"hits"`
-		Bytes    string `json:"bytes"`
-		Created  string `json:"created"`
-		LastUsed string `json:"lastUsed"`
-	}
-	out := make([]tokenRow, 0, 8)
+// userTokenJSON 是某用户 Token 的只读快照（JSON API 与页面内嵌数据共用）。
+type userTokenJSON struct {
+	Token    string `json:"token"`
+	Note     string `json:"note"`
+	Role     string `json:"role"`
+	Hits     int64  `json:"hits"`
+	Bytes    string `json:"bytes"`
+	Created  string `json:"created"`
+	LastUsed string `json:"lastUsed"`
+}
+
+// userTokenData 汇总某用户的 Token 只读数据（空 owner 归默认管理员，兼容旧数据）。
+func (s *Server) userTokenData(target string) []userTokenJSON {
+	out := make([]userTokenJSON, 0, 8)
 	for _, t := range s.store.All() {
 		if !(t.Owner == target || (t.Owner == "" && target == s.adminUser)) {
 			continue
@@ -1655,12 +1658,31 @@ func (s *Server) renderUserTokensJSON(w http.ResponseWriter, r *http.Request) {
 		if note == "" {
 			note = "—"
 		}
-		out = append(out, tokenRow{
+		out = append(out, userTokenJSON{
 			Token: t.Token, Note: note, Role: roleTxt, Hits: t.Hits, Bytes: formatBytes(t.Bytes),
 			Created: time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"), LastUsed: lastUsed,
 		})
 	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": target, "tokens": out})
+	return out
+}
+
+// renderUserTokensJSON 返回某用户的 Token 列表（JSON，供调试 / 外部集成使用，仅安装时超管）。
+// 用户管理页的弹窗不依赖它——数据已在页面渲染时内嵌（避免多一次请求失败的风险）。
+func (s *Server) renderUserTokensJSON(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRootSuper(r) {
+		s.writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "err": "无权访问"})
+		return
+	}
+	target := strings.TrimSpace(r.URL.Query().Get("user"))
+	if target == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "err": "缺少用户名参数"})
+		return
+	}
+	if _, exists := s.users.Get(target); !exists {
+		s.writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "err": "用户不存在"})
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": target, "tokens": s.userTokenData(target)})
 }
 
 // userTokenRows 渲染某用户 token 的只读行（可复制，不含编辑/删除表单）。
