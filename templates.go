@@ -728,28 +728,28 @@ function gmShowUserTokens(user){
   var tb=document.getElementById('gmUserTokensBody');
   var ttl=document.getElementById('gmUserTokensTitle');
   if(ttl)ttl.textContent='Token 详情 · '+user;
-  if(tb)tb.innerHTML='<tr><td colspan="7" class="muted">加载中…</td></tr>';
+  /* 数据由服务端内嵌在页面里，直接本地渲染：不发额外请求，避免反代/CDN
+     拦截 .json 或 ADMIN_PATH 非默认时出现「网络错误」。 */
+  var data={};
+  try{var el=document.getElementById('gmUserTokensData');if(el)data=JSON.parse(el.textContent||'{}')}catch(e){data={}}
+  var list=data[user]||[];
+  if(!list.length){if(tb)tb.innerHTML='<tr><td colspan="7" class="muted">该用户暂无 Token</td></tr>';}
+  else{
+    var h='';
+    for(var i=0;i<list.length;i++){
+      var t=list[i];
+      h+='<tr><td data-label="Token"><code>'+gmEsc(t.token)+'</code> <button type="button" class="btn outline" onclick="gmCopyText(this,this.parentNode.querySelector(\'code\').textContent)">复制</button></td>'
+        +'<td data-label="备注">'+gmEsc(t.note)+'</td>'
+        +'<td data-label="类型">'+gmEsc(t.role)+'</td>'
+        +'<td data-label="命中">'+gmEsc(t.hits)+'</td>'
+        +'<td data-label="流量">'+gmEsc(t.bytes)+'</td>'
+        +'<td data-label="创建时间">'+gmEsc(t.created)+'</td>'
+        +'<td data-label="最近使用">'+gmEsc(t.lastUsed)+'</td></tr>';
+    }
+    if(tb)tb.innerHTML=h;
+  }
   gmOpenModal('gmUserTokensModal');
-  fetch('/admin/users/tokens.json?user='+encodeURIComponent(user),{cache:'no-store',credentials:'same-origin'})
-    .then(function(r){return r.json()})
-    .then(function(j){
-      if(!j||!j.ok){if(tb)tb.innerHTML='<tr><td colspan="7" class="err">'+gmEsc((j&&j.err)||'加载失败')+'</td></tr>';return}
-      if(!j.tokens||!j.tokens.length){if(tb)tb.innerHTML='<tr><td colspan="7" class="muted">该用户暂无 Token</td></tr>';return}
-      var h='';
-      for(var i=0;i<j.tokens.length;i++){
-        var t=j.tokens[i];
-        h+='<tr><td data-label="Token"><code>'+gmEsc(t.token)+'</code> <button type="button" class="btn outline" onclick="gmCopyText(this,this.parentNode.querySelector(\'code\').textContent)">复制</button></td>'
-          +'<td data-label="备注">'+gmEsc(t.note)+'</td>'
-          +'<td data-label="类型">'+gmEsc(t.role)+'</td>'
-          +'<td data-label="命中">'+gmEsc(t.hits)+'</td>'
-          +'<td data-label="流量">'+gmEsc(t.bytes)+'</td>'
-          +'<td data-label="创建时间">'+gmEsc(t.created)+'</td>'
-          +'<td data-label="最近使用">'+gmEsc(t.lastUsed)+'</td></tr>';
-      }
-      if(tb)tb.innerHTML=h;
-      if(m.__gmSyncScrollbar)m.__gmSyncScrollbar();
-    })
-    .catch(function(){if(tb)tb.innerHTML='<tr><td colspan="7" class="err">网络错误，请稍后重试</td></tr>'});
+  if(m.__gmSyncScrollbar)m.__gmSyncScrollbar();
 }
 /* 弹窗内容区自绘滚动条：不依赖系统 overlay 滚动条，始终可见、可拖拽 / 点击轨道跳转 */
 function gmInitModalScrollbar(m){
@@ -1319,7 +1319,7 @@ var userTokensBody = `
 </div>`
 
 // usersBody 是用户管理页面的 body 片段（/admin/users，仅超级管理员）。
-// 动词：aside / topbarRight / flash / settings / rows / addForm（设置区在用户列表上方）
+// 动词：aside / topbarRight / flash / settings / rows / addForm / tokensData（设置区在用户列表上方）
 var usersBody = `
 <div class="console" id="top">
   %s
@@ -1359,5 +1359,8 @@ var usersBody = `
         <div class="modal-foot"><button type="button" class="btn outline" onclick="gmCloseModal()">关闭</button></div>
       </div>
     </div>
+
+    <!-- 各用户 Token 只读数据：服务端内嵌，弹窗本地渲染，避免多一次请求（反代/CDN 可能拦截 .json） -->
+    <script type="application/json" id="gmUserTokensData">%s</script>
   </div>
 </div>`
