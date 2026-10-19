@@ -1269,7 +1269,7 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 // portalSettingsHTML 渲染用户管理页下方的「用户注册与邮箱」设置区（SMTP + 注册开关 + 联系邮箱，仅超管）。
 func (s *Server) portalSettingsHTML(csrf string) string {
 	cfg := s.smtpSettings()
-	tlsChecked, regChecked, inviteChecked, userCapChecked, adminCapChecked := "", "", "", "", ""
+	tlsChecked, regChecked, inviteChecked, userCapChecked, adminCapChecked, hideLoginChecked := "", "", "", "", "", ""
 	if cfg.TLS {
 		tlsChecked = " checked"
 	}
@@ -1278,6 +1278,9 @@ func (s *Server) portalSettingsHTML(csrf string) string {
 	}
 	if s.inviteOnlyEnabled() {
 		inviteChecked = " checked"
+	}
+	if s.hideLoginEnabled() {
+		hideLoginChecked = " checked"
 	}
 	if s.userCaptchaEnabled() {
 		userCapChecked = " checked"
@@ -1299,6 +1302,7 @@ func (s *Server) portalSettingsHTML(csrf string) string {
     <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="userCaptcha" value="1"` + userCapChecked + `> 用户入口图形验证码</label>
     <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="adminCaptcha" value="1"` + adminCapChecked + `> 管理入口图形验证码</label>
     <label class="fld">联系邮箱<input name="contactEmail" type="email" value="` + html.EscapeString(s.contactEmail()) + `" placeholder="用于用户紧急联系与找回密码引导"></label>
+    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="hideLogin" value="1"` + hideLoginChecked + `> 首页隐藏登录按钮</label>
     <button type="submit" class="btn">保存</button>
   </form>
   <h3 style="margin-top:18px">SMTP 发信设置</h3>
@@ -1313,7 +1317,7 @@ func (s *Server) portalSettingsHTML(csrf string) string {
     <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="smtpTLS" value="1"` + tlsChecked + `> 使用 TLS</label>
     <button type="submit" class="btn">保存邮箱设置</button>
   </form>
-  <p class="muted small" style="margin-top:10px">SMTP 凭据保存在 <code>gm-data/settings.json</code>（文件权限 0600）。开启注册后用户可凭邮箱验证码自主注册普通账号；关闭后注册入口隐藏，但已有账号与找回密码不受影响。超级管理员密码无法通过邮箱找回。</p>
+  <p class="muted small" style="margin-top:10px">SMTP 凭据保存在 <code>gm-data/settings.json</code>（文件权限 0600）。开启注册后用户可凭邮箱验证码自主注册普通账号；关闭后注册入口隐藏，但已有账号与找回密码不受影响。超级管理员密码无法通过邮箱找回。勾选「首页隐藏登录按钮」后首页导航不再显示登录/注册入口，但 <code>/admin</code> 与 <code>/user</code> 仍可直接访问，不影响后台登录。</p>
 </section>`
 }
 
@@ -1988,14 +1992,16 @@ func (s *Server) doSetPortalSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	regOpen, contactEmail := s.regEnabled(), s.contactEmail()
 	userCaptcha, adminCaptcha, inviteOnly := s.userCaptchaEnabled(), s.adminCaptchaEnabled(), s.inviteOnlyEnabled()
+	hideLogin := s.hideLoginEnabled()
 	if portalForm {
 		regOpen = formBool(r, "regOpen")
 		contactEmail = r.FormValue("contactEmail")
 		userCaptcha = formBool(r, "userCaptcha")
 		adminCaptcha = formBool(r, "adminCaptcha")
 		inviteOnly = formBool(r, "inviteOnly")
+		hideLogin = formBool(r, "hideLogin")
 	}
-	s.setPortalSettings(cfg, regOpen, contactEmail, userCaptcha, adminCaptcha, inviteOnly)
+	s.setPortalSettings(cfg, regOpen, contactEmail, userCaptcha, adminCaptcha, inviteOnly, hideLogin)
 	log.Printf("门户设置已保存(scope=%s): regOpen=%v userCaptcha=%v adminCaptcha=%v inviteOnly=%v contactEmail=%q smtp=%s:%d tls=%v",
 		scope, regOpen, userCaptcha, adminCaptcha, inviteOnly, contactEmail, cfg.Host, cfg.Port, cfg.TLS)
 	http.Redirect(w, r, s.adminPath+"/users?ok=portal_saved", http.StatusFound)

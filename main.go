@@ -48,6 +48,7 @@ type Server struct {
 	userCaptcha        bool       // 用户入口图形验证码开关（持 svcMu）
 	adminCaptcha       bool       // 管理入口图形验证码开关（持 svcMu）
 	inviteOnly         bool       // 仅邀请码注册开关（持 svcMu）
+	hideLogin          bool       // 首页隐藏登录/注册按钮（持 svcMu；仅隐藏入口展示，路径仍可直达）
 	codes              *CodeStore    // 邮箱验证码存储（内存）
 	captcha            *CaptchaStore // 图形验证码存储（内存）
 	invites            *InviteStore  // 邀请码存储（invites.json）

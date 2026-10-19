@@ -38,6 +38,7 @@ type settings struct {
 	UserCaptcha  bool       `json:"userCaptcha"`  // 用户入口（登录+注册）图形验证码开关
 	AdminCaptcha bool       `json:"adminCaptcha"` // 管理入口登录图形验证码开关
 	InviteOnly   bool       `json:"inviteOnly"`   // 仅邀请码注册开关
+	HideLogin    bool       `json:"hideLogin"`    // 首页隐藏登录/注册按钮（仅隐藏入口，/admin /user 仍可直达）
 }
 
 // normDockerPath 规范化 Docker 自定义路径：去首尾与重复斜杠，只允许 [A-Za-z0-9-_/]，最长 64 字符。
@@ -116,6 +117,7 @@ func loadSettings(s *Server, cfg *config.Config) {
 	s.userCaptcha = st.UserCaptcha
 	s.adminCaptcha = st.AdminCaptcha
 	s.inviteOnly = st.InviteOnly
+	s.hideLogin = st.HideLogin
 	s.svcMu.Unlock()
 	if migrated {
 		s.saveSettings()
@@ -153,6 +155,7 @@ func (s *Server) currentSettings() settings {
 	st.UserCaptcha = s.userCaptcha
 	st.AdminCaptcha = s.adminCaptcha
 	st.InviteOnly = s.inviteOnly
+	st.HideLogin = s.hideLogin
 	s.svcMu.RUnlock()
 	st.Cache.MaxFileMB = int(s.cache.MaxBytes() / (1024 * 1024))
 	st.Cache.MaxTotalMB = int(s.cache.MaxTotalBytes() / (1024 * 1024))
@@ -265,7 +268,7 @@ func (s *Server) offlineMaxFileBytes() int64 {
 }
 
 // setPortalSettings 保存 SMTP 配置、注册开关、联系邮箱与图形验证码/邀请码开关（热生效 + 持久化）。
-func (s *Server) setPortalSettings(cfg smtpConfig, regOpen bool, contactEmail string, userCaptcha, adminCaptcha, inviteOnly bool) {
+func (s *Server) setPortalSettings(cfg smtpConfig, regOpen bool, contactEmail string, userCaptcha, adminCaptcha, inviteOnly, hideLogin bool) {
 	s.svcMu.Lock()
 	s.smtpCfg = cfg
 	s.regOpen = regOpen
@@ -273,6 +276,7 @@ func (s *Server) setPortalSettings(cfg smtpConfig, regOpen bool, contactEmail st
 	s.userCaptcha = userCaptcha
 	s.adminCaptcha = adminCaptcha
 	s.inviteOnly = inviteOnly
+	s.hideLogin = hideLogin
 	s.svcMu.Unlock()
 	s.saveSettings()
 }
@@ -296,6 +300,13 @@ func (s *Server) inviteOnlyEnabled() bool {
 	s.svcMu.RLock()
 	defer s.svcMu.RUnlock()
 	return s.inviteOnly
+}
+
+// hideLoginEnabled 返回首页是否隐藏登录/注册入口（仅影响首页导航展示，不封禁入口路径）。
+func (s *Server) hideLoginEnabled() bool {
+	s.svcMu.RLock()
+	defer s.svcMu.RUnlock()
+	return s.hideLogin
 }
 
 // smtpSettings 返回当前 SMTP 配置。
