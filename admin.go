@@ -755,7 +755,7 @@ func (s *Server) dockerPathCard(csrf, base, user string) string {
 	cur := html.EscapeString(s.userDockerPath(user))
 	return `<form method="post" action="` + base + `/docker-path" class="row" style="margin-top:12px;align-items:flex-end">
   <input type="hidden" name="csrf" value="` + csrf + `">
-  <label class="fld">我的 Docker 自定义路径<input name="dockerPath" value="` + cur + `" placeholder="可选，如 team-a"></label>
+  <label class="fld">我的 Docker 自定义路径<input name="dockerPath" value="` + cur + `" placeholder="可选，如 team-a" style="width:320px;max-width:100%"></label>
   <button type="submit" class="btn">保存</button>
 </form>
 <p class="muted small" style="margin-top:6px">你的 Docker 拉取命令：<code>docker pull 域名/` + html.EscapeString(dockerSegment(user)) + `[/自定义路径]/镜像名</code>（docker 客户端会自动补 <code>/v2/</code> 前缀，服务端完整路径为 <code>/v2/` + html.EscapeString(dockerSegment(user)) + `[/自定义路径]/…</code>）。registry 拉取<strong>不校验 Token</strong>，路径本身就是凭证；留空则仅用用户名段。自定义路径仅支持字母、数字、-、_、/（最长 64 字符）。</p>`
@@ -2157,14 +2157,22 @@ func (s *Server) consoleAside(r *http.Request) string {
 		`<a class="navitem" href="` + repoURL + `/blob/main/README.md" target="_blank" rel="noopener"><span class="ic">📄</span>项目文档</a>` +
 		`<a class="navitem" href="` + repoURL + `" target="_blank" rel="noopener"><span class="ic">` + githubSVG + `</span>GitHub</a>` +
 		`<a class="navitem" href="` + base + `/logout"><span class="ic">` + logoutSVG + `</span>退出登录</a>` +
-		`</nav>` + s.asideFoot() + `</aside>` +
+		`</nav>` + s.asideFoot(user) + `</aside>` +
 		`<button class="nav-mask" type="button" aria-label="关闭导航菜单" onclick="toggleNav()"></button>`
 }
 
-// asideFoot 渲染侧栏底部信息区：⭐ Star 引导 + 当前版本号 + Releases 链接。
+// asideFoot 渲染侧栏底部信息区：当前用户（用户名 + 欢迎词）+ ⭐ Star 引导 + 版本号 + Releases。
 // 版本号由构建期注入（见 main.go 的 version），此处只做静态展示，不联网拉取最新版本。
-func (s *Server) asideFoot() string {
-	return `<div class="aside-foot">` +
+func (s *Server) asideFoot(user string) string {
+	// 当前登录用户卡片（未登录时省略）
+	userBlock := ""
+	if user != "" {
+		userBlock = `<div class="aside-user">` +
+			`<div class="un"><code>` + html.EscapeString(user) + `</code></div>` +
+			`<div class="hi">👋 欢迎你！</div>` +
+			`</div>`
+	}
+	return `<div class="aside-foot">` + userBlock +
 		`<a class="star-cta" href="` + repoURL + `" target="_blank" rel="noopener" title="在 GitHub 上 Star 本项目">⭐ Star 支持一下</a>` +
 		`<div class="ver">` + tagSVG + `当前版本 <code>` + html.EscapeString(version) + `</code></div>` +
 		`<a class="ver-link" href="` + repoURL + `/releases" target="_blank" rel="noopener">` + pkgSVG + `查看 Releases</a>` +
