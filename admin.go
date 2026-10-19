@@ -227,6 +227,8 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.renderUserTokensPage(w, r)
+	case sub == "users/tokens.json":
+		s.renderUserTokensJSON(w, r)
 	case sub == "services":
 		if s.requireSuper(r) {
 			s.renderServicesPage(w, r)
@@ -1539,10 +1541,10 @@ func (s *Server) userRows(users []*User, counts map[string]int, csrf, current st
 		if u.LastLoginAt > 0 {
 			lastLogin = time.Unix(u.LastLoginAt, 0).Format("2006-01-02 15:04")
 		}
-		// Token 数（点击进入该用户的只读 Token 详情）
+		// Token 数：点击在原页弹出只读详情（不跳转页面）
 		tokenCell := `<span class="muted">0</span>`
 		if n := counts[u.Username]; n > 0 {
-			tokenCell = `<a href="` + s.adminPath + `/users/tokens?user=` + esc + `">` + strconv.Itoa(n) + `</a>`
+			tokenCell = `<button type="button" class="tok-count" title="查看该用户的 Token（只读）" onclick="gmShowUserTokens('` + esc + `')">` + strconv.Itoa(n) + `</button>`
 		}
 		ops := `<span class="muted small">安装时创建，不可降级 / 删除</span>`
 		if !isRoot {
@@ -1593,10 +1595,59 @@ func (s *Server) renderUserTokensPage(w http.ResponseWriter, r *http.Request) {
 	rows := s.userTokenRows(s.store.All(), target)
 	back := `<a class="btn outline" href="` + s.adminPath + `/users">← 返回用户管理</a>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// verbs: aside, topbarRight, flash, username, back, rows
-	body := fmt.Sprintf(userTokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		html.EscapeString(target), back, rows)
+	// verbs: aside, username, topbarRight, flash, back, rows（须与模板占位符顺序一致）
+	body := fmt.Sprintf(userTokensBody, s.consoleAside(r), html.EscapeString(target), s.topbarRight(baseOf(r)), s.flashHTML(r),
+		back, rows)
 	_, _ = w.Write([]byte(pageApp("Token 详情 · "+target+" - gh-mirror", "该用户的 Token 详情（只读）", body)))
+}
+
+// renderUserTokensJSON 返回某用户的 Token 列表（JSON，供用户管理页的详情弹窗使用，仅安装时超管）。
+func (s *Server) renderUserTokensJSON(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRootSuper(r) {
+		s.writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "err": "无权访问"})
+		return
+	}
+	target := strings.TrimSpace(r.URL.Query().Get("user"))
+	if target == "" {
+		s.writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "err": "缺少用户名参数"})
+		return
+	}
+	if _, exists := s.users.Get(target); !exists {
+		s.writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "err": "用户不存在"})
+		return
+	}
+	type tokenRow struct {
+		Token    string `json:"token"`
+		Note     string `json:"note"`
+		Role     string `json:"role"`
+		Hits     int64  `json:"hits"`
+		Bytes    string `json:"bytes"`
+		Created  string `json:"created"`
+		LastUsed string `json:"lastUsed"`
+	}
+	out := make([]tokenRow, 0, 8)
+	for _, t := range s.store.All() {
+		if !(t.Owner == target || (t.Owner == "" && target == s.adminUser)) {
+			continue
+		}
+		roleTxt := "普通"
+		if normRole(t.Role) == RoleAdmin {
+			roleTxt = "高级（MCP）"
+		}
+		lastUsed := "—"
+		if t.LastUsed > 0 {
+			lastUsed = time.Unix(t.LastUsed, 0).Format("2006-01-02 15:04")
+		}
+		note := t.Note
+		if note == "" {
+			note = "—"
+		}
+		out = append(out, tokenRow{
+			Token: t.Token, Note: note, Role: roleTxt, Hits: t.Hits, Bytes: formatBytes(t.Bytes),
+			Created: time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04"), LastUsed: lastUsed,
+		})
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": target, "tokens": out})
 }
 
 // userTokenRows 渲染某用户 token 的只读行（可复制，不含编辑/删除表单）。

@@ -668,6 +668,10 @@ const pageStyle = `
   /* 弹窗：更宽、更柔和阴影、内容区滚动 */
   .modal-box{max-width:720px;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.32),0 0 0 1px rgba(9,9,11,.04)}
   #gmPortalModal .modal-box{max-width:780px}
+  #gmUserTokensModal .modal-box{max-width:1040px}
+  /* 用户列表里的 Token 数：无边框文字按钮（点击打开只读详情弹窗） */
+  .tok-count{border:0;background:transparent;color:var(--primary);font:inherit;font-weight:600;cursor:pointer;padding:0 2px;text-decoration:underline;text-underline-offset:2px}
+  .tok-count:hover{color:#15803d}
   .modal-head{padding:15px 22px}
   .modal-body{padding:18px 22px 26px;scrollbar-gutter:stable}
   .modal-foot{padding:13px 22px;background:color-mix(in srgb,var(--background) 94%,var(--muted))}
@@ -717,6 +721,36 @@ function gmDismissFlash(){var f=document.getElementById('gmFlash');if(f)f.remove
 function gmDockerPathPreview(v){var i=document.getElementById('gmDockerPath'),p=document.getElementById('gmDockerPathPreview');if(!p)return;var o=(i&&i.getAttribute('data-owner'))||'';v=(v||'').replace(/^\/+|\/+$/g,'');p.textContent='docker pull <本服务域名>/'+o+(v?'/'+v:'')+'/library/nginx:1.25'}
 /* 反馈条：清掉 URL 上的 ok/err 参数避免刷新重复提示，并 4 秒后自动淡出 */
 (function(){var f=document.getElementById('gmFlash');if(!f)return;try{var u=new URL(location.href);if(u.searchParams.has('ok')||u.searchParams.has('err')){u.searchParams.delete('ok');u.searchParams.delete('err');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}setTimeout(function(){f.classList.add('out');setTimeout(function(){if(f.parentNode)f.remove()},400)},4000)})();
+/* 用户管理页：点 Token 数打开该用户的只读 Token 详情弹窗（不跳转页面） */
+function gmEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function gmShowUserTokens(user){
+  var m=document.getElementById('gmUserTokensModal');if(!m)return;
+  var tb=document.getElementById('gmUserTokensBody');
+  var ttl=document.getElementById('gmUserTokensTitle');
+  if(ttl)ttl.textContent='Token 详情 · '+user;
+  if(tb)tb.innerHTML='<tr><td colspan="7" class="muted">加载中…</td></tr>';
+  gmOpenModal('gmUserTokensModal');
+  fetch('/admin/users/tokens.json?user='+encodeURIComponent(user),{cache:'no-store',credentials:'same-origin'})
+    .then(function(r){return r.json()})
+    .then(function(j){
+      if(!j||!j.ok){if(tb)tb.innerHTML='<tr><td colspan="7" class="err">'+gmEsc((j&&j.err)||'加载失败')+'</td></tr>';return}
+      if(!j.tokens||!j.tokens.length){if(tb)tb.innerHTML='<tr><td colspan="7" class="muted">该用户暂无 Token</td></tr>';return}
+      var h='';
+      for(var i=0;i<j.tokens.length;i++){
+        var t=j.tokens[i];
+        h+='<tr><td data-label="Token"><code>'+gmEsc(t.token)+'</code> <button type="button" class="btn outline" onclick="gmCopyText(this,this.parentNode.querySelector(\'code\').textContent)">复制</button></td>'
+          +'<td data-label="备注">'+gmEsc(t.note)+'</td>'
+          +'<td data-label="类型">'+gmEsc(t.role)+'</td>'
+          +'<td data-label="命中">'+gmEsc(t.hits)+'</td>'
+          +'<td data-label="流量">'+gmEsc(t.bytes)+'</td>'
+          +'<td data-label="创建时间">'+gmEsc(t.created)+'</td>'
+          +'<td data-label="最近使用">'+gmEsc(t.lastUsed)+'</td></tr>';
+      }
+      if(tb)tb.innerHTML=h;
+      if(m.__gmSyncScrollbar)m.__gmSyncScrollbar();
+    })
+    .catch(function(){if(tb)tb.innerHTML='<tr><td colspan="7" class="err">网络错误，请稍后重试</td></tr>'});
+}
 /* 弹窗内容区自绘滚动条：不依赖系统 overlay 滚动条，始终可见、可拖拽 / 点击轨道跳转 */
 function gmInitModalScrollbar(m){
   var body=m.querySelector('.modal-body');
@@ -1260,7 +1294,9 @@ var mcpBody = `
 </div>`
 
 // userTokensBody 是某用户 Token 只读详情页（/admin/users/tokens，仅安装时超管）。
-// 动词：aside / topbarRight / flash / username / back / rows
+// 动词：aside / username / topbarRight / flash / back / rows
+// 注意：%s 数量与顺序必须与 renderUserTokensPage 的传参完全一致，
+// 少一个占位符会导致后续参数整体错位（曾导致详情页表格为空）。
 var userTokensBody = `
 <div class="console" id="top">
   %s
@@ -1270,6 +1306,7 @@ var userTokensBody = `
       <h1>Token 详情 · %s</h1>
       <div class="spacer">%s</div>
     </div>
+    %s
     <section class="card">
       <div class="card-head"><h2>该用户的 Token（只读）</h2>%s</div>
       <p class="muted small">仅「安装时创建的超级管理员」可查看；此处可复制 Token 明文，但不能修改或删除。</p>
@@ -1306,5 +1343,21 @@ var usersBody = `
       <h2 style="margin-top:22px">新增用户</h2>
       %s
     </section>
+
+    <!-- 某用户 Token 只读详情（点用户列表的 Token 数打开，不跳转页面） -->
+    <div class="modal" id="gmUserTokensModal" hidden>
+      <div class="modal-mask" onclick="gmCloseModal()"></div>
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="gmUserTokensTitle">
+        <div class="modal-head"><h3 id="gmUserTokensTitle">Token 详情</h3><button type="button" class="modal-x" onclick="gmCloseModal()" aria-label="关闭">✕</button></div>
+        <div class="modal-body">
+          <p class="muted small" style="margin:0 0 10px">仅「安装时创建的超级管理员」可查看；此处可复制 Token 明文，但不能修改或删除。</p>
+          <div class="table-wrap"><table class="tok-table">
+            <thead><tr><th>Token</th><th>备注</th><th>类型</th><th>命中</th><th>流量</th><th>创建时间</th><th>最近使用</th></tr></thead>
+            <tbody id="gmUserTokensBody"><tr><td colspan="7" class="muted">加载中…</td></tr></tbody>
+          </table></div>
+        </div>
+        <div class="modal-foot"><button type="button" class="btn outline" onclick="gmCloseModal()">关闭</button></div>
+      </div>
+    </div>
   </div>
 </div>`
