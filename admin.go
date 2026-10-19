@@ -1306,30 +1306,55 @@ func (s *Server) portalSettingsHTML(csrf string) string {
 	if cfg.Port > 0 {
 		port = strconv.Itoa(cfg.Port)
 	}
+	// 未展开时的状态摘要：一眼看到注册开关 / 联系邮箱 / SMTP 是否已配置
+	regState := "已关闭"
+	if s.regEnabled() {
+		regState = "已开启"
+	}
+	if s.inviteOnlyEnabled() {
+		regState += "（仅邀请码）"
+	}
+	mailState := "未设置"
+	if v := s.contactEmail(); v != "" {
+		mailState = html.EscapeString(v)
+	}
+	smtpState := "未配置"
+	if cfg.Host != "" {
+		smtpState = html.EscapeString(cfg.Host)
+		if cfg.Port > 0 {
+			smtpState += ":" + port
+		}
+	}
 	return `<section class="card">
-  <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">注册开关 / 图形验证码 / 联系邮箱</span></div>
-  <form method="post" action="` + s.adminPath + `/portal-settings" class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap;gap:12px">
+  <div class="card-head"><h2>用户注册与邮箱</h2><span class="muted small">注册开关 / 图形验证码 / 联系邮箱 / SMTP</span></div>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px">
+    <button type="button" class="btn" onclick="gmTogglePortalForm()">⚙️ 设置</button>
+    <span class="muted small">当前：注册` + regState + ` · 联系邮箱 ` + mailState + ` · SMTP ` + smtpState + `</span>
+  </div>
+  <form id="portalSettingsForm" method="post" action="` + s.adminPath + `/portal-settings" style="display:none;margin-top:16px">
     <input type="hidden" name="csrf" value="` + csrf + `">
-    <input type="hidden" name="scope" value="portal">
-    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="regOpen" value="1"` + regChecked + `> 开启用户注册</label>
-    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="inviteOnly" value="1"` + inviteChecked + `> 仅邀请码注册</label>
-    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="userCaptcha" value="1"` + userCapChecked + `> 用户入口图形验证码</label>
-    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="adminCaptcha" value="1"` + adminCapChecked + `> 管理入口图形验证码</label>
-    <label class="fld">联系邮箱<input name="contactEmail" type="email" value="` + html.EscapeString(s.contactEmail()) + `" placeholder="用于用户紧急联系与找回密码引导"></label>
-    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="hideLogin" value="1"` + hideLoginChecked + `> 首页隐藏登录按钮</label>
-    <button type="submit" class="btn">保存</button>
-  </form>
-  <h3 style="margin-top:18px">SMTP 发信设置</h3>
-  <form method="post" action="` + s.adminPath + `/portal-settings" class="row" style="margin-top:10px;align-items:flex-end;flex-wrap:wrap;gap:12px">
-    <input type="hidden" name="csrf" value="` + csrf + `">
-    <input type="hidden" name="scope" value="smtp">
-    <label class="fld">SMTP 主机<input name="smtpHost" value="` + html.EscapeString(cfg.Host) + `" placeholder="smtp.example.com"></label>
-    <label class="fld">端口<input name="smtpPort" type="number" min="1" value="` + port + `" placeholder="465"></label>
-    <label class="fld">账号<input name="smtpUser" value="` + html.EscapeString(cfg.Username) + `" autocomplete="off"></label>
-    <label class="fld">密码<input name="smtpPass" type="password" value="" placeholder="已设置则留空保持不变" autocomplete="new-password"></label>
-    <label class="fld">发件人<input name="smtpFrom" type="email" value="` + html.EscapeString(cfg.From) + `" placeholder="no-reply@example.com"></label>
-    <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="smtpTLS" value="1"` + tlsChecked + `> 使用 TLS</label>
-    <button type="submit" class="btn">保存邮箱设置</button>
+    <input type="hidden" name="scope" value="all">
+    <div class="row" style="align-items:flex-end;flex-wrap:wrap;gap:12px">
+      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="regOpen" value="1"` + regChecked + `> 开启用户注册</label>
+      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="inviteOnly" value="1"` + inviteChecked + `> 仅邀请码注册</label>
+      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="userCaptcha" value="1"` + userCapChecked + `> 用户入口图形验证码</label>
+      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="adminCaptcha" value="1"` + adminCapChecked + `> 管理入口图形验证码</label>
+      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="hideLogin" value="1"` + hideLoginChecked + `> 首页隐藏登录按钮</label>
+      <label class="fld">联系邮箱<input name="contactEmail" type="email" value="` + html.EscapeString(s.contactEmail()) + `" placeholder="用于用户紧急联系与找回密码引导"></label>
+    </div>
+    <h3 style="margin-top:16px">SMTP 发信设置</h3>
+    <div class="row" style="align-items:flex-end;flex-wrap:wrap;gap:12px">
+      <label class="fld">SMTP 主机<input name="smtpHost" value="` + html.EscapeString(cfg.Host) + `" placeholder="smtp.example.com"></label>
+      <label class="fld">端口<input name="smtpPort" type="number" min="1" value="` + port + `" placeholder="465"></label>
+      <label class="fld">账号<input name="smtpUser" value="` + html.EscapeString(cfg.Username) + `" autocomplete="off"></label>
+      <label class="fld">密码<input name="smtpPass" type="password" value="" placeholder="已设置则留空保持不变" autocomplete="new-password"></label>
+      <label class="fld">发件人<input name="smtpFrom" type="email" value="` + html.EscapeString(cfg.From) + `" placeholder="no-reply@example.com"></label>
+      <label class="fld" style="flex-direction:row;gap:8px;align-items:center"><input type="checkbox" name="smtpTLS" value="1"` + tlsChecked + `> 使用 TLS</label>
+    </div>
+    <div class="row" style="margin-top:14px;gap:10px">
+      <button type="submit" class="btn">保存</button>
+      <button type="button" class="btn outline" onclick="gmTogglePortalForm()">取消</button>
+    </div>
   </form>
   <p class="muted small" style="margin-top:10px">SMTP 凭据保存在 <code>gm-data/settings.json</code>（文件权限 0600）。开启注册后用户可凭邮箱验证码自主注册普通账号；关闭后注册入口隐藏，但已有账号与找回密码不受影响。超级管理员密码无法通过邮箱找回。勾选「首页隐藏登录按钮」后首页导航不再显示登录/注册入口，但 <code>/admin</code> 与 <code>/user</code> 仍可直接访问，不影响后台登录。</p>
 </section>`
@@ -2006,8 +2031,8 @@ func (s *Server) doSetPortalSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	scope := r.FormValue("scope")
 	// scope 缺省时（旧版页面 / 手工 POST）按字段存在性推断来源，保持兼容
-	portalForm := scope == "portal" || (scope == "" && r.PostForm.Has("contactEmail"))
-	smtpForm := scope == "smtp" || (scope == "" && r.PostForm.Has("smtpHost"))
+	portalForm := scope == "portal" || scope == "all" || (scope == "" && r.PostForm.Has("contactEmail"))
+	smtpForm := scope == "smtp" || scope == "all" || (scope == "" && r.PostForm.Has("smtpHost"))
 
 	oldSMTP := s.smtpSettings()
 	cfg := oldSMTP

@@ -625,6 +625,9 @@ function gmCloseModal(reset){var ms=document.querySelectorAll('.modal');for(var 
 function gmConfirmModal(){var f=gmPendingForm;gmCloseModal(false);if(f)if(typeof f.requestSubmit==='function'){f.requestSubmit()}else{f.submit()}}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')gmCloseModal()});
 (function(){try{var t=localStorage.getItem('gm_tok');var sels=document.querySelectorAll('.gmtok');if(!sels.length)return;if(!t){return}var hit=false;for(var i=0;i<sels.length;i++){for(var j=0;j<sels[i].options.length;j++){if(sels[i].options[j].value===t){hit=true;break}}if(hit){break}}if(hit){gmApplyToken(t)}else{try{localStorage.removeItem('gm_tok')}catch(e){}}}catch(e){}})();
+/* 用户注册与邮箱：默认只显示「设置」按钮，点击展开 / 收起表单；保存成功（URL 带 ok=portal_saved）时自动展开。 */
+function gmTogglePortalForm(){var f=document.getElementById('portalSettingsForm');if(!f)return;f.style.display=(f.style.display==='none'||!f.style.display)?'block':'none'}
+(function(){if(/[?&]ok=portal_saved/.test(location.search)){var f=document.getElementById('portalSettingsForm');if(f)f.style.display='block'}})();
 /* 首页「复制最新提示词」：优先从 jsDelivr / GitHub raw 取最新版本（与仓库始终同步，不必等发版）；
    取不到（离线 / 内网部署）时回退到镜像内置的 agentPrompt()。 */
 function gmCopyLatestPrompt(btn){
