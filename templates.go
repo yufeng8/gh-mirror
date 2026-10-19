@@ -619,11 +619,11 @@ const pageStyle = `
   }
   html.dark{--shadow-sm:0 1px 2px rgba(0,0,0,.45);--shadow-md:0 6px 20px rgba(0,0,0,.55);--ring-soft:rgba(34,197,94,.3)}
   /* 细滚动条：弹窗、侧栏、表格横滚保持一致 */
-  *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+  *{scrollbar-width:thin;scrollbar-color:var(--muted-foreground) transparent}
   *::-webkit-scrollbar{width:10px;height:10px}
   *::-webkit-scrollbar-track{background:transparent}
-  *::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px;border:2px solid transparent;background-clip:content-box}
-  *::-webkit-scrollbar-thumb:hover{background:var(--muted-foreground);background-clip:content-box}
+  *::-webkit-scrollbar-thumb{background:var(--muted-foreground);opacity:.55;border-radius:999px;border:2px solid transparent;background-clip:content-box}
+  *::-webkit-scrollbar-thumb:hover{opacity:.9;background-clip:content-box}
   /* 按钮：统一高度 / 圆角 / hover 层次 */
   .btn{height:36px;padding:0 14px;border-radius:calc(var(--radius) - 2px);font-size:.875rem;font-weight:500;box-shadow:var(--shadow-sm);transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
   .btn:hover{transform:none;filter:none;background:#15803d;box-shadow:var(--shadow-md)}
@@ -651,6 +651,22 @@ const pageStyle = `
   .modal-head{padding:15px 22px}
   .modal-body{padding:18px 22px 26px;scrollbar-gutter:stable}
   .modal-foot{padding:13px 22px;background:color-mix(in srgb,var(--background) 94%,var(--muted))}
+  /* 弹窗内容滚动 + 底部操作区固定：
+     form 必须参与 flex 收缩（min-height:0），否则 max-height 只裁整个 form，
+     .modal-body 的 overflow:auto 不会生效 → 内容被截断且无滚动条。 */
+  .modal-box > form{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden}
+  .modal-box .modal-body{flex:1 1 auto;min-height:0;overflow-y:scroll;scrollbar-width:auto;scrollbar-color:auto}
+  .modal-box .modal-foot{flex:0 0 auto}
+  /* 弹窗自绘滚动条：Windows/Edge 的 overlay 滚动条不悬停不绘制，这里用始终可见的滑块替代 */
+  .modal-box > form{position:relative}
+  .gm-sb{position:absolute;top:0;right:2px;bottom:0;width:10px;border-radius:999px;background:var(--muted);z-index:6;cursor:pointer}
+  .gm-sb-thumb{position:absolute;left:1px;right:1px;border-radius:999px;background:var(--muted-foreground);opacity:.75}
+  .gm-sb-thumb:hover{opacity:1}
+  /* 弹窗内容区滚动条：比全局更明显（Windows 下 overlay 滚动条不悬停不显示） */
+  .modal-box .modal-body::-webkit-scrollbar{width:14px}
+  .modal-box .modal-body::-webkit-scrollbar-track{background:var(--muted);border-radius:999px;margin:6px 0}
+  .modal-box .modal-body::-webkit-scrollbar-thumb{background:var(--muted-foreground);border-radius:999px;border:4px solid transparent;background-clip:content-box}
+  .modal-box .modal-body::-webkit-scrollbar-thumb:hover{background:var(--foreground);background-clip:content-box}
 </style>`
 
 const docOpen = `<!doctype html>
@@ -681,9 +697,53 @@ function gmDismissFlash(){var f=document.getElementById('gmFlash');if(f)f.remove
 function gmDockerPathPreview(v){var i=document.getElementById('gmDockerPath'),p=document.getElementById('gmDockerPathPreview');if(!p)return;var o=(i&&i.getAttribute('data-owner'))||'';v=(v||'').replace(/^\/+|\/+$/g,'');p.textContent='docker pull <本服务域名>/'+o+(v?'/'+v:'')+'/library/nginx:1.25'}
 /* 反馈条：清掉 URL 上的 ok/err 参数避免刷新重复提示，并 4 秒后自动淡出 */
 (function(){var f=document.getElementById('gmFlash');if(!f)return;try{var u=new URL(location.href);if(u.searchParams.has('ok')||u.searchParams.has('err')){u.searchParams.delete('ok');u.searchParams.delete('err');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}setTimeout(function(){f.classList.add('out');setTimeout(function(){if(f.parentNode)f.remove()},400)},4000)})();
+/* 弹窗内容区自绘滚动条：不依赖系统 overlay 滚动条，始终可见、可拖拽 / 点击轨道跳转 */
+function gmInitModalScrollbar(m){
+  var body=m.querySelector('.modal-body');
+  if(!body)return;
+  var host=body.parentNode;
+  if(!host)return;
+  if(host.getAttribute('data-gm-sb')==='1'){if(m.__gmSyncScrollbar)m.__gmSyncScrollbar();return}
+  host.setAttribute('data-gm-sb','1');
+  var bar=document.createElement('div');bar.className='gm-sb';
+  var thumb=document.createElement('div');thumb.className='gm-sb-thumb';
+  bar.appendChild(thumb);host.appendChild(bar);
+  function layout(){
+    var foot=host.querySelector('.modal-foot');
+    if(foot)bar.style.bottom=foot.offsetHeight+'px';
+  }
+  function sync(){
+    layout();
+    if(body.scrollHeight<=body.clientHeight+1){bar.style.display='none';return}
+    bar.style.display='block';
+    var h=Math.max(28,Math.round(bar.clientHeight*body.clientHeight/body.scrollHeight));
+    thumb.style.height=h+'px';
+    var max=bar.clientHeight-h;
+    var top=max*(body.scrollTop/Math.max(1,body.scrollHeight-body.clientHeight));
+    thumb.style.top=Math.max(0,Math.min(max,top))+'px';
+  }
+  body.addEventListener('scroll',sync);
+  bar.addEventListener('mousedown',function(e){
+    if(e.target===thumb)return;
+    var r=bar.getBoundingClientRect();
+    body.scrollTop=(e.clientY-r.top)/bar.clientHeight*(body.scrollHeight-body.clientHeight);
+  });
+  var drag=false,startY=0,startTop=0;
+  thumb.addEventListener('mousedown',function(e){drag=true;startY=e.clientY;startTop=thumb.offsetTop;e.preventDefault();e.stopPropagation()});
+  document.addEventListener('mousemove',function(e){
+    if(!drag)return;
+    var max=bar.clientHeight-thumb.offsetHeight;
+    var top=Math.max(0,Math.min(max,startTop+(e.clientY-startY)));
+    body.scrollTop=top/Math.max(1,max)*(body.scrollHeight-body.clientHeight);
+  });
+  document.addEventListener('mouseup',function(){drag=false});
+  window.addEventListener('resize',sync);
+  m.__gmSyncScrollbar=sync;
+  sync();
+}
 /* 弹窗：formId 为空时只作提示（隐藏确认按钮）；有 formId 时确认即提交对应表单 */
 var gmPendingForm=null,gmOkDefault='';
-function gmOpenModal(id,formId,okLabel){var m=document.getElementById(id);if(!m)return;gmPendingForm=formId?document.getElementById(formId):null;var ok=m.querySelector('[data-modal-ok]');if(ok){if(!gmOkDefault)gmOkDefault=ok.textContent;ok.hidden=!gmPendingForm;ok.textContent=okLabel||gmOkDefault}if(id==='gmDockerModal'){var pi=document.getElementById('gmDockerPath');if(pi)gmDockerPathPreview(pi.value)}m.removeAttribute('hidden');try{var b=(ok&&!ok.hidden)?ok:m.querySelector('[data-modal-cancel]');if(b)b.focus()}catch(e){}}
+function gmOpenModal(id,formId,okLabel){var m=document.getElementById(id);if(!m)return;gmPendingForm=formId?document.getElementById(formId):null;var ok=m.querySelector('[data-modal-ok]');if(ok){if(!gmOkDefault)gmOkDefault=ok.textContent;ok.hidden=!gmPendingForm;ok.textContent=okLabel||gmOkDefault}if(id==='gmDockerModal'){var pi=document.getElementById('gmDockerPath');if(pi)gmDockerPathPreview(pi.value)}m.removeAttribute('hidden');gmInitModalScrollbar(m);try{var b=(ok&&!ok.hidden)?ok:m.querySelector('[data-modal-cancel]');if(b)b.focus()}catch(e){}}
 /* reset=false 用于「确认提交」路径：提交前不能回滚输入值 */
 function gmCloseModal(reset){var ms=document.querySelectorAll('.modal');for(var i=0;i<ms.length;i++)ms[i].setAttribute('hidden','');gmPendingForm=null;if(reset!==false){var di=document.getElementById('gmDockerPath');if(di){var sv=di.getAttribute('data-saved')||'';di.value=sv;gmDockerPathPreview(sv)}}}
 function gmConfirmModal(){var f=gmPendingForm;gmCloseModal(false);if(f)if(typeof f.requestSubmit==='function'){f.requestSubmit()}else{f.submit()}}

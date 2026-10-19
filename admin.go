@@ -1477,7 +1477,7 @@ func (s *Server) inviteSectionHTML(csrf string) string {
       <button type="submit" class="danger" name="op" value="delete" onclick="return confirm('确定删除选中的邀请码？')">删除选中</button>
       <input name="note" placeholder="给选中批量打备注">
       <button type="submit" class="btn outline" name="op" value="note">批量备注</button>
-      <input name="days" type="number" min="0" placeholder="有效期(天,0=永久)" style="width:130px">
+      <input name="days" type="number" min="0" placeholder="有效期(天)" style="width:150px">
       <button type="submit" class="btn outline" name="op" value="expire">批量设有效期</button>
     </div>
   </form>
@@ -1486,8 +1486,8 @@ func (s *Server) inviteSectionHTML(csrf string) string {
     <form method="post" action="` + s.adminPath + `/invite/export">
       <input type="hidden" name="csrf" value="` + csrf + `">
       <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
-        <label class="fld" style="min-width:220px">导出格式<input name="format" value="{code}"></label>
-        <label class="fld" style="min-width:200px">导出时批量打备注<input name="note" placeholder="可选（应用到全部）"></label>
+        <label class="fld">导出格式<input name="format" value="{code}" style="width:240px"></label>
+        <label class="fld">导出时批量打备注<input name="note" placeholder="可选（应用到全部）" style="width:240px"></label>
         <button type="submit" class="btn">导出全部为文本</button>
       </div>
       <p class="muted small" style="margin:8px 0 0">
