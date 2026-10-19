@@ -1392,19 +1392,25 @@ func (s *Server) inviteSectionHTML(csrf string) string {
 	}
 	return `<section class="card">
   <div class="card-head"><h2>邀请码管理</h2><span class="muted small">批量生成 / 自定义 / 导出 / 备注 / 有效期</span></div>
-  <div class="row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap;gap:12px">
-    <form method="post" action="` + s.adminPath + `/invite/generate" class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+
+  <div style="margin-top:14px">
+    <h3 style="margin:0 0 8px;font-size:.95rem">批量生成</h3>
+    <form method="post" action="` + s.adminPath + `/invite/generate" class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
       <input type="hidden" name="csrf" value="` + csrf + `">
       <label class="fld">数量<input name="count" type="number" min="1" max="10000" value="10" style="width:80px"></label>
-      <label class="fld">备注<input name="note" placeholder="批量备注（可选）"></label>
+      <label class="fld">备注<input name="note" placeholder="批量备注（可选）" style="width:170px"></label>
       <label class="fld">有效期(天,0=永久)<input name="days" type="number" min="0" value="0" style="width:80px"></label>
-      <label class="fld">导出格式<input name="format" value="{code}" style="width:130px"></label>
+      <label class="fld">导出格式<input name="format" value="{code}" placeholder="{code}" style="width:140px"></label>
       <button type="submit" class="btn">批量生成并下载</button>
     </form>
-    <form method="post" action="` + s.adminPath + `/invite/add" class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+  </div>
+
+  <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+    <h3 style="margin:0 0 8px;font-size:.95rem">自定义邀请码</h3>
+    <form method="post" action="` + s.adminPath + `/invite/add" class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
       <input type="hidden" name="csrf" value="` + csrf + `">
-      <label class="fld">自定义邀请码<input name="code" placeholder="6-64 位字母数字"></label>
-      <label class="fld">备注<input name="note" placeholder="备注（可选）"></label>
+      <label class="fld">邀请码<input name="code" placeholder="6-64 位字母数字" style="width:190px"></label>
+      <label class="fld">备注<input name="note" placeholder="备注（可选）" style="width:170px"></label>
       <label class="fld">有效期(天,0=永久)<input name="days" type="number" min="0" value="0" style="width:80px"></label>
       <button type="submit" class="btn outline">添加</button>
     </form>
@@ -1425,13 +1431,26 @@ func (s *Server) inviteSectionHTML(csrf string) string {
       <button type="submit" class="btn outline" name="op" value="expire">批量设有效期</button>
     </div>
   </form>
-  <form method="post" action="` + s.adminPath + `/invite/export" class="row" style="margin-top:14px;gap:8px;align-items:flex-end;flex-wrap:wrap">
-    <input type="hidden" name="csrf" value="` + csrf + `">
-    <label class="fld" style="flex:1;min-width:260px">导出格式<input name="format" value="{code}" placeholder="占位符：{code} {note} {expire} {used} {used_by} {used_at} {created_at}"></label>
-    <label class="fld">导出时批量打备注<input name="note" placeholder="可选（应用到全部）"></label>
-    <button type="submit" class="btn">导出全部为文本</button>
-  </form>
-  <p class="muted small" style="margin-top:10px">邀请码为一次性：用户注册使用后标记为「已使用」并记录使用者与激活时间。导出格式支持占位符 <code>{code}</code> <code>{note}</code> <code>{expire}</code> <code>{used}</code> <code>{used_by}</code> <code>{used_at}</code> <code>{created_at}</code>；填写「导出时批量打备注」会先给选中码统一打备注再导出。</p>
+  <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+    <h3 style="margin:0 0 8px;font-size:.95rem">导出</h3>
+    <form method="post" action="` + s.adminPath + `/invite/export">
+      <input type="hidden" name="csrf" value="` + csrf + `">
+      <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <label class="fld" style="min-width:220px">导出格式<input name="format" value="{code}"></label>
+        <label class="fld" style="min-width:200px">导出时批量打备注<input name="note" placeholder="可选（应用到全部）"></label>
+        <button type="submit" class="btn">导出全部为文本</button>
+      </div>
+      <p class="muted small" style="margin:8px 0 0">
+        占位符：<code>{code}</code> 邀请码 · <code>{note}</code> 备注 · <code>{expire}</code> 有效期（永久 / 具体时间）·
+        <code>{used}</code> 未使用 / 已使用 · <code>{used_by}</code> 使用者 · <code>{used_at}</code> 激活时间 ·
+        <code>{created_at}</code> 创建时间（空值输出空字符串）。<br>
+        示例：<code>{code}</code> → <code>ABCD1234</code>；
+        <code>{code} — {note}（{expire}）</code> → <code>ABCD1234 — 邀请张三（永久）</code>；
+        CSV：<code>{code},{used},{used_by},{used_at}</code>
+      </p>
+    </form>
+  </div>
+  <p class="muted small" style="margin-top:10px">邀请码为一次性：用户注册使用后标记为「已使用」并记录使用者与激活时间；填写「导出时批量打备注」会先给选中码统一打备注再导出。</p>
 </section>`
 }
 
