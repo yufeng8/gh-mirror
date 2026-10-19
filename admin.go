@@ -596,7 +596,6 @@ func userForgotHTML(userPath, contactEmail string) string {
             <button type="submit" class="btn btn-login" style="margin-top:12px">重置密码</button>
           </form>
           <p class="muted small" style="margin-top:12px">或联系超级管理员重置：<strong>` + html.EscapeString(contactEmail) + `</strong></p>
-          <p class="muted small">超级管理员密码无法在线找回，只能由服务器后台修改。</p>
         </div>
       </details>`
 }
@@ -1150,7 +1149,7 @@ func (s *Server) renderTokensPage(w http.ResponseWriter, r *http.Request) {
 	// verbs: aside, topbarRight, flash, rows, addForm, foot
 	body := fmt.Sprintf(tokensBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
 		s.tokenRows(tokens, csrf, entry), s.tokenAddForm(csrf, entry), s.tokenFoot(entry))
-	_, _ = w.Write([]byte(pageApp("Token 管理 - gh-mirror", "gh-mirror Token 管理", body)))
+	_, _ = w.Write([]byte(pageApp("令牌管理 - gh-mirror", "gh-mirror 令牌管理", body)))
 }
 
 // tokenVisible 判断某 token 是否属于当前用户（空 owner 的旧数据归属默认管理员 adminUser）。
