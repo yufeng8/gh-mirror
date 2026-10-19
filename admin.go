@@ -628,9 +628,11 @@ func (s *Server) renderRegisterPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// 图形验证码默认隐藏：点「发送验证码」时才展开并要求输入（发码接口会校验）；
+	// 这样注册表单首屏更简洁，也避免用户误以为注册必须填两个验证码。
 	captchaBlock := ""
 	if s.userCaptchaEnabled() {
-		captchaBlock = s.captchaHTML()
+		captchaBlock = `<div id="gmRegCaptcha" hidden>` + s.captchaHTML() + `</div>`
 	}
 	inviteBlock := ""
 	if s.inviteOnlyEnabled() {
@@ -2730,6 +2732,12 @@ func (s *Server) doSendCode(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validEmail(email) {
 		s.writeJSON(w, http.StatusOK, jsonResp{OK: false, Err: "邮箱格式不正确"})
+		return
+	}
+	// 注册发码要求图形验证码（防刷）：前端在首次点击「发送验证码」时展开图形码行
+	if purpose == "register" && s.userCaptchaEnabled() &&
+		!s.captcha.Verify(r.FormValue("captchaId"), r.FormValue("captcha")) {
+		s.writeJSON(w, http.StatusOK, jsonResp{OK: false, Err: "图形验证码错误或已过期，请重新输入"})
 		return
 	}
 	if purpose == "register" && !s.regEnabled() {
