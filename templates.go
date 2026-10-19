@@ -453,7 +453,8 @@ const pageStyle = `
   .captcha-row input[type=text],.captcha-row input:not([type]){flex:1;min-width:0}
   .captcha-row img{border:1px solid var(--border);border-radius:6px;flex:0 0 auto}
   .nav-toggle{display:none;align-items:center;justify-content:center;width:40px;height:40px;padding:0;font-size:1.15rem;flex:0 0 auto}
-  @media (max-width:820px){.nav-toggle{display:inline-flex}}
+  /* 小屏汉堡按钮推到最右（大屏隐藏不显示） */
+  @media (max-width:820px){.nav-toggle{display:inline-flex;margin-left:auto}}
   /* 首页导航抽屉（小屏）：默认收起 nav 与操作区，点汉堡展开为纵向 */
   @media (max-width:820px){
     .topnav{flex-wrap:wrap}
@@ -746,8 +747,13 @@ func (s *Server) homeHTML(host string) string {
 	return page("gh-mirror · 多服务加速网关", "自托管的多服务加速网关：Docker 镜像 · GitHub 资源 · HuggingFace 权重，一个网关全加速。Token 鉴权、磁盘缓存、私有化部署，并支持 MCP 接入让 AI Agent 直接调用。", body)
 }
 
-// navActionsHTML 渲染首页导航右侧的登录/注册入口（登录始终显示，注册按开关显隐）。
+// navActionsHTML 渲染首页导航右侧的登录/注册入口。
+// 超管可在「用户注册与邮箱」开启「首页隐藏登录按钮」——仅隐藏首页入口展示，
+// /admin 与 /user 路径仍可直接访问（不会锁死后台）。
 func (s *Server) navActionsHTML() string {
+	if s.hideLoginEnabled() {
+		return ""
+	}
 	out := `<a class="btn" href="` + s.userPath + `">登录</a>`
 	if s.regEnabled() {
 		out += `<a class="btn outline" href="` + s.userPath + `/register">注册</a>`
