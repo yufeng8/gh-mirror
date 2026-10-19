@@ -54,12 +54,22 @@ curl -sS -X POST https://<你的域名>/ai/<用户名>/mcp \
 ### 协议行为（与 Streamable HTTP 规范对齐）
 
 - **无状态**：不返回 `Mcp-Session-Id`，每个请求独立鉴权（规范允许无状态服务器）
-- 请求用 `POST`，响应为**单个 JSON**（`Content-Type: application/json`）——这是规范允许的形式，**不强制 SSE 流**
-- `GET` 返回 `405`（服务器不提供主动推送流，规范允许）；不支持 `DELETE`
+- **响应格式按 `Accept` 协商**：
+  - `Accept: application/json, text/event-stream`（绝大多数客户端）→ 返回**单个 JSON**，这是规范允许的形式
+  - `Accept: text/event-stream`（部分客户端强依赖）→ 返回**事件流**（`text/event-stream`，每条响应一个 `event: message`）
+- `GET` 返回 `405` + JSON 说明（本服务端不提供主动推送流，规范允许）；`DELETE` 返回 `200`（无状态、无需终止会话）
+- `resources/list`、`resources/templates/list`、`prompts/list` 返回空列表；`logging/setLevel` 被接受（无需实现）
+- `initialize` 在协议版本 **≥ 2025-06-18** 时返回 `instructions`：一段给模型的使用指引（推荐流程、破坏性操作提示、结果解析方式），能显著降低误调用
 - 支持 JSON-RPC 批量（请求体为数组）
 - 路径里的 `<用户名>` 为后台登录用户名；`<高级Token>` **必须归属该用户**
-- 用户名不存在 → `404`；未带 token / token 非高级 / token 不归属该用户 → `401`
+- 用户名不存在 → `404`；未带 token / token 非高级 / token 不归属该用户 → `401`（JSON，含接入 hint）
 - 旧端点 `POST /mcp` 已废弃（返回 `401` 并提示新格式）
+- 未知工具 / 不支持的方法会**列出可用工具名**，便于模型自行纠正
+
+### 给 AI Agent 的两点提示
+
+1. **结果都是文本**，结构化数据放在 json 代码块里（一行摘要 + JSON），解析时取该代码块
+2. **参数错误会给出可执行的修正提示**（例如缺 `q` 会提示传 `{"q":"nginx"}`），而不是静默用默认值
 
 ## 3. 接入方式二：stdio（本地 Agent，推荐桌面端）
 
@@ -103,22 +113,25 @@ Claude Desktop / CodeBuddy / 其它支持 `mcpServers` 的客户端：
 
 ## 4. 工具清单
 
-| 工具 | 参数 | 说明 |
-|------|------|------|
-| `health` | — | 服务状态与运行时长 |
-| `list_tokens` | — | 列出你可查看的 token（普通用户仅自己的，超级管理员全部） |
-| `create_token` | `token?`, `note?`, `role?` | 创建 token（归属当前调用用户；role: `user` / `admin`） |
-| `delete_token` | `token` | 删除 token（仅自己的；超级管理员可删全部） |
-| `get_services` | — | GitHub / Docker / HF 启用状态 |
-| `set_service` | `name`(`docker`\|`hf`), `enabled` | **即时生效**开关并持久化（**仅超级管理员**） |
-| `get_cache_stats` | — | 已用 / 单文件上限 / 总上限 / 时效 / 目录（**仅超级管理员**） |
-| `set_cache_limits` | `maxFileMB?`, `maxTotalMB?`, `ttlMinutes?` | 热改缓存参数并持久化（**仅超级管理员**） |
-| `clear_cache` | — | 清空缓存（**仅超级管理员**；不影响 token 与设置） |
-| `convert_link` | `url` | 原链接 / 镜像名 → 加速链接（与后台「链接转换」同一实现，生成带你自己用户名段的 `/g/<用户名>/<token>/`、`/hf/<用户名>/<token>/`、`/offline/<用户名>/<token>/` 链接） |
-| `search_images` | `q`, `page?` | Docker Hub 镜像搜索 |
-| `list_tags` | `repo` | Docker Hub 标签列表 |
+| 工具 | 参数 | 返回 | 说明 |
+|------|------|------|------|
+| `health` | — | JSON | 实例存活、运行时长、监听地址、后台路径与基地址 |
+| `list_tokens` | — | JSON | 列出**你自己名下**的 token（明文、类型、命中、流量、创建与最近使用） |
+| `create_token` | `token?`, `note?`, `role?` | 文本 | 创建 token（`role` 枚举 `user` / `admin`，留空自动生成值；非枚举值会报错而非静默默认） |
+| `delete_token` | `token` | 文本 | ⚠ 破坏性：删除后相关加速链接立即失效、不可恢复（仅自己的） |
+| `get_services` | — | JSON | GitHub / Docker / HF 启用状态 |
+| `set_service` | `name`(`docker`\|`hf`), `enabled` | 文本 | ⚠ 破坏性：**即时生效**并持久化（**仅超级管理员**） |
+| `get_cache_stats` | — | JSON | 已用 / 单文件上限 / 总上限 / 时效 / 目录（**仅超级管理员**） |
+| `set_cache_limits` | `maxFileMB?`, `maxTotalMB?`, `ttlMinutes?` | 文本 | ⚠ 破坏性：热改缓存参数并持久化（**仅超级管理员**，至少传一个参数） |
+| `clear_cache` | — | 文本 | ⚠ 破坏性：清空缓存（**仅超级管理员**；不影响 token 与设置） |
+| `convert_link` | `url` | 文本（URL） | 原链接 / 镜像名 → 加速链接（与后台「链接转换」同一实现，生成带你自己用户名段的 `/g/<用户名>/<token>/`、`/hf/<用户名>/<token>/`、`/offline/<用户名>/<token>/` 链接）。**支持省略 `https://` 的写法** |
+| `search_images` | `q`, `page?`, `limit?` | JSON | Docker Hub 镜像搜索，返回 `name` / `stars` / `pulls` / `official` / `updated` / `description`（`limit` 默认 10，上限 25） |
+| `list_tags` | `repo` | JSON | 某镜像仓库的标签与大小，每项附可直接使用的 `image`（如 `library/nginx:1.31.7`） |
 
 `tools/call` 返回结构：`{"content":[{"type":"text","text":"…"}],"isError":false}`；失败时 `isError:true` 且 `text` 为原因。
+
+> **结构化输出**：`list_tokens` / `search_images` / `list_tags` / `get_services` / `get_cache_stats` / `health` 的结果为「一行摘要 + ```json 代码块」，便于模型稳定解析；`convert_link` 直接返回可用 URL。
+> **错误提示**：参数缺失或非法时给出可执行的修正建议（例如缺 `q` 会提示传 `{"q":"nginx"}`）；未知工具会列出全部可用工具名。
 
 > **多用户权限模型**：MCP 入口要求高级 Token，按 Token 归属定位调用用户。Token 管理按归属隔离（普通用户只能管理自己的）；服务开关与缓存管理为实例级操作，仅超级管理员可调（与网页端 `/admin` 权限一致）；`convert_link` 使用调用者自己的 Token 生成带其用户名段的加速链接。
 
