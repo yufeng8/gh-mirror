@@ -364,7 +364,8 @@ const pageStyle = `
   /* 左侧品牌区里的 brand 是 <a>，会继承 a{color:var(--primary)} 的绿字压在绿底上，必须显式改白 */
   .auth .hero .brand{color:#fff}
   /* 右侧登录区：水平+垂直居中，卡片表面 */
-  .auth .panel{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:44px 24px;background:var(--background)}
+  /* 顶部锚定而非垂直居中：否则展开「忘记密码」使卡片变高时，整卡会重新居中上移，导致 summary 跳动 */
+  .auth .panel{display:flex;align-items:flex-start;justify-content:center;min-height:100vh;padding:clamp(32px,10vh,120px) 24px 44px;background:var(--background)}
   .auth .box{width:100%;max-width:400px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px 30px;
     box-shadow:0 18px 48px rgba(0,0,0,.10)}
   html.dark .auth .box{box-shadow:0 0 0 1px rgba(255,255,255,.05)}
@@ -388,7 +389,10 @@ const pageStyle = `
   .forgot summary:hover{color:var(--primary)}
   .forgot summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px;border-radius:4px}
   .forgot summary::-webkit-details-marker{display:none}
-  .forgot[open]{text-align:left;margin-top:14px;border:1px solid var(--border);border-radius:12px;background:var(--muted);padding:12px 14px}
+  /* 展开时 summary 位置必须保持不变（曾因 [open] 改 text-align:left 而跳到左侧）：
+     details 本身保持透明无边框，面板样式交给 .forgot-body 承担 */
+  .forgot[open]{margin-top:12px;border:0;background:transparent;padding:0;text-align:right}
+  .forgot-body{margin-top:10px;text-align:left;border:1px solid var(--border);border-radius:12px;background:var(--muted);padding:12px 14px}
   .forgot-title{font-weight:700;margin:2px 0 8px}
   .small{font-size:.82rem}
   .svcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
