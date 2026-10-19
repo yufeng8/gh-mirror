@@ -741,7 +741,9 @@ var GM_COMMON_IMAGES=['nginx','redis','postgres','mysql','mariadb','mongo','node
 function gmNum(n){n=Number(n)||0;return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,',')}
 /* ISO 时间 → 相对时间（分钟/小时/天前），无效返回空串 */
 function gmRelTime(s){if(!s)return '';var t=new Date(s);if(isNaN(t.getTime()))return '';var d=(Date.now()-t.getTime())/1000;if(d<0)d=0;if(d<3600)return Math.max(1,Math.floor(d/60))+' 分钟前';if(d<86400)return Math.floor(d/3600)+' 小时前';return Math.floor(d/86400)+' 天前'}
-function gmPickImage(){
+var gmPickTarget='gmOfflineImage';
+function gmPickImage(target){
+  gmPickTarget=target||'gmOfflineImage';
   var box=document.getElementById('gmImageCommon');
   if(box&&!box.getAttribute('data-ready')){
     var h='';
@@ -756,7 +758,7 @@ function gmPickImage(){
   if(q)setTimeout(function(){try{q.focus()}catch(e){}},60);
 }
 function gmUseImage(name){
-  var inp=document.getElementById('gmOfflineImage');
+  var inp=document.getElementById(gmPickTarget||'gmOfflineImage');
   if(inp&&name){inp.value=name;try{inp.focus()}catch(e){}}
   gmCloseModal();
 }

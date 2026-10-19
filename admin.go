@@ -722,13 +722,15 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		statCard("运行时长", fmtDuration(time.Since(processStart)), "")
 	// 链接转换器：识别与生成统一在服务端 buildAccelURL（与 MCP convert_link 同一实现）
 	conv := `<div id="gmconv" data-api="` + s.entryBase(r) + `/api/convert" data-csrf="` + csrf + `" hidden></div>` +
-		`<div class="conv-row"><input id="gmconv-in" type="text" autocomplete="off" placeholder="粘贴原始链接或镜像名">` +
+		`<div class="conv-row"><input id="gmconv-in" type="text" autocomplete="off" placeholder="粘贴原始链接或镜像名" style="flex:0 1 460px;width:460px;max-width:100%">` +
+		`<button type="button" class="btn outline" onclick="gmPickImage('gmconv-in')">🔍 搜索镜像</button>` +
 		`<button type="button" class="btn" onclick="gmConvert()">获取加速链接</button></div>` +
 		`<div class="conv-row" style="margin-top:10px"><input id="gmconv-out" type="text" readonly placeholder="加速链接将显示在这里">` +
 		`<button type="button" id="gmconv-copy" class="btn outline" onclick="gmCopyConv()">复制</button>` +
 		`<button type="button" class="btn outline" onclick="gmDownloadConv()">下载</button>` +
 		`<button type="button" class="btn outline" onclick="gmOpenConv()">访问</button></div>` +
-		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出<strong>需带用户名段与 token</strong> 的 <code>/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址，用户名段取当前登录用户）。registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>`
+		`<p class="muted small" style="margin-top:10px">基于当前访问地址与<strong>上方所选 Token</strong>生成。支持 GitHub / HuggingFace 链接（如 <code>github.com/owner/repo/releases/download/v1/a.zip</code>）与 Docker 镜像名（如 <code>library/nginx:1.25</code>，给出<strong>需带用户名段与 token</strong> 的 <code>/offline/&lt;用户名&gt;/&lt;token&gt;/&lt;镜像名&gt;</code> 离线 tar 地址，用户名段取当前登录用户）。registry 加速走 <code>/v2/&lt;用户名&gt;/…</code>，由 Docker 客户端直连，协议本身无法携带 token。</p>` +
+		s.imagePickerHTML()
 	// 链接转换卡片的 Token 快捷切换器（与「用法示例」的切换器联动，共用 .gmtok）
 	convSel := s.tokenSelector(tokens, "链接转换使用的 Token")
 	// Token / 服务管理 / 缓存管理均已独立成页，这里只放引导卡
@@ -879,6 +881,28 @@ func (s *Server) renderCachePage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(pageApp("缓存管理 - gh-mirror", "gh-mirror 缓存管理", body)))
 }
 
+// imagePickerHTML 渲染「选择镜像」弹窗（常用镜像 + Docker Hub 搜索）。
+// 离线包缓存页与总览页的链接转换共用；前端 gmPickImage(targetId) 决定选中后填入哪个输入框。
+func (s *Server) imagePickerHTML() string {
+	return `<div class="modal" id="gmImageModal" hidden>
+  <div class="modal-mask" onclick="gmCloseModal()"></div>
+  <div class="modal-box" style="max-width:720px">
+    <div class="modal-head"><h3>选择镜像</h3><button type="button" class="modal-x" onclick="gmCloseModal()" aria-label="关闭">✕</button></div>
+    <div class="modal-body">
+      <div class="row" style="gap:8px;flex-wrap:nowrap">
+        <input id="gmImageQuery" placeholder="搜索 Docker Hub，如 nginx / redis / postgres" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter'){event.preventDefault();gmSearchImage()}">
+        <button type="button" class="btn" onclick="gmSearchImage()">搜索</button>
+      </div>
+      <p class="muted small" style="margin:14px 0 6px">常用镜像（点击填入）：</p>
+      <div class="row" id="gmImageCommon" style="gap:8px"></div>
+      <p class="muted small" style="margin:14px 0 6px">搜索结果（最多 10 条，点击填入）：</p>
+      <div id="gmImageResults"><p class="muted small">输入关键词后点「搜索」。</p></div>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn outline" onclick="gmCloseModal()">关闭</button></div>
+  </div>
+</div>`
+}
+
 // offlineCacheSection 渲染缓存管理页的「离线包缓存」区块：自动清理设置 + 列表 + 多选/反选 + 分页。
 // proxyBase 为代理地址（复制下载链接用）；user 为当前超管（链接带其用户名段与 token）。
 func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size int) string {
@@ -993,23 +1017,7 @@ func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size in
 		`</div>`
 
 	// 拉取新镜像表单（主动缓存）+ 镜像选择面板（常用镜像 / Docker Hub 搜索）
-	imagePicker := `<div class="modal" id="gmImageModal" hidden>
-  <div class="modal-mask" onclick="gmCloseModal()"></div>
-  <div class="modal-box" style="max-width:720px">
-    <div class="modal-head"><h3>选择镜像</h3><button type="button" class="modal-x" onclick="gmCloseModal()" aria-label="关闭">✕</button></div>
-    <div class="modal-body">
-      <div class="row" style="gap:8px;flex-wrap:nowrap">
-        <input id="gmImageQuery" placeholder="搜索 Docker Hub，如 nginx / redis / postgres" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter'){event.preventDefault();gmSearchImage()}">
-        <button type="button" class="btn" onclick="gmSearchImage()">搜索</button>
-      </div>
-      <p class="muted small" style="margin:14px 0 6px">常用镜像（点击填入）：</p>
-      <div class="row" id="gmImageCommon" style="gap:8px"></div>
-      <p class="muted small" style="margin:14px 0 6px">搜索结果（最多 10 条，点击填入）：</p>
-      <div id="gmImageResults"><p class="muted small">输入关键词后点「搜索」。</p></div>
-    </div>
-    <div class="modal-foot"><button type="button" class="btn outline" onclick="gmCloseModal()">关闭</button></div>
-  </div>
-</div>`
+	imagePicker := s.imagePickerHTML()
 	pullForm := `<form method="post" action="` + s.adminPath + `/offline/repull" class="row" style="margin-top:12px;gap:10px">
   <input type="hidden" name="csrf" value="` + csrf + `">
   <input id="gmOfflineImage" name="image" placeholder="镜像名，如 library/nginx:1.25 或 nginx:latest" required style="width:min(460px,100%)">
