@@ -821,7 +821,7 @@ func (s *Server) renderServicesPage(w http.ResponseWriter, r *http.Request) {
 	// 邀请码管理属用户体系，仅「安装时创建的超级管理员」可见与操作（设置区已移回用户管理页）
 	invHTML := ""
 	if s.requireRootSuper(r) {
-		invHTML = s.inviteSectionHTML(csrf)
+		invHTML = s.inviteSectionHTML(r, csrf)
 	}
 	body := fmt.Sprintf(servicesBody, s.consoleAside(r), s.topbarRight(base), s.flashHTML(r), services, invHTML)
 	_, _ = w.Write([]byte(pageApp("服务管理 - gh-mirror", "gh-mirror 服务管理", body)))
@@ -1535,10 +1535,42 @@ func (s *Server) portalSettingsHTML(csrf string) string {
 }
 
 // inviteSectionHTML 渲染服务管理页底部的「邀请码管理」区（仅超管）：生成/自定义/导出/删除/备注/有效期 + 使用追踪。
-func (s *Server) inviteSectionHTML(csrf string) string {
-	invites := s.invites.List()
+func (s *Server) inviteSectionHTML(r *http.Request, csrf string) string {
+	all := s.invites.List()
+	// 每页条数：10（默认）/ 20 / 50；参数用 inv_size/inv_page，避免与服务管理页其它查询冲突
+	size := 10
+	switch r.URL.Query().Get("inv_size") {
+	case "20":
+		size = 20
+	case "50":
+		size = 50
+	}
+	page := 1
+	if v, err := strconv.Atoi(r.URL.Query().Get("inv_page")); err == nil && v > 0 {
+		page = v
+	}
+	total := len(all)
+	pages := (total + size - 1) / size
+	if pages < 1 {
+		pages = 1
+	}
+	if page > pages {
+		page = pages
+	}
+	start := (page - 1) * size
+	end := start + size
+	if end > total {
+		end = total
+	}
+	pageInvites := all[start:end]
+	sizeSel := func(sz int) string {
+		if size == sz {
+			return " selected"
+		}
+		return ""
+	}
 	var rows strings.Builder
-	for _, inv := range invites {
+	for _, inv := range pageInvites {
 		expireTxt := "永久"
 		if inv.ExpireAt > 0 {
 			expireTxt = time.Unix(inv.ExpireAt, 0).Format("2006-01-02 15:04")
@@ -1561,9 +1593,30 @@ func (s *Server) inviteSectionHTML(csrf string) string {
 			`<td data-label="使用者/激活时间">` + usedTxt + `</td>` +
 			`<td data-label="创建时间">` + time.Unix(inv.CreatedAt, 0).Format("2006-01-02 15:04") + `</td></tr>`)
 	}
-	if len(invites) == 0 {
+	if len(pageInvites) == 0 {
 		rows.WriteString(`<tr><td colspan="7" class="muted">暂无邀请码</td></tr>`)
 	}
+	// 分页工具条（与 Token 列表一致：每页 10/20/50 + 上一页/下一页）
+	pageURL := func(p int) string {
+		return s.adminPath + "/services?inv_size=" + strconv.Itoa(size) + "&inv_page=" + strconv.Itoa(p)
+	}
+	pagerNav := ""
+	if page > 1 {
+		pagerNav += `<a class="btn outline" href="` + pageURL(page-1) + `">上一页</a>`
+	}
+	if page < pages {
+		pagerNav += `<a class="btn outline" href="` + pageURL(page+1) + `">下一页</a>`
+	}
+	sizeBar := `<div class="row" style="margin:0 0 10px;gap:10px;align-items:center;flex-wrap:wrap">` +
+		`<span class="muted small">共 ` + strconv.Itoa(total) + ` 个 · 第 ` + strconv.Itoa(page) + `/` + strconv.Itoa(pages) + ` 页</span>` +
+		`<label class="muted small" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px">每页` +
+		`<select onchange="gmSetInvitePageSize(this.value)" aria-label="每页显示邀请码数" style="width:auto;height:32px;padding:0 28px 0 10px">` +
+		`<option value="10"` + sizeSel(10) + `>10</option>` +
+		`<option value="20"` + sizeSel(20) + `>20</option>` +
+		`<option value="50"` + sizeSel(50) + `>50</option>` +
+		`</select> 条</label></div>`
+	pager := `<div class="row" style="margin-top:12px;gap:8px;align-items:center;flex-wrap:wrap">` +
+		`<span class="muted small">共 ` + strconv.Itoa(total) + ` 个 · 第 ` + strconv.Itoa(page) + `/` + strconv.Itoa(pages) + ` 页</span>` + pagerNav + `</div>`
 	return `<section class="card">
   <div class="card-head"><h2>邀请码管理</h2><span class="muted small">批量生成 / 自定义 / 导出 / 备注 / 有效期</span></div>
 
@@ -1591,6 +1644,7 @@ func (s *Server) inviteSectionHTML(csrf string) string {
   </div>
   <form method="post" action="` + s.adminPath + `/invite/batch" style="margin-top:16px">
     <input type="hidden" name="csrf" value="` + csrf + `">
+    ` + sizeBar + `
     <div class="table-wrap"><table class="tok-table">
       <thead><tr><th><input type="checkbox" onclick="var c=document.querySelectorAll('input[name=code]');for(var i=0;i<c.length;i++)c[i].checked=this.checked" aria-label="全选"></th><th>邀请码</th><th>备注</th><th>有效期</th><th>状态</th><th>使用者/激活时间</th><th>创建时间</th></tr></thead>
       <tbody>` + rows.String() + `</tbody>
@@ -1604,6 +1658,7 @@ func (s *Server) inviteSectionHTML(csrf string) string {
       <input name="days" type="number" min="0" placeholder="有效期(天)" style="width:150px">
       <button type="submit" class="btn outline" name="op" value="expire">批量设有效期</button>
     </div>
+    ` + pager + `
   </form>
   <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
     <h3 style="margin:0 0 8px;font-size:.95rem">导出</h3>
