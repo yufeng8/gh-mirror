@@ -1305,7 +1305,7 @@ func (s *Server) renderUsersPage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	body := fmt.Sprintf(usersBody, s.consoleAside(r), s.topbarRight(baseOf(r)), s.flashHTML(r),
-		s.userRows(users, counts, csrf, user), s.userAddForm(csrf), s.portalSettingsHTML(csrf))
+		s.portalSettingsHTML(csrf), s.userRows(users, counts, csrf, user), s.userAddForm(csrf))
 	_, _ = w.Write([]byte(pageApp("用户管理 - gh-mirror", "gh-mirror 用户管理", body)))
 }
 

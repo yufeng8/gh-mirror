@@ -1262,7 +1262,7 @@ var userTokensBody = `
 </div>`
 
 // usersBody 是用户管理页面的 body 片段（/admin/users，仅超级管理员）。
-// 动词：aside / topbarRight / flash / rows / addForm / settings（「邀请码管理」仍在服务管理页）
+// 动词：aside / topbarRight / flash / settings / rows / addForm（设置区在用户列表上方）
 var usersBody = `
 <div class="console" id="top">
   %s
@@ -1272,6 +1272,7 @@ var usersBody = `
       <h1>用户管理</h1>
       <div class="spacer">%s</div>
     </div>
+    %s
     %s
     <section class="card">
       <h2>用户列表</h2>
@@ -1285,6 +1286,5 @@ var usersBody = `
       <h2 style="margin-top:22px">新增用户</h2>
       %s
     </section>
-    %s
   </div>
 </div>`
