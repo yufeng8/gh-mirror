@@ -788,6 +788,7 @@ function gmToggleAllTokens(cb){var xs=document.querySelectorAll('input.tok-sel')
 function gmConfirmBatchDel(){var n=document.querySelectorAll('input.tok-sel:checked').length;if(!n){alert('请先勾选要删除的 Token');return false}return confirm('确定删除选中的 '+n+' 个 Token？此操作不可恢复。')}
 function gmSetTokenPageSize(v){try{var u=new URL(location.href);u.searchParams.set('size',v);u.searchParams.delete('page');location.href=u.pathname+u.search}catch(e){location.href='?size='+encodeURIComponent(v)}}
 function gmSetInvitePageSize(v){try{var u=new URL(location.href);u.searchParams.set('inv_size',v);u.searchParams.delete('inv_page');location.href=u.pathname+u.search}catch(e){location.href='?inv_size='+encodeURIComponent(v)}}
+function gmSetCachePageSize(v){try{var u=new URL(location.href);u.searchParams.set('size',v);u.searchParams.delete('page');location.href=u.pathname+u.search}catch(e){location.href='?size='+encodeURIComponent(v)}}
 document.addEventListener('change',function(e){if(e.target&&e.target.classList&&e.target.classList.contains('tok-sel'))gmSyncBatchBtn()});
 /* 用户管理页：点 Token 数打开该用户的只读 Token 详情弹窗（不跳转页面） */
 function gmEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}

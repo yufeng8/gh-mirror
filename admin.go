@@ -961,25 +961,23 @@ func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size in
 		rows.WriteString(`<tr><td colspan="6" class="muted">暂无离线缓存包。用户通过 /offline 下载镜像后会自动缓存，或点击下方「拉取」主动缓存。</td></tr>`)
 	}
 
-	// 分页控件
-	pager := ""
-	if total > 0 {
-		pager = `<div class="row" style="margin-top:14px;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">` +
-			`<div class="row" style="gap:8px;align-items:center">` +
-			`<button type="button" class="btn outline" onclick="var c=document.querySelectorAll('input[name=digest]');for(var i=0;i<c.length;i++)c[i].checked=true">全选</button>` +
-			`<button type="button" class="btn outline" onclick="var c=document.querySelectorAll('input[name=digest]');for(var i=0;i<c.length;i++)c[i].checked=!c[i].checked">反选</button>` +
-			`<button type="submit" class="danger" onclick="return confirm('确定删除选中的离线缓存包？')">删除选中</button>` +
-			`</div>` +
-			`<div class="row" style="gap:8px;align-items:center">` +
-			`<span class="muted small">每页</span>` +
-			`<select class="fld" onchange="var u=new URL(location);u.searchParams.set('size',this.value);u.searchParams.delete('page');location=u">` +
-			selOpt(size, 10) + selOpt(size, 20) + selOpt(size, 50) +
-			`</select>` +
-			`<span class="muted small">第 ` + strconv.Itoa(page) + ` / ` + strconv.Itoa(totalPages) + ` 页（共 ` + strconv.Itoa(total) + ` 个）</span>` +
-			pageLink(s.adminPath+"/cache", page-1, size, totalPages, "上一页") +
-			pageLink(s.adminPath+"/cache", page+1, size, totalPages, "下一页") +
-			`</div></div>`
-	}
+	// 分页条：始终渲染（空列表也能看到每页条数与页码，避免误以为没有分页）
+	sizeBar := `<div class="row" style="margin-left:auto;gap:8px;align-items:center;flex-wrap:wrap">` +
+		`<span class="muted small">共 ` + strconv.Itoa(total) + ` 个 · 第 ` + strconv.Itoa(page) + `/` + strconv.Itoa(totalPages) + ` 页</span>` +
+		`<label class="muted small" style="display:inline-flex;align-items:center;gap:6px">每页` +
+		`<select onchange="gmSetCachePageSize(this.value)" aria-label="每页显示离线包数" style="width:auto;height:32px;padding:0 28px 0 10px">` +
+		selOpt(size, 10) + selOpt(size, 20) + selOpt(size, 50) +
+		`</select> 条</label>` +
+		pageLink(s.adminPath+"/cache", page-1, size, totalPages, "上一页") +
+		pageLink(s.adminPath+"/cache", page+1, size, totalPages, "下一页") +
+		`</div>`
+
+	// 批量操作条
+	pager := `<div class="row" style="margin-top:14px;gap:8px;align-items:center;flex-wrap:wrap">` +
+		`<button type="button" class="btn outline" onclick="var c=document.querySelectorAll('input[name=digest]');for(var i=0;i<c.length;i++)c[i].checked=true">全选</button>` +
+		`<button type="button" class="btn outline" onclick="var c=document.querySelectorAll('input[name=digest]');for(var i=0;i<c.length;i++)c[i].checked=!c[i].checked">反选</button>` +
+		`<button type="submit" class="danger" onclick="return confirm('确定删除选中的离线缓存包？')">删除选中</button>` +
+		`</div>`
 
 	// 拉取新镜像表单（主动缓存）+ 镜像选择面板（常用镜像 / Docker Hub 搜索）
 	imagePicker := `<div class="modal" id="gmImageModal" hidden>
@@ -1015,7 +1013,8 @@ func (s *Server) offlineCacheSection(csrf, proxyBase, user string, page, size in
 		statCard("磁盘可用", formatBytes(diskFree(s.cfg.CacheDir)), "") +
 		`</div>` +
 		autoPurgeForm +
-		`<h2 style="margin-top:22px">已缓存离线包</h2>` +
+		`<div class="card-head" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:22px">` +
+		`<h2 style="margin:0">已缓存离线包</h2>` + sizeBar + `</div>` +
 		`<form method="post" action="` + s.adminPath + `/offline/batch-del">` +
 		`<input type="hidden" name="csrf" value="` + csrf + `">` +
 		`<div class="table-wrap"><table class="tok-table">` +
