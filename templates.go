@@ -642,6 +642,11 @@ const pageStyle = `
   .btn.outline:hover{background:var(--muted);color:var(--foreground);border-color:var(--border)}
   .btn:active{transform:translateY(1px)}
   .btn.nav-toggle{width:40px;height:40px;padding:0}
+  /* 登录 / 重置等主按钮：固定高度 + flex 垂直居中、字号 1rem。
+     此前 .btn 的 height:36px 与 .auth .btn-login 的 padding:12px 冲突，文字偏上且 14px 偏小。 */
+  .btn{line-height:1.2}
+  .auth .btn-login{display:flex;align-items:center;justify-content:center;width:min(240px,74%);height:44px;margin:20px auto 0;padding:0 16px;border-radius:10px;font-size:1rem;line-height:1}
+  .auth .pw button{line-height:1.2}
   /* 输入 / 下拉：统一 36px 高与 focus ring */
   input:not([type=checkbox]):not([type=radio]),select,textarea{height:36px;padding:0 11px;border:1px solid var(--border);border-radius:calc(var(--radius) - 2px);background:var(--background);color:var(--foreground);font-size:.875rem;font-family:inherit;transition:border-color .15s,box-shadow .15s}
   select{appearance:none;-webkit-appearance:none;padding-right:32px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
@@ -1200,7 +1205,7 @@ var tokensBody = `
   <div class="main">
     <div class="topbar">
       <button class="btn outline nav-toggle" type="button" onclick="toggleNav()" aria-label="打开导航菜单" aria-expanded="false">☰</button>
-      <h1>Token 管理</h1>
+      <h1>令牌管理</h1>
       <div class="spacer">%s</div>
     </div>
     %s
